@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>smolmoo</title>
+<style>
+body { background:#000; color:#ccc; font:14px/1.4 monospace; margin:0; padding:0;
+  display:flex; flex-direction:column; height:100vh; box-sizing:border-box; }
+
+/* game terminal (hidden until login) */
+#terminal { display:none; flex:1; flex-direction:column; padding:8px;
+  box-sizing:border-box; overflow:hidden; }
+#output { white-space:pre-wrap; flex:1; overflow-y:auto; margin:0; }
+#status { color:#888; min-height:1.4em; padding:4px 0; border-top:1px solid #333;
+  border-bottom:1px solid #333; }
+#input { background:#111; color:#ccc; border:1px solid #333; font:inherit;
+  width:100%; box-sizing:border-box; padding:4px; }
+#input:disabled { color:#555; }
+
+/* login overlay */
+#login { display:flex; flex-direction:column; align-items:center;
+  justify-content:center; height:100vh; position:relative; overflow:hidden;
+  -webkit-font-smoothing:none; -moz-osx-font-smoothing:grayscale; }
+
+/* scanlines */
+#login::before {
+  content:''; position:absolute; top:0; left:0; right:0; bottom:0;
+  background:
+    linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.25) 50%),
+    linear-gradient(90deg, rgba(255,0,0,0.06), rgba(0,255,0,0.02), rgba(0,0,255,0.06));
+  background-size: 100% 2px, 3px 100%;
+  pointer-events:none; z-index:2;
+}
+
+/* vignette */
+#login::after {
+  content:''; position:absolute; top:0; left:0; right:0; bottom:0;
+  box-shadow: inset 0 0 120px rgba(0,0,0,0.9);
+  pointer-events:none; z-index:3;
+}
+
+/* flicker overlay */
+#login-flicker {
+  position:absolute; top:0; left:0; right:0; bottom:0;
+  background: rgba(18,16,16,0.1);
+  pointer-events:none; z-index:4;
+  animation: flicker 0.15s infinite;
+}
+
+/* moving scan beam */
+#login-beam {
+  position:absolute; left:0; right:0; height:100px; z-index:5;
+  background: linear-gradient(0deg, rgba(0,0,0,0) 0%, rgba(255,255,255,0.15) 10%, rgba(0,0,0,0.05) 100%);
+  pointer-events:none; opacity:0.15;
+  animation: beam 8s linear infinite;
+}
+
+@keyframes flicker {
+  0%   { opacity:0.27; }
+  5%   { opacity:0.35; }
+  10%  { opacity:0.24; }
+  15%  { opacity:0.91; }
+  20%  { opacity:0.18; }
+  25%  { opacity:0.84; }
+  30%  { opacity:0.66; }
+  35%  { opacity:0.68; }
+  40%  { opacity:0.27; }
+  45%  { opacity:0.85; }
+  50%  { opacity:0.96; }
+  55%  { opacity:0.09; }
+  60%  { opacity:0.20; }
+  65%  { opacity:0.72; }
+  70%  { opacity:0.53; }
+  75%  { opacity:0.37; }
+  80%  { opacity:0.71; }
+  85%  { opacity:0.70; }
+  90%  { opacity:0.70; }
+  95%  { opacity:0.36; }
+  100% { opacity:0.24; }
+}
+
+@keyframes beam {
+  0%   { bottom:100%; }
+  80%  { bottom:100%; }
+  100% { bottom:0%; }
+}
+
+@keyframes textshadow {
+  0%   { text-shadow: 0.4px 0 1px rgba(0,30,255,0.5), -0.4px 0 1px rgba(255,0,80,0.3), 0 0 3px; }
+  10%  { text-shadow: 0.03px 0 1px rgba(0,30,255,0.5), -0.03px 0 1px rgba(255,0,80,0.3), 0 0 3px; }
+  20%  { text-shadow: 3.5px 0 1px rgba(0,30,255,0.5), -3.5px 0 1px rgba(255,0,80,0.3), 0 0 3px; }
+  30%  { text-shadow: 0.7px 0 1px rgba(0,30,255,0.5), -0.7px 0 1px rgba(255,0,80,0.3), 0 0 3px; }
+  40%  { text-shadow: 3.9px 0 1px rgba(0,30,255,0.5), -3.9px 0 1px rgba(255,0,80,0.3), 0 0 3px; }
+  50%  { text-shadow: 0.08px 0 1px rgba(0,30,255,0.5), -0.08px 0 1px rgba(255,0,80,0.3), 0 0 3px; }
+  60%  { text-shadow: 2.2px 0 1px rgba(0,30,255,0.5), -2.2px 0 1px rgba(255,0,80,0.3), 0 0 3px; }
+  70%  { text-shadow: 0.5px 0 1px rgba(0,30,255,0.5), -0.5px 0 1px rgba(255,0,80,0.3), 0 0 3px; }
+  80%  { text-shadow: 0.08px 0 1px rgba(0,30,255,0.5), -0.08px 0 1px rgba(255,0,80,0.3), 0 0 3px; }
+  90%  { text-shadow: 3.4px 0 1px rgba(0,30,255,0.5), -3.4px 0 1px rgba(255,0,80,0.3), 0 0 3px; }
+  100% { text-shadow: 2.6px 0 1px rgba(0,30,255,0.5), -2.6px 0 1px rgba(255,0,80,0.3), 0 0 3px; }
+}
+
+#login .banner { color:#0f0;
+  text-shadow: 0 0 5px #0f0, 0 0 10px rgba(0,255,0,0.5), 0 0 20px rgba(0,255,0,0.2);
+  font:12px/1.2 monospace; text-align:left; margin-bottom:2em;
+  white-space:pre; z-index:1; display:inline-block;
+  animation: textshadow 1.6s infinite; }
+
+#login .prompt-area { z-index:6; text-align:center; }
+#login .prompt-label { color:#0f0; font-size:16px;
+  text-shadow: 0 0 5px #0f0, 0 0 15px rgba(0,255,0,0.4);
+  margin-bottom:0.5em; letter-spacing:2px; }
+.login-row { display:flex; align-items:center; margin:0.3em 0;
+  justify-content:flex-end; }
+.login-label { color:#0f0; text-align:right; white-space:pre; }
+.login-field { background:#000; color:#0f0; border:none;
+  border-bottom:1px solid #0a0; font:inherit; padding:2px 4px;
+  width:12em; margin-left:2px; }
+.login-field:focus { outline:none; border-bottom-color:#0f0; }
+.login-buttons { margin-top:0.8em; }
+.login-btn { background:transparent; color:#0f0; border:1px solid #0a0;
+  font:inherit; padding:4px 12px; cursor:pointer; margin:0 4px; }
+.login-btn:hover { background:#0a0; color:#000; }
+.code-box { width:4.5em; text-align:center; text-transform:uppercase; }
+.code-dash { color:#0f0; margin:0 2px; }
+#invite-row { display:none; }
+#mode-toggle { color:#060; font-size:12px; cursor:pointer; margin-top:0.6em; }
+
+#login .footer { position:absolute; bottom:2em; color:#060;
+  font-size:11px; z-index:6; text-shadow: 0 0 4px #030;
+  letter-spacing:3px; }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div id="login-flicker"></div>
+  <div id="login-beam"></div>
+  <pre class="banner">
+                     _
+ ___ _ __ ___   ___ | |_ __ ___   ___   ___
+/ __| '_ ` _ \ / _ \| | '_ ` _ \ / _ \ / _ \
+\__ \ | | | | | (_) | | | | | | | (_) | (_) |
+|___/_| |_| |_|\___/|_|_| |_| |_|\___/ \___/
+</pre>
+  <div class="prompt-area">
+    <div class="prompt-label" id="login-title">LOGIN</div>
+    <form id="login-form">
+      <div class="login-row"><label class="login-label">User:</label><input class="login-field" id="f-name" autocomplete="off" autofocus></div>
+      <div class="login-row"><label class="login-label">Pass:</label><input class="login-field" id="f-pw" type="password"></div>
+      <div class="login-row" id="invite-row"><label class="login-label">Code:</label><input class="login-field code-box" id="f-c1" maxlength="4" size="4" autocomplete="off"><span class="code-dash">-</span><input class="login-field code-box" id="f-c2" maxlength="4" size="4" autocomplete="off"><span class="code-dash">-</span><input class="login-field code-box" id="f-c3" maxlength="4" size="4" autocomplete="off"></div>
+      <div class="login-buttons">
+        <button class="login-btn" type="submit" id="btn-go">CONNECT</button>
+      </div>
+      <div id="mode-toggle">need an account? click here</div>
+    </form>
+  </div>
+  <div class="footer">a smol MOO</div>
+</div>
+
+<div id="terminal">
+  <pre id="output"></pre>
+  <div id="status"></div>
+  <form id="cmd"><input id="input"></form>
+</div>
+
+<script>
+var sid = -1, loggedIn = false,
+    out = document.getElementById('output'),
+    stat = document.getElementById('status'),
+    inp = document.getElementById('input'),
+    login = document.getElementById('login'),
+    term = document.getElementById('terminal'),
+    cmdHist = [],
+    histIdx = -1;
+
+function escHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+var pal16 = ['#000','#c00','#0a0','#aa0','#00c','#a0a','#0aa','#ccc',
+             '#555','#f55','#5f5','#ff5','#55f','#f5f','#5ff','#fff'];
+
+function palRgb(n) {
+  if (n < 16) return pal16[n];
+  if (n >= 232) { var v = (n - 232) * 10 + 8; return 'rgb('+v+','+v+','+v+')'; }
+  n -= 16;
+  var r = n/36|0, g = (n%36)/6|0, b = n%6;
+  return 'rgb('+(r?r*40+55:0)+','+(g?g*40+55:0)+','+(b?b*40+55:0)+')';
+}
+
+function ansi2html(s) {
+  var out = '', i = 0, fg = null, bg = null, bold = false, italic = false, ul = 0;
+  function mkSpan() {
+    var st = [];
+    if (fg) st.push('color:'+fg);
+    if (bg) st.push('background:'+bg);
+    if (bold) st.push('font-weight:bold');
+    if (italic) st.push('font-style:italic');
+    if (ul) st.push('text-decoration:underline'+(ul===3?';text-decoration-style:wavy':''));
+    return st.length ? '<span style="'+st.join(';')+'">' : '<span>';
+  }
+  out += mkSpan();
+  while (i < s.length) {
+    var esc = s.indexOf('\x1b', i);
+    if (esc < 0) { out += escHtml(s.substring(i)); break; }
+    out += escHtml(s.substring(i, esc));
+    var m = s.substring(esc).match(/^\x1b\[([0-9;:]*)m/);
+    if (!m) { out += escHtml(s[esc]); i = esc + 1; continue; }
+    var parts = m[1].split(';');
+    for (var j = 0; j < parts.length; j++) {
+      var sub = parts[j].split(':'), c = +sub[0];
+      if (isNaN(c)) c = 0;
+      if (c === 0) { fg = bg = null; bold = false; italic = false; ul = 0; }
+      else if (c === 1) bold = true;
+      else if (c === 3) italic = true;
+      else if (c === 4) ul = sub.length > 1 ? +sub[1] : 1;
+      else if (c === 22) bold = false;
+      else if (c === 23) italic = false;
+      else if (c === 24) ul = 0;
+      else if (c >= 30 && c <= 37) fg = pal16[c - 30];
+      else if (c === 38 && parts[j+1] === '5') { fg = palRgb(+parts[j+2]); j += 2; }
+      else if (c === 38 && parts[j+1] === '2') { fg = 'rgb('+parts[j+2]+','+parts[j+3]+','+parts[j+4]+')'; j += 4; }
+      else if (c === 39) fg = null;
+      else if (c >= 40 && c <= 47) bg = pal16[c - 40];
+      else if (c === 48 && parts[j+1] === '5') { bg = palRgb(+parts[j+2]); j += 2; }
+      else if (c === 48 && parts[j+1] === '2') { bg = 'rgb('+parts[j+2]+','+parts[j+3]+','+parts[j+4]+')'; j += 4; }
+      else if (c === 49) bg = null;
+      else if (c >= 90 && c <= 97) fg = pal16[c - 82];
+      else if (c >= 100 && c <= 107) bg = pal16[c - 92];
+    }
+    out += '</span>' + mkSpan();
+    i = esc + m[0].length;
+  }
+  return out + '</span>';
+}
+
+function addOutput(s) {
+  var html = ansi2html(s) + '\n';
+  out.innerHTML += html;
+  var lines = out.textContent.split('\n').length;
+  if (lines > 1000) {
+    var nodes = out.childNodes, toRemove = lines - 1000;
+    for (var i = 0; i < nodes.length && toRemove > 0; i++) {
+      var node = nodes[i];
+      if (node.nodeType === 3) {
+        var newlines = (node.textContent.match(/\n/g) || []).length;
+        if (newlines >= toRemove) {
+          var text = node.textContent.split('\n').slice(toRemove).join('\n');
+          node.textContent = text;
+          toRemove = 0;
+        } else {
+          out.removeChild(node);
+          toRemove -= newlines;
+          i--;
+        }
+      } else if (node.nodeType === 1) {
+        var newlines = (node.textContent.match(/\n/g) || []).length;
+        if (newlines >= toRemove) {
+          var html = node.innerHTML.split('\n').slice(toRemove).join('\n');
+          node.innerHTML = html;
+          toRemove = 0;
+        } else {
+          out.removeChild(node);
+          toRemove -= newlines;
+          i--;
+        }
+      }
+    }
+  }
+  out.scrollTop = out.scrollHeight;
+}
+
+var src = new EventSource('/events');
+src.onmessage = function(e) {
+  var c = e.data.charAt(0), s = e.data.substring(1);
+  if (c >= 'A' && c <= 'Z') {
+    if (c === 'I') sid = s;
+    else if (c === 'E' || c === 'V') window.open(s, '_blank');
+  } else if (c === '+') {
+    if (!loggedIn) {
+      loggedIn = true;
+      login.style.display = 'none';
+      term.style.display = 'flex';
+    }
+    inp.disabled = false;
+    inp.focus();
+  } else if (c === '-') {
+    inp.disabled = true;
+    if (s) stat.textContent = s;
+  } else if (c === '=') {
+    stat.textContent = s;
+  } else if (c === '!') {
+    alert(s);
+  } else if (c === '^') {
+    location.reload();
+  } else {
+    addOutput(s);
+  }
+};
+
+var createMode = false,
+    fName = document.getElementById('f-name'),
+    fPw = document.getElementById('f-pw'),
+    cBox = [document.getElementById('f-c1'),
+            document.getElementById('f-c2'),
+            document.getElementById('f-c3')],
+    inviteRow = document.getElementById('invite-row'),
+    modeToggle = document.getElementById('mode-toggle'),
+    loginTitle = document.getElementById('login-title'),
+    btnGo = document.getElementById('btn-go');
+
+/* auto-advance code boxes */
+cBox.forEach(function(b, i) {
+  b.addEventListener('input', function() {
+    b.value = b.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (b.value.length >= 4 && i < 2) cBox[i + 1].focus();
+  });
+  b.addEventListener('keydown', function(e) {
+    if (e.key === 'Backspace' && !b.value && i > 0) cBox[i - 1].focus();
+  });
+  b.addEventListener('paste', function(e) {
+    var text = (e.clipboardData || window.clipboardData).getData('text');
+    if (text.replace(/[-\s]/g, '').length > 4) {
+      e.preventDefault();
+      setCode(text);
+    }
+  });
+});
+
+function getCode() {
+  return cBox[0].value + '-' + cBox[1].value + '-' + cBox[2].value;
+}
+
+function setCode(s) {
+  var parts = s.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  for (var i = 0; i < 3; i++)
+    cBox[i].value = parts.substr(i * 4, 4);
+}
+
+/* detect invite code from URL */
+(function() {
+  var m = location.pathname.match(/^\/invite\/(.+)/);
+  if (m) { createMode = true; setCode(decodeURIComponent(m[1])); }
+  if (createMode) {
+    inviteRow.style.display = 'flex';
+    loginTitle.textContent = 'CREATE ACCOUNT';
+    btnGo.textContent = 'CREATE';
+    modeToggle.textContent = 'have an account? click here';
+  }
+})();
+
+modeToggle.onclick = function() {
+  createMode = !createMode;
+  inviteRow.style.display = createMode ? 'flex' : 'none';
+  loginTitle.textContent = createMode ? 'CREATE ACCOUNT' : 'LOGIN';
+  btnGo.textContent = createMode ? 'CREATE' : 'CONNECT';
+  modeToggle.textContent = createMode
+    ? 'have an account? click here'
+    : 'need an account? click here';
+};
+
+document.getElementById('login-form').onsubmit = function(e) {
+  e.preventDefault();
+  var name = fName.value.trim(), pw = fPw.value;
+  if (!name || !pw || sid < 0) return;
+  if (createMode) {
+    var code = getCode();
+    if (code.length !== 14) return;
+    fetch('/cmd', {method:'POST', body: sid + ' create ' + name + ' ' + pw + ' ' + code});
+  } else {
+    fetch('/cmd', {method:'POST', body: sid + ' connect ' + name + ' ' + pw});
+  }
+};
+
+inp.onkeydown = function(e) {
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (histIdx < 0) histIdx = cmdHist.length;
+    if (histIdx > 0) inp.value = cmdHist[--histIdx];
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (histIdx >= 0 && histIdx < cmdHist.length - 1) {
+      inp.value = cmdHist[++histIdx];
+    } else {
+      histIdx = -1;
+      inp.value = '';
+    }
+  }
+};
+
+document.getElementById('cmd').onsubmit = function(e) {
+  e.preventDefault();
+  if (inp.value && sid >= 0) {
+    cmdHist.push(inp.value);
+    if (cmdHist.length > 50) cmdHist.shift();
+    histIdx = -1;
+    fetch('/cmd', {method:'POST', body: sid + ' ' + inp.value})
+      .then(function(r) { if (r.ok) inp.value = ''; });
+  }
+};
+</script>
+</body>
+</html>

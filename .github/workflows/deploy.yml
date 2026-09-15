@@ -1,0 +1,65 @@
+name: Build, Test & Deploy
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross-compiler
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+
+      - name: Cross-compile (aarch64)
+        run: make CC=aarch64-linux-gnu-gcc OBJCOPY=aarch64-linux-gnu-objcopy STRIP=aarch64-linux-gnu-strip
+
+      - name: Build native and test
+        run: |
+          make clean
+          make
+          make install
+          make test
+
+      - name: Rebuild aarch64 for deploy
+        run: |
+          make clean
+          make CC=aarch64-linux-gnu-gcc OBJCOPY=aarch64-linux-gnu-objcopy STRIP=aarch64-linux-gnu-strip
+
+      - name: Upload artifact
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smolmoo-aarch64
+          path: smolmoo
+
+  deploy:
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: smolmoo-aarch64
+
+      - name: Deploy to OCI
+        env:
+          SSH_KEY: ${{ secrets.OCI_SSH_KEY }}
+          HOST: ${{ secrets.OCI_HOST }}
+          USER: ${{ secrets.OCI_USER }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          SSH_OPTS="-o StrictHostKeyChecking=no -i ~/.ssh/deploy_key"
+          scp $SSH_OPTS smolmoo "${USER}@${HOST}:/tmp/smolmoo"
+          ssh $SSH_OPTS "${USER}@${HOST}" '
+            sudo mv /tmp/smolmoo /opt/smolmoo/smolmoo
+            sudo chown smolmoo:smolmoo /opt/smolmoo/smolmoo
+            sudo chmod 755 /opt/smolmoo/smolmoo
+            sudo systemctl restart smolmoo
+          '

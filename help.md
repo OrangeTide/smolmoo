@@ -1,0 +1,139 @@
+<!-- SPDX-License-Identifier: 0BSD OR CC0-1.0 -->
+# smolmoo help topics
+
+The general commands every smolmoo world shares: chat, movement, building,
+feedback, and the web tools. Game-specific commands (combat, gear, skills) are
+documented with the game itself; on the ChromeSix world see
+`chromesix-smolmoo.md`.
+
+Each section below is one help topic. The same topics are seeded on the
+in-game help object (`#0.help`), so `help <topic>` prints a short version of the
+matching entry and `help` alone lists the topics. The blurbs there are the
+quick reference; this file is the full one. Editing a topic property on
+`#0.help` (see the `building` and `editor` topics) changes what players read
+in-game.
+
+## say
+
+    say <text>
+    "<text>
+
+Speak aloud to everyone in your current room. Others see `<name> says,
+"<text>"`; you see `You say, "<text>"`. The bare `"` is a shorthand, so
+`"hello` reads the same as `say hello`.
+
+## emote
+
+    emote <action>
+    :<action>
+    ::<possessive action>
+
+Describe an action in the third person to the room. `emote waves` shows
+`<name> waves`. The `:` prefix is the shorthand. `::` glues the text directly
+onto your name for possessives, so `::'s datapad beeps` shows `<name>'s datapad
+beeps`.
+
+## whisper
+
+    whisper <player> <text>
+
+Send a private line to one player who is in the room with you. Only that player
+sees it. Use `page` to reach someone elsewhere.
+
+## page
+
+    page <player> <text>
+
+Send a private line to a connected player anywhere on the server, in the room
+or not. If they are not connected you are told so.
+
+## look
+
+    look
+
+Show your current room: its name, description, the exits leading out, and who
+else is present. Free to use any time.
+
+## help
+
+    help
+    help <topic>
+
+`help` lists the available topics. `help <topic>` prints the entry for one of
+them, for example `help emote`. This page is the long form of the same content.
+
+## quit
+
+    quit
+
+Disconnect from the server. Your character and its state persist; log back in
+to resume.
+
+## building
+
+Create and edit objects. Most building commands are wizard or owner gated.
+
+    @create #<parent>        make a new object under a parent prototype
+    @set #N.prop=value       set a property (also `&N.prop=value`)
+    @examine #N              show an object's owner, group, and property flags
+    @edit #N.prop            open a property in the web editor (read-write)
+    @view #N.prop            open a property in the web viewer (read-only)
+    @chmod #N.prop=rw,r,r    set per-property permission flags
+    @chown #N=#M             transfer ownership (wizard only)
+    @chgrp #N=#G             set an object's group
+
+Permission flags are three comma-separated owner/group/world triplets of `r`
+and `w`; the default is `rw,r,r`. See also the `editor` and `groups` topics.
+
+## groups
+
+    @group create <name>              create a permission group
+    @group add <group> <player>       add a member (owner or wizard)
+    @group remove <group> <player>    remove a member
+    @group list [<group>]             list groups, or one group's members
+
+Groups let several accounts share write access to an object through its `group`
+field and the group triplet of each property's flags.
+
+## invite
+
+    @invite        list your invite codes and how many uses remain
+    @invite new    create an additional code (admin only)
+
+New accounts join with an invite code. Each account starts with three
+single-use codes; share the code, or a link of the form
+`http://<server>/invite/<CODE>`, which pre-fills the sign-up form. Exhausted
+codes are refreshed on a 24-hour timer.
+
+## feedback
+
+    @gripe <text>
+    @typo <text>
+    @bug <text>
+    @idea <text>
+    @suggest <text>
+    @comment <text>
+
+Send a note to the server operators, tagged by kind. The message is logged with
+your name and room. Use it to report a typo, a bug, or an idea without leaving
+the game.
+
+## editor
+
+The web property editor edits any property you have write access to, in a
+browser tab with live markdown highlighting.
+
+    @edit #N.prop    open the editor (read-write)
+    @view #N.prop    open the viewer (read-only)
+
+Ctrl+S (or Cmd+S) saves. The underlying HTTP endpoints are `GET`/`POST
+/prop?obj=N&prop=P&sid=S` for raw values and `GET /edit` and `GET /view` for
+the pages. Permission follows the owner/group/world model.
+
+## wiki
+
+The server can host a wiki: `#0.wiki` points at an object whose properties are
+pages, each viewable and editable through the web editor. An operator sets it
+up by creating an object and registering it with `@set #0.wiki=#<id>`. Pages
+use the same markdown subset as the property viewer, where the syntax
+characters stay visible in place.

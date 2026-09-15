@@ -1,0 +1,368 @@
+#0
+owner=#0
+name=System Object
+description=Root ancestor of all objects.
+room=#100
+char=#200
+item=#300
+verb=#400
+acct=#500
+invite=#600
+group=#700
+help=#800
+
+#100 #0
+owner=#0
+name=Room Prototype
+description=Ancestor of all room objects.
+
+#200 #0
+owner=#0
+name=Character Prototype
+description=Ancestor of all character objects.
+agi=6
+mig=6
+wit=6
+cha=6
+hook=street
+armor=0
+
+#300 #0
+owner=#0
+name=Item Prototype
+description=Ancestor of all item objects.
+
+#400 #0
+owner=#0
+name=Verb Prototype
+
+#101 #100
+owner=#0
+name=The Lobby
+description=A grand entry hall.
+vendor=213
+span=2
+
+#301 #300
+owner=#0
+name=Rusty Sword
+description=A battered old blade.
+location=#101
+
+#302 #300
+owner=#0
+name=Red Potion
+description=A bubbling red liquid.
+location=#101
+
+#500 #0
+owner=#0
+name=Account Prototype
+
+#600 #0
+owner=#0
+name=Invite Prototype
+
+#700 #0
+owner=#0
+name=Group Prototype
+
+#201 #200
+owner=#0
+name=raider
+description=A twitchy street tough looking for trouble.
+location=#101
+grade=mook
+wielded=305
+
+#303 #300
+owner=#0
+name=pistol
+description=A scuffed polymer sidearm.
+location=#101
+dmg=12
+range=short
+skill=firearms
+weight=2
+
+#304 #300
+owner=#0
+name=knife
+description=A worn combat knife.
+location=#101
+dmg=9
+range=engaged
+skill=melee
+weight=1
+
+#305 #300
+owner=#0
+name=fists
+description=Bare hands.
+dmg=6
+range=engaged
+skill=brawl
+
+#306 #300
+owner=#0
+name=vest
+description=A padded armor vest.
+location=#101
+soak=2
+part=torso
+weight=3
+
+#308 #300
+owner=#0
+name=satchel
+description=A worn field satchel with a wide strap.
+location=#101
+cap=6
+part=back
+weight=1
+
+#309 #300
+owner=#0
+name=stim
+description=A single-use combat stim.
+location=#308
+
+#310 #300
+owner=#0
+name=credchip
+description=An anonymous credit chip.
+location=#308
+
+#311 #300
+owner=#0
+name=carbine
+description=A short carbine with a two-round test magazine.
+location=#101
+dmg=6
+range=short
+skill=firearms
+clip=2
+ammo=0
+weight=1
+
+#312 #300
+owner=#0
+name=crate
+description=A heavy cargo crate with a haul strap.
+location=#101
+part=waist
+weight=7
+
+#313 #300
+owner=#0
+name=pouch
+description=A small belt pouch with room for a single item.
+location=#101
+cap=1
+weight=1
+
+#202 #200
+owner=#0
+name=enforcer
+description=A heavy in reinforced synthweave, half behind a barricade.
+location=#101
+grade=tough
+mig=9
+cover=2
+wielded=305
+
+#203 #200
+owner=#0
+name=gunner
+description=A jittery shooter hanging back with a holdout pistol.
+location=#101
+grade=mook
+wielded=307
+
+#307 #300
+owner=#0
+name=holdout
+description=A compact holdout pistol.
+location=#101
+dmg=6
+range=short
+skill=firearms
+weight=1
+
+#204 #200
+owner=#0
+name=brute
+description=A slab of muscle cracking its knuckles.
+location=#101
+grade=tough
+mig=9
+wielded=305
+
+#205 #200
+owner=#0
+name=sentry
+description=A wiry ganger in a fight.
+location=#101
+grade=tough
+mig=9
+wielded=305
+
+#206 #200
+owner=#0
+name=picket
+description=A second ganger closing in.
+location=#101
+grade=tough
+mig=9
+wielded=305
+
+#207 #200
+owner=#0
+name=straggler
+description=A third ganger looking for an opening.
+location=#101
+grade=tough
+mig=9
+wielded=305
+
+#208 #200
+owner=#0
+name=lookout
+description=An inattentive sentry, back turned.
+location=#101
+grade=tough
+mig=9
+wit=0
+wielded=305
+
+#102 #100
+owner=#0
+name=The Alley
+description=A narrow service alley behind the lobby.
+outdoor=1
+
+#103 #100
+owner=#0
+name=The Vault
+description=A cramped strongroom with no space to back off.
+span=0
+
+#110 #100
+owner=#0
+name=alley
+description=A side passage out to the alley.
+location=#101
+dest=102
+
+#111 #100
+owner=#0
+name=lobby
+description=The door back into the lobby.
+location=#102
+dest=101
+
+#116 #100
+owner=#0
+name=vault
+description=A blast door into the strongroom.
+location=#101
+dest=103
+
+#117 #100
+owner=#0
+name=out
+description=The way back out to the lobby.
+location=#103
+dest=101
+
+#215 #200
+owner=#0
+name=drone
+description=A boxy security drone that fills the strongroom.
+location=#103
+grade=mook
+wielded=305
+
+#209 #200
+owner=#0
+name=thug
+description=A slow bruiser blocking the way.
+location=#101
+grade=tough
+mig=9
+
+#210 #200
+owner=#0
+name=informant
+description=A jittery data broker who folds under pressure.
+location=#101
+wit=0
+cha=0
+leverage=18
+
+#211 #200
+owner=#0
+name=broker
+description=A smooth fixer clutching a datachip you need.
+location=#101
+wit=0
+cha=0
+leverage=18
+on_yield=409
+
+#212 #200
+owner=#0
+name=menace
+description=A looming heavy who leans on you hard.
+location=#101
+cha=15
+leverage=15
+
+#213 #200
+owner=#0
+name=quartermaster
+description=A supply broker running a stall for the Combine.
+location=#101
+faction=combine
+
+#214 #200
+owner=#0
+name=dummy
+description=A padded training dummy on a weighted base.
+location=#101
+grade=tough
+mig=9
+agi=0
+
+#800 #0
+owner=#0
+name=Help
+description=General command help topics (full reference in help.md).
+say=say <text>   (alias: ")
+    Speak aloud to everyone in your room.
+emote=emote <action>   (aliases: : and ::)
+    Describe an action to the room in the third person.
+    :: glues the text onto your name for possessives.
+whisper=whisper <player> <text>
+    A private line to one player in the room with you.
+page=page <player> <text>
+    A private line to a connected player anywhere on the server.
+look=look
+    Show your room: its description, exits, and who is here.
+help=help [topic]
+    'help' lists topics; 'help <topic>' prints one. See help.md for detail.
+quit=quit
+    Disconnect. Your character and its state persist.
+building=@create #<parent>  @set #N.prop=value  @examine #N
+    @edit #N.prop  @view #N.prop  @chmod #N.prop=rw,r,r  @chown #N=#M  @chgrp #N=#G
+    Create and edit objects (wizard or owner gated). See the editor topic.
+groups=@group create|add|remove|list
+    Permission groups: share write access to an object across accounts.
+invite=@invite  |  @invite new
+    List your invite codes, or (admin) make another. New accounts join by code.
+feedback=@gripe|@typo|@bug|@idea|@suggest|@comment <text>
+    Send a tagged note to the operators, logged with your name and room.
+editor=@edit #N.prop  |  @view #N.prop
+    The web property editor, live markdown highlighting, Ctrl+S to save.
+wiki=A wiki object (#0.wiki) holds pages as its properties.
+    Set it up with @set #0.wiki=#<id>; edit pages in the web editor.

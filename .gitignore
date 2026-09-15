@@ -1,0 +1,11 @@
+*.swp
+*~
+
+/_build/
+*.elf
+/depot
+
+# Junk
+/REF/
+/JUNK/
+/OLD/

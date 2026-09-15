@@ -1,0 +1,215 @@
+(* MooScript Grammar — EBNF *)
+(* Copyright (c) 2026 Jon Mayo *)
+(* SPDX-License-Identifier: 0BSD OR CC0-1.0 *)
+(* A statically-typed scripting language for MUD/MOO systems *)
+
+program         = [ module_decl ] { import_decl } { top_level } ;
+
+module_decl     = "module" IDENT ";" ;
+
+import_decl     = "import" IDENT { "," IDENT } ";" ;
+
+top_level       = verb_def
+                | func_def
+                | const_decl
+                | interface_def
+                | extern_decl
+                ;
+
+(* --- Verb and function definitions --- *)
+
+verb_def        = [ "export" ] "verb" IDENT "(" [ param_list ] ")" [ "->" type ] stmts "endverb" ;
+func_def        = [ "export" ] "func" IDENT "(" [ param_list ] ")" [ "->" type ] stmts "endfunc" ;
+
+extern_decl     = "extern" [ IDENT "as" ] "verb" IDENT "(" [ param_list ] ")" ";"
+                | "extern" [ IDENT "as" ] "func" IDENT "(" [ param_list ] ")" "->" type ";"
+                ;
+
+param_list      = param { "," param } ;
+param           = IDENT ":" type ;
+
+(* --- Interfaces --- *)
+
+interface_def   = "interface" IDENT { iface_member } "endinterface" ;
+
+iface_member    = IDENT ":" type ";"                       (* property *)
+                | IDENT "(" [ param_list ] ")" ";"         (* verb *)
+                ;
+
+(* --- Types --- *)
+
+type            = "int"
+                | "str"
+                | "obj"
+                | "bool"
+                | "err"
+                | "float"
+                | "prop"
+                | "list" "<" type ">"
+                | IDENT                                    (* interface name *)
+                ;
+
+(* --- Statements --- *)
+
+stmts           = { statement } ;
+
+statement       = var_decl
+                | assign_stmt
+                | if_stmt
+                | for_stmt
+                | while_stmt
+                | switch_stmt
+                | return_stmt
+                | defer_stmt
+                | panic_stmt
+                | trace_stmt
+                | break_stmt
+                | continue_stmt
+                | expr_stmt
+                | TRACE_COMMENT
+                ;
+
+var_decl        = "var" IDENT ":" type [ "=" expr ] ";" ;
+
+const_decl      = [ "export" ] "const" IDENT ":" type "=" expr ";" ;
+
+assign_stmt     = lvalue "=" expr ";"
+                | lvalue "+=" expr ";"
+                | lvalue "-=" expr ";"
+                ;
+
+lvalue          = IDENT
+                | expr "." IDENT
+                | expr "." "(" expr ")"
+                | expr "[" expr "]"
+                ;
+
+if_stmt         = "if" "(" expr ")" stmts
+                  { "elseif" "(" expr ")" stmts }
+                  [ "else" stmts ]
+                  "endif"
+                ;
+
+for_stmt        = "for" IDENT "in" expr stmts "endfor"
+                | "for" IDENT "in" expr ".." expr stmts "endfor"
+                ;
+
+while_stmt      = "while" "(" expr ")" stmts "endwhile" ;
+
+switch_stmt     = value_switch | type_switch ;
+
+value_switch    = "switch" "(" expr ")"
+                  { "case" case_vals ":" stmts }
+                  [ "else" ":" stmts ]
+                  "endswitch"
+                ;
+
+case_vals       = case_val { "," case_val } ;
+case_val        = expr [ ".." expr ] ;
+
+type_switch     = "switch" "type" "(" expr ")"
+                  { "case" IDENT ":" stmts }
+                  [ "else" ":" stmts ]
+                  "endswitch"
+                ;
+
+return_stmt     = "return" [ expr ] ";"
+                | "return" ".." expr ";"
+                ;
+
+defer_stmt      = "defer" stmts "enddefer" ;
+
+panic_stmt      = "panic" "(" expr ")" ";" ;
+
+trace_stmt      = "trace" expr ";"              (* debug output: HC_PRINT / stderr *)
+                ;
+
+break_stmt      = "break" ";" ;
+
+continue_stmt   = "continue" ";" ;
+
+expr_stmt       = expr ";" ;
+
+(* --- Expressions --- *)
+(* Precedence from lowest to highest *)
+
+expr            = or_expr ;
+
+or_expr         = and_expr { "||" and_expr } ;
+
+and_expr        = equality_expr { "&&" equality_expr } ;
+
+equality_expr   = comparison_expr { ( "==" | "!=" ) comparison_expr } ;
+
+comparison_expr = membership_expr { ( "<" | "<=" | ">" | ">=" ) membership_expr } ;
+
+membership_expr = add_expr [ ( "in" add_expr | "is" IDENT ) ] ;
+
+add_expr        = mul_expr { ( "+" | "-" ) mul_expr } ;
+
+mul_expr        = unary_expr { ( "*" | "/" | "%" ) unary_expr } ;
+
+unary_expr      = ( "!" | "-" ) unary_expr
+                | postfix_expr
+                ;
+
+postfix_expr    = primary { postfix_op } ;
+
+postfix_op      = "." IDENT                     (* property access: static name *)
+                | "." "(" expr ")"               (* property access: computed name *)
+                | ":" IDENT "(" [ arg_list ] ")" (* verb call *)
+                | "[" expr "]"                   (* index *)
+                | "[" expr ".." expr "]"         (* slice *)
+                | "(" [ arg_list ] ")"           (* function call *)
+                | "as" IDENT                     (* narrowing cast *)
+                ;
+
+primary         = INT_LIT
+                | FLOAT_LIT
+                | STR_LIT
+                | OBJ_LIT                        (* $"path" *)
+                | ERR_LIT                        (* $E_TYPE etc *)
+                | "true" | "false"
+                | "nil"
+                | IDENT
+                | "recover" "(" ")"
+                | "{" [ expr { "," expr } ] "}"  (* list literal *)
+                | "(" expr ")"
+                ;
+
+arg_list        = expr { "," expr } ;
+
+(* --- Lexical elements --- *)
+
+IDENT           = LETTER { LETTER | DIGIT | "_" } ;
+INT_LIT         = DIGIT { DIGIT }
+                | "0x" HEX_DIGIT { HEX_DIGIT }
+                ;
+FLOAT_LIT       = DIGIT { DIGIT } "." DIGIT { DIGIT } [ ( "e" | "E" ) [ "+" | "-" ] DIGIT { DIGIT } ]
+                | DIGIT { DIGIT } ( "e" | "E" ) [ "+" | "-" ] DIGIT { DIGIT }
+                ;
+STR_LIT         = '"' { CHAR | ESCAPE } '"' ;
+OBJ_LIT         = '$' '"' { CHAR | ESCAPE } '"' ;
+ERR_LIT         = '$' IDENT ;
+
+LETTER          = "a".."z" | "A".."Z" | "_" ;
+DIGIT           = "0".."9" ;
+HEX_DIGIT       = DIGIT | "a".."f" | "A".."F" ;
+CHAR            = (* any character except '"' and '\' *) ;
+ESCAPE          = "\" ( "n" | "t" | "r" | "\" | '"' | "x" HEX_DIGIT HEX_DIGIT ) ;
+
+(* --- Comments --- *)
+(* //  to end of line — always discarded *)
+(* /* ... */ block comment — always discarded *)
+(* /// to end of line — trace comment: emits debug output when tracing *)
+(*     is enabled, otherwise discarded as a regular comment.           *)
+(*     no expression evaluation — raw text only.                       *)
+
+(* --- Keywords --- *)
+(* verb endverb func endfunc var const if elseif else endif for in endfor
+   while endwhile break continue return defer enddefer
+   panic recover trace switch endswitch case
+   interface endinterface is as
+   module import export extern
+   true false nil type
+   int str obj bool err float list prop *)
