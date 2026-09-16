@@ -3294,6 +3294,99 @@ cmd_page(int sid, const char *args)
              "That person is not connected.");
 }
 
+/* @program support: compile MooScript source into a verb ELF and store it in
+ * the CAS. The SDK toolchain (next to the server binary) and vm_rv.ld (in the
+ * working directory) must be present at runtime. On success returns OK with
+ * the b2 hash in hash_out (at least 65 bytes); on a compiler error, sends the
+ * diagnostics to the session and returns ERR. The compile runs synchronously,
+ * briefly blocking the single-threaded server. */
+static int
+program_compile(int sid, const char *src, char *hash_out)
+{
+    char sdk[512], path[640], cmd[8192];
+    ssize_t n;
+    FILE *f;
+    char *sl;
+    long len;
+    unsigned char *data;
+
+    n = readlink("/proc/self/exe", sdk, sizeof(sdk) - 5);
+    if (n <= 0) {
+        session_write(sid, "@program: cannot locate the SDK.");
+        return ERR;
+    }
+    sdk[n] = '\0';
+    sl = strrchr(sdk, '/');
+    if (!sl) {
+        session_write(sid, "@program: SDK path error.");
+        return ERR;
+    }
+    strcpy(sl + 1, "sdk");
+
+    snprintf(path, sizeof(path), "%s/_prog.moo", depot_dir);
+    f = fopen(path, "w");
+    if (!f) {
+        session_write(sid, "@program: cannot write temp source.");
+        return ERR;
+    }
+    fwrite(src, 1, strlen(src), f);
+    fputc('\n', f);
+    fclose(f);
+
+    snprintf(cmd, sizeof(cmd),
+        "%s/skj-mooc-rv -o %s/_prog.s %s/_prog.moo 2>%s/_prog.err && "
+        "%s/skj-as-rv -o %s/_prog.o %s/_prog.s 2>>%s/_prog.err && "
+        "%s/skj-ld-rv -T vm_rv.ld -o %s/_prog.elf %s/_prog.o "
+        "%s/moo_rt.o %s/host_vm.o %s/str.o %s/list.o %s/moo_syscall_rv.o "
+        "2>>%s/_prog.err",
+        sdk, depot_dir, depot_dir, depot_dir,
+        sdk, depot_dir, depot_dir, depot_dir,
+        sdk, depot_dir, depot_dir,
+        sdk, sdk, sdk, sdk, sdk, depot_dir);
+
+    if (system(cmd) != 0) {
+        char err[1024];
+        size_t rd = 0;
+
+        snprintf(path, sizeof(path), "%s/_prog.err", depot_dir);
+        f = fopen(path, "r");
+        if (f) {
+            rd = fread(err, 1, sizeof(err) - 1, f);
+            fclose(f);
+        }
+        err[rd] = '\0';
+        session_write(sid, "@program: compile failed:");
+        if (rd)
+            session_write(sid, err);
+        return ERR;
+    }
+
+    snprintf(path, sizeof(path), "%s/_prog.elf", depot_dir);
+    f = fopen(path, "rb");
+    if (!f) {
+        session_write(sid, "@program: missing compiled output.");
+        return ERR;
+    }
+    fseek(f, 0, SEEK_END);
+    len = ftell(f);
+    rewind(f);
+    data = malloc(len > 0 ? (size_t)len : 1);
+    if (!data || len <= 0 || fread(data, 1, len, f) != (size_t)len) {
+        free(data);
+        fclose(f);
+        session_write(sid, "@program: read error.");
+        return ERR;
+    }
+    fclose(f);
+    if (cas_put(cas_store, data, len, hash_out) != CAS_OK) {
+        free(data);
+        session_write(sid, "@program: CAS store failed.");
+        return ERR;
+    }
+    free(data);
+    return OK;
+}
+
 static void
 cmd_feedback(int sid, const char *args)
 {
@@ -3956,6 +4049,44 @@ cmd_feedback(int sid, const char *args)
                 obj_fmt(parent, id2, sizeof(id2)));
         }
         session_write(sid, buf);
+        return;
+    }
+
+    /* Handle @program command: compile #N.src (MooScript) into #N.elf */
+    if (strcmp(tag, "program") == 0) {
+        int objid = OBJ_NONE;
+        struct obj *o;
+        const char *src, *elf;
+        char hash[65], elf_val[128];
+        int mode = 0755, em;
+        char h[65];
+
+        if (*p == '#')
+            objid = strtol(p + 1, NULL, 10);
+        o = (objid != OBJ_NONE) ? obj_find(objid) : NULL;
+        if (!o) {
+            session_write(sid,
+                "Usage: @program #<object> (write its src property first)");
+            return;
+        }
+        if (!is_wizard(sid) && !obj_owner_match(o, sid)) {
+            session_write(sid, "You don't own that object.");
+            return;
+        }
+        src = prop_str(o, make_atom("src"));
+        if (!src || !*src) {
+            session_write(sid,
+                "No src to compile. Use @edit #N.src to write MooScript.");
+            return;
+        }
+        elf = prop_str(o, make_atom("elf"));
+        if (elf && elf_parse(elf, &em, h, sizeof(h)) == OK)
+            mode = em;
+        if (program_compile(sid, src, hash) != OK)
+            return;
+        snprintf(elf_val, sizeof(elf_val), "[0%o,b2:%s]", mode, hash);
+        prop_set(o, make_atom("elf"), val_str(elf_val));
+        session_write(sid, "Programmed.");
         return;
     }
 

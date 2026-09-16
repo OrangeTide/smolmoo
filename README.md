@@ -349,6 +349,27 @@ mode.
     GET  /edit?obj=N&prop=P&sid=S    editor page
     GET  /view?obj=N&prop=P&sid=S    viewer page
 
+## Programming Verbs
+
+New verbs can be written in MooScript from inside the game, without
+rebuilding the server:
+
+    @create #400          make a verb object under the Verb Prototype
+    @set #N.verb=greet    set the command word players will type
+    @edit #N.src          write the MooScript source in the web editor
+    @program #N           compile #N.src and attach it as the verb
+
+`@program` reads the object's `src` property, compiles it with the
+bundled SDK toolchain, stores the resulting RISC-V ELF in the depot,
+and sets the object's `elf` property. The source stays on `src`, so
+you can re-edit and re-`@program` at any time. You may only program an
+object you own.
+
+The compile runs on the server, so a server that hosts in-game
+programming must ship the SDK (`_build/sdk`, from `make install`) and
+`vm_rv.ld` alongside the binary and depot. A serve-only deployment
+that never uses `@program` does not need them.
+
 ## Wiki
 
 `#0.wiki` points to a dedicated wiki object. Properties on that

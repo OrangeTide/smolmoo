@@ -271,6 +271,19 @@ check_log /tmp/smolmoo_p1.log 'REFLECT:MATCH' "verb call delivers object arg as 
 check_log /tmp/smolmoo_p1.log 'REFLECT:NOMATCH' "verb call distinguishes object args"
 check_log /tmp/smolmoo_p1.log 'GREETED:hi' "verb call delivers string arg as argstr"
 
+# --- M21: @program compiles MooScript from a property into a live verb ---
+curl -sf -X POST -d "$SID1 @create #400" http://localhost:$PORT/cmd >/dev/null
+PROG=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+printf 'verb main(player: obj, room: obj)\n    player:tell("PROGRAMMED OK");\nendverb\n' \
+	| curl -sf -X POST --data-binary @- \
+	  "http://localhost:$PORT/prop?obj=$PROG&prop=src&sid=$SID1" >/dev/null
+curl -sf -X POST -d "myprog" \
+	"http://localhost:$PORT/prop?obj=$PROG&prop=verb&sid=$SID1" >/dev/null
+curl -sf -X POST -d "$SID1 @program #$PROG" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Programmed.' "@program compiles source"
+curl -sf -X POST -d "$SID1 myprog" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'PROGRAMMED OK' "@program verb runs"
+
 # --- M25a: sys_random hypercall ---
 curl -sf -X POST -d "$SID1 testrandom" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'RANDOM:OK' "sys_random in range"

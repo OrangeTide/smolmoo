@@ -81,9 +81,24 @@ Create and edit objects. Most building commands are wizard or owner gated.
     @chmod #N.prop=rw,r,r    set per-property permission flags
     @chown #N=#M             transfer ownership (wizard only)
     @chgrp #N=#G             set an object's group
+    @program #N              compile the object's src into a verb
 
 Permission flags are three comma-separated owner/group/world triplets of `r`
-and `w`; the default is `rw,r,r`. See also the `editor` and `groups` topics.
+and `w`; the default is `rw,r,r`. See also the `editor`, `programming`, and
+`groups` topics.
+
+## programming
+
+Write a verb in MooScript without rebuilding the server.
+
+    @create #400             make a verb object under the Verb Prototype
+    @set #N.verb=<word>      the command word players type
+    @edit #N.src             write the MooScript source in the web editor
+    @program #N              compile #N.src, storing the result on #N.elf
+
+A verb's entry is `verb main(player, room, this, dobj, iobj, arg)`; declare
+only the leading parameters it uses. Compiling requires the server to have the
+bundled SDK toolchain present. You can only program an object you own.
 
 ## groups
 
