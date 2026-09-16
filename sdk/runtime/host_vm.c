@@ -36,6 +36,7 @@ extern int sys_next(int container, int after);
 extern int sys_create(int parent);
 extern int sys_recycle(int obj);
 extern int sys_call(int target, const char *verb, const char *argstr);
+extern int sys_hasverb(int target, const char *verb);
 extern int write(int fd, const void *buf, int len);
 
 static int
@@ -280,14 +281,13 @@ __moo_obj_has_prop(const char *obj, struct moo_str *name)
     return sys_getprop(id, nbuf, buf, 4) >= 0;
 }
 
-/* Interface checks that ask whether an object defines a verb need a verb
- * resolution primitive, which the ABI does not expose (verbs are matched by
- * the host's dispatcher, not queried from a running verb). Reports false
- * until such a syscall exists. */
+/* Reports whether the object responds to a verb the caller may run, via
+ * sys_hasverb (the same resolution sys_call uses). */
 int
 __moo_obj_has_verb(const char *obj, struct moo_str *name)
 {
-    (void)obj;
-    (void)name;
-    return 0;
+    char nbuf[64];
+
+    str_to_cstr(name, nbuf, sizeof(nbuf));
+    return sys_hasverb((int)obj, nbuf);
 }

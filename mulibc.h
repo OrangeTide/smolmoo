@@ -28,6 +28,7 @@ typedef int ssize_t;
 #define SYS_CREATE  16
 #define SYS_RECYCLE 17
 #define SYS_CALL    18
+#define SYS_HASVERB 19
 
 /* Verb arguments passed by host at fixed address */
 struct vm_args {
@@ -86,6 +87,7 @@ extern int sys_rollup(int obj, const char *field);
 extern int sys_create(int parent);
 extern int sys_recycle(int obj);
 extern int sys_call(int target, const char *verb, const char *argstr);
+extern int sys_hasverb(int target, const char *verb);
 
 /* puts — write string + newline to stdout */
 static int

@@ -13,5 +13,10 @@ _start(void)
         puts("CALL:OK");
     else
         puts("CALL:FAIL");
+
+    /* sys_hasverb: greet resolves, a made-up name does not */
+    puts(sys_hasverb(vm_args->room, "greet") ? "HASVERB:YES" : "HASVERB:NO");
+    puts(sys_hasverb(vm_args->room, "nonesuch") ? "HASVERB:BAD"
+                                                : "HASVERB:MISS");
     _exit(0);
 }

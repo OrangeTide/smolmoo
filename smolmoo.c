@@ -2318,6 +2318,19 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
         RET(0);
         return 0;
     }
+    case 19: { /* sys_hasverb(target, verb) → 1 if callable, else 0 */
+        int target = (int)ARG(0);
+        char verb[64];
+        struct verb_match m;
+
+        vm_read_str(vm, ARG(1), verb, sizeof(verb));
+        if (!obj_find(target)) {
+            RET(0);
+            return 0;
+        }
+        RET(verb_resolve_on(target, verb, vm->sid, &m) == OK ? 1 : 0);
+        return 0;
+    }
     }
     return -1;
 

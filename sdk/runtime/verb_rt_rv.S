@@ -34,6 +34,7 @@
     .globl sys_create
     .globl sys_recycle
     .globl sys_call
+    .globl sys_hasverb
 
 _exit:                                  /* void _exit(int status)  a0=status */
     li      a7, 0
@@ -128,6 +129,11 @@ sys_recycle:                            /* a0=obj -> a0=result */
 
 sys_call:                               /* a0=target, a1=verb, a2=argstr */
     li      a7, 18
+    ecall
+    ret
+
+sys_hasverb:                            /* a0=target, a1=verb -> a0=0/1 */
+    li      a7, 19
     ecall
     ret
 

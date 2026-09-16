@@ -262,6 +262,8 @@ check_log /tmp/smolmoo_p1.log 'CREATE:OK' "sys_create/recycle"
 curl -sf -X POST -d "$SID1 testcall" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'CALL:OK' "sys_call resolves"
 check_log /tmp/smolmoo_p1.log 'GREETED:world' "sys_call runs target verb"
+check_log /tmp/smolmoo_p1.log 'HASVERB:YES' "sys_hasverb finds a verb"
+check_log /tmp/smolmoo_p1.log 'HASVERB:MISS' "sys_hasverb rejects a missing verb"
 
 # --- M25a: sys_random hypercall ---
 curl -sf -X POST -d "$SID1 testrandom" http://localhost:$PORT/cmd >/dev/null

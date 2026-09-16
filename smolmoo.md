@@ -207,6 +207,7 @@ Everything is a file descriptor. The syscall table is small:
    16  sys_create     create a persistent object under a parent
    17  sys_recycle    destroy an object the caller owns
    18  sys_call       resolve and run a verb on a target object
+   19  sys_hasverb    test whether a target responds to a verb
 
 Syscalls use the RISC-V `ecall` instruction. Arguments follow the standard
 ILP32 psABI: up to seven in `a0`-`a6`, the syscall number in `a7`, the return
@@ -262,6 +263,10 @@ bound to `target`, the caller's player and room, and `argstr` as the argument
 string. Returns 0, `-E_VERBNF` if no such verb, or `-E_PERM` if the caller
 cannot execute it. Because verbs are void, there is no return value from the
 called verb.
+
+`sys_hasverb(target, verb)` resolves the verb the same way `sys_call` does but
+runs nothing, returning 1 if `target` responds to a verb the caller may
+execute and 0 otherwise. It backs MooScript's interface checks.
 
 ## Verb dispatch and argument matching
 
