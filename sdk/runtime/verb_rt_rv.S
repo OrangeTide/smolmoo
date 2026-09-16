@@ -127,7 +127,8 @@ sys_recycle:                            /* a0=obj -> a0=result */
     ecall
     ret
 
-sys_call:                               /* a0=target, a1=verb, a2=argstr */
+sys_call:                               /* a0=target a1=verb a2=argstr
+                                         * a3=dobj a4=iobj */
     li      a7, 18
     ecall
     ret

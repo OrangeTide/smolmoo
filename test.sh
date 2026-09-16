@@ -265,6 +265,12 @@ check_log /tmp/smolmoo_p1.log 'GREETED:world' "sys_call runs target verb"
 check_log /tmp/smolmoo_p1.log 'HASVERB:YES' "sys_hasverb finds a verb"
 check_log /tmp/smolmoo_p1.log 'HASVERB:MISS' "sys_hasverb rejects a missing verb"
 
+# --- M21: richer verb-call argument marshalling (obj -> dobj, str -> argstr) ---
+curl -sf -X POST -d "$SID1 testref" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'REFLECT:MATCH' "verb call delivers object arg as dobj"
+check_log /tmp/smolmoo_p1.log 'REFLECT:NOMATCH' "verb call distinguishes object args"
+check_log /tmp/smolmoo_p1.log 'GREETED:hi' "verb call delivers string arg as argstr"
+
 # --- M25a: sys_random hypercall ---
 curl -sf -X POST -d "$SID1 testrandom" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'RANDOM:OK' "sys_random in range"

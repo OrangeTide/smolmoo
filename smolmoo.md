@@ -255,14 +255,17 @@ by the invoking player, and returns its id, or a negative error. `sys_recycle(ob
 destroys an object; the caller must own it, or be a wizard. Both reject
 ephemeral targets and the system object.
 
-`sys_call(target, verb, argstr)` runs a verb on another object, the primitive
-behind MooScript's `target:verb(arg)`. It resolves `verb` by name on the
-target's parent chain and the global `#0.verb` prototype, checks the caller's
-execute permission, and runs the verb as a new fire-and-forget task with `this`
-bound to `target`, the caller's player and room, and `argstr` as the argument
-string. Returns 0, `-E_VERBNF` if no such verb, or `-E_PERM` if the caller
-cannot execute it. Because verbs are void, there is no return value from the
-called verb.
+`sys_call(target, verb, argstr, dobj, iobj)` runs a verb on another object, the
+primitive behind MooScript's `target:verb(arg)`. It resolves `verb` by name on
+the target's parent chain and the global `#0.verb` prototype, checks the
+caller's execute permission, and runs the verb as a new fire-and-forget task
+with `this` bound to `target`, the caller's player and room, `argstr` as the
+argument string, and `dobj`/`iobj` as object arguments (`OBJ_NONE` when unused).
+Returns 0, `-E_VERBNF` if no such verb, or `-E_PERM` if the caller cannot
+execute it. Because verbs are void, there is no return value from the called
+verb. The MooScript host bridge fills the arguments from a `target:verb(...)`
+call by type: object arguments become `dobj` then `iobj`, the first string
+argument becomes `argstr`.
 
 `sys_hasverb(target, verb)` resolves the verb the same way `sys_call` does but
 runs nothing, returning 1 if `target` responds to a verb the caller may

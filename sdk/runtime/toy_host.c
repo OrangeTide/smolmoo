@@ -260,11 +260,13 @@ __moo_obj_contents(const char *obj)
 }
 
 void
-__moo_verb_call(const char *obj, struct moo_str *verb, int argc, ...)
+__moo_verb_call(const char *obj, struct moo_str *verb, int argc, int typemask,
+                ...)
 {
+    (void)typemask;
     if (moo_str_eq_cstr(verb, "tell") && argc >= 1) {
         __builtin_va_list ap;
-        __builtin_va_start(ap, argc);
+        __builtin_va_start(ap, typemask);
         struct moo_str *msg = __builtin_va_arg(ap, struct moo_str *);
         __builtin_va_end(ap);
         if (msg)

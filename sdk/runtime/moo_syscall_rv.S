@@ -126,10 +126,13 @@ sys_recycle:                            /* 0(sp)=obj -> a0=result */
     ecall
     ret
 
-sys_call:                               /* 0(sp)=target 4=verb 8=argstr */
+sys_call:                               /* 0(sp)=target 4=verb 8=argstr
+                                         * 12=dobj 16=iobj */
     lw      a0, 0(sp)
     lw      a1, 4(sp)
     lw      a2, 8(sp)
+    lw      a3, 12(sp)
+    lw      a4, 16(sp)
     li      a7, 18
     ecall
     ret

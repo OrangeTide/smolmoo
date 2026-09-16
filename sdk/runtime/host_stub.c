@@ -72,7 +72,7 @@ __moo_obj_contents(const char *obj)
 }
 
 void
-__moo_verb_call(const char *obj, struct moo_str *verb, int argc)
+__moo_verb_call(const char *obj, struct moo_str *verb, int argc, int typemask)
 {
 }
 

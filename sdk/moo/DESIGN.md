@@ -379,9 +379,11 @@ struct moo_list *__moo_obj_contents(const char *obj);
 int         __moo_obj_has_prop(const char *obj, struct moo_str *name);
 int         __moo_obj_has_verb(const char *obj, struct moo_str *name);
 
-// verb dispatch
+// verb dispatch. `typemask` carries two routing bits per argument, set by
+// the compiler from each argument's static type (2 = object, 1 = string,
+// 0 = other), so the host can place them in the called verb's context.
 void        __moo_verb_call(const char *obj, struct moo_str *verb,
-                            int argc, ...);
+                            int argc, int typemask, ...);
 ```
 
 `__moo_prop_get` returns `struct moo_prop *` (arena-allocated boxed

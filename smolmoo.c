@@ -2286,12 +2286,14 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
         RET(0);
         return 0;
     }
-    case 18: { /* sys_call(target, verb, argstr) → run verb on target */
+    case 18: { /* sys_call(target, verb, argstr, dobj, iobj) → run on target */
         int target = (int)ARG(0);
         char verb[64], argstr[256];
         struct verb_match m;
         int player = (int)vm_read32(vm, VM_ARGS_ADDR);
         int room = (int)vm_read32(vm, VM_ARGS_ADDR + 4);
+        int dobj = (int)ARG(3);
+        int iobj = (int)ARG(4);
         int ti;
 
         vm_read_str(vm, ARG(1), verb, sizeof(verb));
@@ -2304,12 +2306,15 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
             RET(-E_VERBNF);
             return 0;
         }
+        m.dobj = dobj;
+        m.iobj = iobj;
         ti = task_alloc(vm->sid);
         if (ti < 0) {
             RET(-1);
             return 0;
         }
-        /* fire-and-forget: the verb runs as its own task with this=target */
+        /* fire-and-forget: the verb runs as its own task with this=target,
+         * and the caller's object arguments delivered as dobj/iobj */
         if (task_setup(ti, m.hash, player, room, argstr, &m) != OK) {
             task_free(ti);
             RET(-1);

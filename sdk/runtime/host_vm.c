@@ -35,7 +35,8 @@ extern int sys_move(int obj, int dest);
 extern int sys_next(int container, int after);
 extern int sys_create(int parent);
 extern int sys_recycle(int obj);
-extern int sys_call(int target, const char *verb, const char *argstr);
+extern int sys_call(int target, const char *verb, const char *argstr,
+                    int dobj, int iobj);
 extern int sys_hasverb(int target, const char *verb);
 extern int write(int fd, const void *buf, int len);
 
@@ -234,20 +235,25 @@ __moo_obj_contents(const char *obj)
 }
 
 /* Verb dispatch (`obj:verb(args)`) lands here. The MooScript backend passes
- * the call on the stack, so the variadic arguments follow `argc` in memory
- * (`&argc + 1` is the first). `tell` is a runtime built-in: it writes to fd 1,
- * the invoking player's stream, so `player:tell(...)` reaches that player. Any
- * other verb name is resolved and run on the target object through sys_call,
- * which binds `this` to the target and runs it fire-and-forget. The call's
- * first argument, if present, is passed as the verb's argument string, so it
- * must be a string; further or non-string arguments are not marshalled. */
+ * the call on the stack, followed by `typemask`, then the variadic arguments
+ * (`&typemask + 1` is the first). `typemask` carries two routing bits per
+ * argument, set by the compiler from each argument's static type: 2 = object,
+ * 1 = string, 0 = other.
+ *
+ * `tell` is a runtime built-in: it writes to fd 1, the invoking player's
+ * stream, so `player:tell(...)` reaches that player. Any other verb is run on
+ * the target through sys_call, which binds `this` to the target and runs it
+ * fire-and-forget. Arguments are placed in the verb's context by type, in the
+ * classic MOO shape: object arguments fill dobj then iobj, the first string
+ * argument becomes argstr. Other types (int, float, ...) are not marshalled;
+ * pass them as strings with tostr(). */
 void
-__moo_verb_call(const char *obj, struct moo_str *verb, int argc)
+__moo_verb_call(const char *obj, struct moo_str *verb, int argc, int typemask)
 {
-    int *extra = &argc + 1;
+    int *va = &typemask + 1;   /* va[0] = first argument */
 
     if (moo_str_eq_cstr(verb, "tell")) {
-        struct moo_str *msg = argc >= 1 ? (struct moo_str *)extra[0] : 0;
+        struct moo_str *msg = argc >= 1 ? (struct moo_str *)va[0] : 0;
 
         if (msg) {
             write(1, msg->data, msg->len);
@@ -258,15 +264,30 @@ __moo_verb_call(const char *obj, struct moo_str *verb, int argc)
     {
         char vbuf[64];
         char abuf[256];
+        int dobj = -1, iobj = -1;   /* OBJ_NONE */
+        int have_str = 0;
+        int i;
 
         str_to_cstr(verb, vbuf, sizeof(vbuf));
         abuf[0] = 0;
-        if (argc >= 1) {
-            struct moo_str *a0 = (struct moo_str *)extra[0];
-            if (a0)
-                str_to_cstr(a0, abuf, sizeof(abuf));
+        for (i = 0; i < argc && i < 16; i++) {
+            int cat = (typemask >> (2 * i)) & 3;
+
+            if (cat == 2) {
+                if (dobj < 0)
+                    dobj = va[i];
+                else if (iobj < 0)
+                    iobj = va[i];
+            } else if (cat == 1 && !have_str) {
+                struct moo_str *s = (struct moo_str *)va[i];
+
+                if (s) {
+                    str_to_cstr(s, abuf, sizeof(abuf));
+                    have_str = 1;
+                }
+            }
         }
-        sys_call((int)obj, vbuf, abuf);
+        sys_call((int)obj, vbuf, abuf, dobj, iobj);
     }
 }
 

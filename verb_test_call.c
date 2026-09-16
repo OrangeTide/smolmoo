@@ -7,7 +7,7 @@ void
 _start(void)
 {
     /* invoke the `greet` verb on the current room, passing a string argument */
-    int rc = sys_call(vm_args->room, "greet", "world");
+    int rc = sys_call(vm_args->room, "greet", "world", -1, -1);
 
     if (rc == 0)
         puts("CALL:OK");
