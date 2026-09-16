@@ -1765,12 +1765,24 @@ static struct vm_task *tasks;
 static int task_next_id;
 static int task_current = -1;
 
-struct verb_match;
+struct verb_match {
+    char hash[65];
+    const char *verb;
+    int this_obj;
+    int verb_obj;
+    int dobj;
+    int iobj;
+    char dobjstr[64];
+    char iobjstr[64];
+    char prepstr[32];
+};
 static int  task_alloc(int sid);
 static void task_free(int ti);
 static void task_wake(void *arg);
 static int  task_setup(int ti, const char *hash, int player, int room_id,
                        const char *argstr, const struct verb_match *m);
+static int  verb_resolve_on(int target, const char *verb, int sid,
+                            struct verb_match *m);
 
 static uint32_t
 vm_read8(void *ctx, uint32_t addr)
@@ -2274,6 +2286,38 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
         RET(0);
         return 0;
     }
+    case 18: { /* sys_call(target, verb, argstr) → run verb on target */
+        int target = (int)ARG(0);
+        char verb[64], argstr[256];
+        struct verb_match m;
+        int player = (int)vm_read32(vm, VM_ARGS_ADDR);
+        int room = (int)vm_read32(vm, VM_ARGS_ADDR + 4);
+        int ti;
+
+        vm_read_str(vm, ARG(1), verb, sizeof(verb));
+        vm_read_str(vm, ARG(2), argstr, sizeof(argstr));
+        if (!obj_find(target)) {
+            RET(-E_INVARG);
+            return 0;
+        }
+        if (verb_resolve_on(target, verb, vm->sid, &m) != OK) {
+            RET(-E_VERBNF);
+            return 0;
+        }
+        ti = task_alloc(vm->sid);
+        if (ti < 0) {
+            RET(-1);
+            return 0;
+        }
+        /* fire-and-forget: the verb runs as its own task with this=target */
+        if (task_setup(ti, m.hash, player, room, argstr, &m) != OK) {
+            task_free(ti);
+            RET(-1);
+            return 0;
+        }
+        RET(0);
+        return 0;
+    }
     }
     return -1;
 
@@ -2428,18 +2472,6 @@ vm_put_str(struct vm *vm, uint32_t *off, const char *s)
     *off += len + 1;
     return addr;
 }
-
-struct verb_match {
-    char hash[65];
-    const char *verb;
-    int this_obj;
-    int verb_obj;
-    int dobj;
-    int iobj;
-    char dobjstr[64];
-    char iobjstr[64];
-    char prepstr[32];
-};
 
 static int
 task_setup(int ti, const char *hash, int player, int room_id,
@@ -2861,6 +2893,62 @@ verb_resolve(int sid, const char *verb, const char *rest,
                 memcpy(m->hash, elf_hash, 65);
                 m->this_obj = ancestor;
                 m->verb_obj = objs[i].id;
+                return OK;
+            }
+            struct obj *ao = obj_find(ancestor);
+            ancestor = ao ? ao->parent : OBJ_NONE;
+        }
+    }
+
+    return ERR;
+}
+
+/* Resolve a verb by name for a `target:verb()` call. Verbs are objects named
+ * by their `verb` property; a game's verbs live under the `#0.verb` prototype,
+ * and object-specific verbs under the target's own parent chain. Both are
+ * searched, child-first. On a match the invoking player must hold execute
+ * permission. `this` is bound to the target, not the ancestor that defines the
+ * verb, so the called verb sees the object it was called on. */
+static int
+verb_resolve_on(int target, const char *verb, int sid, struct verb_match *m)
+{
+    const char *a_verb = make_atom("verb");
+    const char *a_elf = make_atom("elf");
+    struct obj *sys = obj_find(0);
+    int chain[] = { target, OBJ_NONE };
+
+    if (sys)
+        chain[1] = prop_objnum(sys, a_verb);
+
+    for (int ci = 0; ci < 2; ci++) {
+        int link = chain[ci];
+        if (link == OBJ_NONE) continue;
+
+        for (int ancestor = link, depth = 0;
+             ancestor != OBJ_NONE && depth < MAX_OBJ; depth++) {
+            for (int i = 0; i < MAX_OBJ; i++) {
+                if (objs[i].id == OBJ_NONE) continue;
+                if (objs[i].parent != ancestor) continue;
+
+                const char *n = prop_str(&objs[i], a_verb);
+                if (!n || strcmp(n, verb) != 0) continue;
+
+                const char *elf = prop_str(&objs[i], a_elf);
+                int elf_mode;
+                char elf_hash[65];
+                if (!elf || elf_parse(elf, &elf_mode, elf_hash,
+                    sizeof(elf_hash)) != OK)
+                    continue;
+                if (!perm_can_exec_elf(sid, &objs[i], elf_mode))
+                    continue;
+
+                memset(m, 0, sizeof(*m));
+                m->verb = verb;
+                m->this_obj = target;
+                m->dobj = OBJ_NONE;
+                m->iobj = OBJ_NONE;
+                m->verb_obj = objs[i].id;
+                memcpy(m->hash, elf_hash, 65);
                 return OK;
             }
             struct obj *ao = obj_find(ancestor);

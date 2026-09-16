@@ -258,6 +258,11 @@ check_log /tmp/smolmoo_p1.log 'OBJFIND:NONE' "sys_objfind none"
 curl -sf -X POST -d "$SID1 testcreate" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'CREATE:OK' "sys_create/recycle"
 
+# --- M21: sys_call verb-to-verb dispatch ---
+curl -sf -X POST -d "$SID1 testcall" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'CALL:OK' "sys_call resolves"
+check_log /tmp/smolmoo_p1.log 'GREETED:world' "sys_call runs target verb"
+
 # --- M25a: sys_random hypercall ---
 curl -sf -X POST -d "$SID1 testrandom" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'RANDOM:OK' "sys_random in range"

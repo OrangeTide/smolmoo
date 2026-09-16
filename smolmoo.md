@@ -206,6 +206,7 @@ Everything is a file descriptor. The syscall table is small:
    15  sys_rollup     cached sum of a field over a containment subtree
    16  sys_create     create a persistent object under a parent
    17  sys_recycle    destroy an object the caller owns
+   18  sys_call       resolve and run a verb on a target object
 
 Syscalls use the RISC-V `ecall` instruction. Arguments follow the standard
 ILP32 psABI: up to seven in `a0`-`a6`, the syscall number in `a7`, the return
@@ -252,6 +253,15 @@ cached subtree sum described above.
 by the invoking player, and returns its id, or a negative error. `sys_recycle(obj)`
 destroys an object; the caller must own it, or be a wizard. Both reject
 ephemeral targets and the system object.
+
+`sys_call(target, verb, argstr)` runs a verb on another object, the primitive
+behind MooScript's `target:verb(arg)`. It resolves `verb` by name on the
+target's parent chain and the global `#0.verb` prototype, checks the caller's
+execute permission, and runs the verb as a new fire-and-forget task with `this`
+bound to `target`, the caller's player and room, and `argstr` as the argument
+string. Returns 0, `-E_VERBNF` if no such verb, or `-E_PERM` if the caller
+cannot execute it. Because verbs are void, there is no return value from the
+called verb.
 
 ## Verb dispatch and argument matching
 

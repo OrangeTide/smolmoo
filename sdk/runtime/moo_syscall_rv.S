@@ -26,6 +26,7 @@
     .globl sys_next
     .globl sys_create
     .globl sys_recycle
+    .globl sys_call
 
 _exit:                                  /* 0(sp)=status */
     lw      a0, 0(sp)
@@ -121,5 +122,13 @@ sys_create:                             /* 0(sp)=parent -> a0=new obj id */
 sys_recycle:                            /* 0(sp)=obj -> a0=result */
     lw      a0, 0(sp)
     li      a7, 17
+    ecall
+    ret
+
+sys_call:                               /* 0(sp)=target 4=verb 8=argstr */
+    lw      a0, 0(sp)
+    lw      a1, 4(sp)
+    lw      a2, 8(sp)
+    li      a7, 18
     ecall
     ret

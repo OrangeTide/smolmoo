@@ -33,6 +33,7 @@
     .globl sys_rollup
     .globl sys_create
     .globl sys_recycle
+    .globl sys_call
 
 _exit:                                  /* void _exit(int status)  a0=status */
     li      a7, 0
@@ -122,6 +123,11 @@ sys_create:                             /* a0=parent -> a0=new obj id */
 
 sys_recycle:                            /* a0=obj -> a0=result */
     li      a7, 17
+    ecall
+    ret
+
+sys_call:                               /* a0=target, a1=verb, a2=argstr */
+    li      a7, 18
     ecall
     ret
 

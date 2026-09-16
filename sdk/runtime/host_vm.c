@@ -35,6 +35,7 @@ extern int sys_move(int obj, int dest);
 extern int sys_next(int container, int after);
 extern int sys_create(int parent);
 extern int sys_recycle(int obj);
+extern int sys_call(int target, const char *verb, const char *argstr);
 extern int write(int fd, const void *buf, int len);
 
 static int
@@ -233,23 +234,38 @@ __moo_obj_contents(const char *obj)
 
 /* Verb dispatch (`obj:verb(args)`) lands here. The MooScript backend passes
  * the call on the stack, so the variadic arguments follow `argc` in memory
- * (`&argc + 1` is the first). Only the built-in output verb `tell` is handled:
- * it writes to fd 1, the invoking player's stream, so `player:tell(...)`
- * reaches that player. Dispatching an arbitrary named verb on another object
- * needs a host primitive to resolve and run it, which the ABI does not yet
- * provide, so other verb names are ignored. */
+ * (`&argc + 1` is the first). `tell` is a runtime built-in: it writes to fd 1,
+ * the invoking player's stream, so `player:tell(...)` reaches that player. Any
+ * other verb name is resolved and run on the target object through sys_call,
+ * which binds `this` to the target and runs it fire-and-forget. The call's
+ * first argument, if present, is passed as the verb's argument string, so it
+ * must be a string; further or non-string arguments are not marshalled. */
 void
 __moo_verb_call(const char *obj, struct moo_str *verb, int argc)
 {
-    (void)obj;
-    if (moo_str_eq_cstr(verb, "tell") && argc >= 1) {
-        int *extra = &argc + 1;
-        struct moo_str *msg = (struct moo_str *)extra[0];
+    int *extra = &argc + 1;
+
+    if (moo_str_eq_cstr(verb, "tell")) {
+        struct moo_str *msg = argc >= 1 ? (struct moo_str *)extra[0] : 0;
 
         if (msg) {
             write(1, msg->data, msg->len);
             write(1, "\n", 1);
         }
+        return;
+    }
+    {
+        char vbuf[64];
+        char abuf[256];
+
+        str_to_cstr(verb, vbuf, sizeof(vbuf));
+        abuf[0] = 0;
+        if (argc >= 1) {
+            struct moo_str *a0 = (struct moo_str *)extra[0];
+            if (a0)
+                str_to_cstr(a0, abuf, sizeof(abuf));
+        }
+        sys_call((int)obj, vbuf, abuf);
     }
 }
 
