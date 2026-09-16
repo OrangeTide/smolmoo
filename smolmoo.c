@@ -2230,6 +2230,50 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
         RET(rollup_of(objid, make_atom(field)));
         return 0;
     }
+    case 16: { /* sys_create(parent) → new persistent obj id */
+        int parent = (int)ARG(0);
+        struct obj *pobj = obj_find(parent);
+        struct obj *o, *acct;
+        int newid;
+
+        if (!pobj || obj_is_ephemeral(parent)) {
+            RET(-E_INVARG);
+            return 0;
+        }
+        newid = 0;
+        while (newid < OBJ_EPH_BASE && obj_find(newid))
+            newid++;
+        if (newid >= OBJ_EPH_BASE) {
+            RET(-E_INVARG);
+            return 0;
+        }
+        o = obj_create(newid, parent);
+        if (!o) {
+            RET(-E_INVARG);
+            return 0;
+        }
+        acct = player_acct(vm->sid);
+        if (acct)
+            o->owner = acct->id;
+        RET(newid);
+        return 0;
+    }
+    case 17: { /* sys_recycle(obj) → 0, or negative on error/denied */
+        int objid = (int)ARG(0);
+        struct obj *o = obj_find(objid);
+
+        if (!o || objid == 0 || obj_is_ephemeral(objid)) {
+            RET(-E_INVARG);
+            return 0;
+        }
+        if (!is_wizard(vm->sid) && !obj_owner_match(o, vm->sid)) {
+            RET(-E_PERM);
+            return 0;
+        }
+        obj_free(o);
+        RET(0);
+        return 0;
+    }
     }
     return -1;
 

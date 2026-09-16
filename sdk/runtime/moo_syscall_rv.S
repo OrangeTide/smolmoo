@@ -24,6 +24,8 @@
     .globl sys_random
     .globl sys_move
     .globl sys_next
+    .globl sys_create
+    .globl sys_recycle
 
 _exit:                                  /* 0(sp)=status */
     lw      a0, 0(sp)
@@ -107,5 +109,17 @@ sys_next:                               /* 0(sp)=container 4=after -> a0=child *
     lw      a0, 0(sp)
     lw      a1, 4(sp)
     li      a7, 14
+    ecall
+    ret
+
+sys_create:                             /* 0(sp)=parent -> a0=new obj id */
+    lw      a0, 0(sp)
+    li      a7, 16
+    ecall
+    ret
+
+sys_recycle:                            /* 0(sp)=obj -> a0=result */
+    lw      a0, 0(sp)
+    li      a7, 17
     ecall
     ret

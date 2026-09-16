@@ -31,6 +31,8 @@
     .globl sys_move
     .globl sys_next
     .globl sys_rollup
+    .globl sys_create
+    .globl sys_recycle
 
 _exit:                                  /* void _exit(int status)  a0=status */
     li      a7, 0
@@ -110,6 +112,16 @@ sys_next:                               /* a0=container, a1=after -> a0=child */
 
 sys_rollup:                             /* a0=obj, a1=field -> a0=subtree sum */
     li      a7, 15
+    ecall
+    ret
+
+sys_create:                             /* a0=parent -> a0=new obj id */
+    li      a7, 16
+    ecall
+    ret
+
+sys_recycle:                            /* a0=obj -> a0=result */
+    li      a7, 17
     ecall
     ret
 

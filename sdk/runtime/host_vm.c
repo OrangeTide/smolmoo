@@ -33,6 +33,8 @@ extern int sys_setprop(int obj, const char *name, const char *val);
 extern int sys_objfind(const char *name);
 extern int sys_move(int obj, int dest);
 extern int sys_next(int container, int after);
+extern int sys_create(int parent);
+extern int sys_recycle(int obj);
 extern int write(int fd, const void *buf, int len);
 
 static int
@@ -168,22 +170,21 @@ __moo_obj_move(const char *obj, const char *dest)
     sys_move((int)obj, (int)dest);
 }
 
-/* Object creation and destruction have no syscall in the current ABI: the
- * host exposes property, movement, and containment primitives but not object
- * allocation. Creating an object from a verb also raises ownership questions
- * (the new object's owner and permissions). These return a null/no-op result
- * until a `sys_create`/`sys_recycle` pair is added. */
+/* sys_create allocates a fresh persistent object under `parent`, owned by the
+ * invoking player, and returns its id (negative on error -> nil handle).
+ * sys_recycle destroys an object the caller owns (or any, for a wizard). */
 const char *
 __moo_obj_create(const char *parent)
 {
-    (void)parent;
-    return 0;
+    int id = sys_create((int)parent);
+
+    return id < 0 ? 0 : (const char *)id;
 }
 
 void
 __moo_obj_recycle(const char *obj)
 {
-    (void)obj;
+    sys_recycle((int)obj);
 }
 
 const char *

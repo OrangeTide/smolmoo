@@ -204,6 +204,8 @@ Everything is a file descriptor. The syscall table is small:
    13  sys_move       move an object to a destination
    14  sys_next       next object in a container (contents walk)
    15  sys_rollup     cached sum of a field over a containment subtree
+   16  sys_create     create a persistent object under a parent
+   17  sys_recycle    destroy an object the caller owns
 
 Syscalls use the RISC-V `ecall` instruction. Arguments follow the standard
 ILP32 psABI: up to seven in `a0`-`a6`, the syscall number in `a7`, the return
@@ -245,6 +247,11 @@ not found.
 after)` returns the next object located in `container` with an id greater than
 `after`, or 0 at the end, for a contents walk. `sys_rollup(obj, field)` is the
 cached subtree sum described above.
+
+`sys_create(parent)` allocates a fresh persistent object under `parent`, owned
+by the invoking player, and returns its id, or a negative error. `sys_recycle(obj)`
+destroys an object; the caller must own it, or be a wizard. Both reject
+ephemeral targets and the system object.
 
 ## Verb dispatch and argument matching
 

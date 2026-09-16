@@ -254,6 +254,10 @@ check_log /tmp/smolmoo_p1.log 'OBJFIND:OK' "sys_objfind ok"
 curl -sf -X POST -d "$SID1 testobjfind Nonexistent Thing" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'OBJFIND:NONE' "sys_objfind none"
 
+# --- M21: sys_create / sys_recycle ---
+curl -sf -X POST -d "$SID1 testcreate" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'CREATE:OK' "sys_create/recycle"
+
 # --- M25a: sys_random hypercall ---
 curl -sf -X POST -d "$SID1 testrandom" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'RANDOM:OK' "sys_random in range"
