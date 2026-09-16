@@ -5080,6 +5080,9 @@ cmd_install(const char *conf_path, const char *sdk)
 {
     FILE *f;
     char line[BUFSIZE];
+    int seen[1024];         /* object ids already defined in this conf */
+    int nseen = 0;
+    int had_dup = 0;
 
     cas_store = cas_new(depot_dir);
     if (!cas_store) return 1;
@@ -5106,6 +5109,23 @@ cmd_install(const char *conf_path, const char *sdk)
                          &obj_id, &parent, verb_name, elf_src,
                          mode_str, args_spec);
         if (nf < 4) continue;
+
+        /* Reject a duplicate object id: two lines claiming the same id would
+         * silently clobber each other (last write wins), leaving one verb
+         * unresolvable. Report it and skip the line. */
+        {
+            int dup = 0;
+            for (int i = 0; i < nseen; i++)
+                if (seen[i] == obj_id) { dup = 1; break; }
+            if (dup) {
+                fprintf(stderr, "error: %s: duplicate object id %d "
+                        "(verb %s); skipping\n", conf_path, obj_id, verb_name);
+                had_dup = 1;
+                continue;
+            }
+            if (nseen < (int)(sizeof(seen) / sizeof(seen[0])))
+                seen[nseen++] = obj_id;
+        }
 
         /* compile elf (check if .elf exists and is newer) */
         char elf_path[260];
@@ -5220,7 +5240,7 @@ cmd_install(const char *conf_path, const char *sdk)
     world_free();
     cas_omap_free(obj_map);
     cas_free(cas_store);
-    return 0;
+    return had_dup ? 1 : 0;
 }
 
 int
