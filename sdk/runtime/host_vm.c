@@ -31,6 +31,8 @@ extern void *__moo_arena_alloc(int size);
 extern int sys_getprop(int obj, const char *name, char *buf, int bufsz);
 extern int sys_setprop(int obj, const char *name, const char *val);
 extern int sys_objfind(const char *name);
+extern int sys_move(int obj, int dest);
+extern int sys_next(int container, int after);
 extern int write(int fd, const void *buf, int len);
 
 static int
@@ -68,28 +70,41 @@ make_str(const char *s, int len)
     return r;
 }
 
+/* Properties are stored as strings in the host. Infer the MooScript value
+ * type from the text form: `#N` or `&N` is an object reference, a run of
+ * digits (with an optional leading `-`) is an integer, anything else is a
+ * string. `*out` receives the integer or object id for the numeric tags. */
 static int
-int_to_str(int val, char *buf, int bufsz)
+classify(const char *s, int len, int *out)
 {
-    int neg = 0;
-    int pos = bufsz;
+    int i;
+    int v = 0;
 
-    if (val < 0) {
-        neg = 1;
-        val = -val;
+    if (len > 0 && (s[0] == '#' || s[0] == '&')) {
+        for (i = 1; i < len && s[i] >= '0' && s[i] <= '9'; i++)
+            v = v * 10 + (s[i] - '0');
+        *out = v;
+        return MOO_T_OBJ;
     }
-    buf[--pos] = 0;
-    if (val == 0) {
-        buf[--pos] = '0';
-    } else {
-        while (val > 0 && pos > 0) {
-            buf[--pos] = '0' + (val % 10);
-            val /= 10;
+    i = 0;
+    if (i < len && s[i] == '-')
+        i++;
+    if (i < len) {
+        int all = 1;
+        for (int j = i; j < len; j++) {
+            if (s[j] < '0' || s[j] > '9') {
+                all = 0;
+                break;
+            }
+        }
+        if (all) {
+            for (; i < len; i++)
+                v = v * 10 + (s[i] - '0');
+            *out = (s[0] == '-') ? -v : v;
+            return MOO_T_INT;
         }
     }
-    if (neg && pos > 0)
-        buf[--pos] = '-';
-    return pos;
+    return MOO_T_STR;
 }
 
 struct moo_prop *
@@ -100,19 +115,29 @@ __moo_prop_get(const char *obj, struct moo_str *prop)
     struct moo_prop *p = __moo_arena_alloc(8);
     int id = (int)obj;
     int len;
+    int tag;
+    int out = 0;
 
     str_to_cstr(prop, name, 64);
     len = sys_getprop(id, name, buf, 256);
     if (len < 0) {
+        /* missing property reads as nil (0) */
         p->tag = MOO_T_INT;
         p->val = 0;
         return p;
     }
-    char *s = __moo_arena_alloc(len + 1);
-    for (int i = 0; i <= len; i++)
-        s[i] = buf[i];
-    p->tag = MOO_T_STR;
-    p->val = (int)make_str(s, len);
+    tag = classify(buf, len, &out);
+    if (tag == MOO_T_STR) {
+        char *s = __moo_arena_alloc(len + 1);
+        for (int i = 0; i < len; i++)
+            s[i] = buf[i];
+        s[len] = 0;
+        p->tag = MOO_T_STR;
+        p->val = (int)make_str(s, len);
+    } else {
+        p->tag = tag;
+        p->val = out;
+    }
     return p;
 }
 
@@ -138,23 +163,27 @@ __moo_obj_valid(const char *obj)
 void
 __moo_obj_move(const char *obj, const char *dest)
 {
-    char buf[16];
-    int id = (int)obj;
-    int did = (int)dest;
-    int pos = int_to_str(did, buf, 16);
-
-    sys_setprop(id, "location", buf + pos);
+    /* sys_move sets the object-valued `location`; the string property setter
+     * cannot, since it only writes plain string values. */
+    sys_move((int)obj, (int)dest);
 }
 
+/* Object creation and destruction have no syscall in the current ABI: the
+ * host exposes property, movement, and containment primitives but not object
+ * allocation. Creating an object from a verb also raises ownership questions
+ * (the new object's owner and permissions). These return a null/no-op result
+ * until a `sys_create`/`sys_recycle` pair is added. */
 const char *
 __moo_obj_create(const char *parent)
 {
+    (void)parent;
     return 0;
 }
 
 void
 __moo_obj_recycle(const char *obj)
 {
+    (void)obj;
 }
 
 const char *
@@ -164,10 +193,13 @@ __moo_obj_location(const char *obj)
     int id = (int)obj;
     int len = sys_getprop(id, "location", buf, 16);
     int loc = 0;
+    int i = 0;
 
     if (len <= 0)
         return 0;
-    for (int i = 0; i < len && buf[i] >= '0' && buf[i] <= '9'; i++)
+    if (buf[0] == '#' || buf[0] == '&')     /* skip the objref sigil */
+        i = 1;
+    for (; i < len && buf[i] >= '0' && buf[i] <= '9'; i++)
         loc = loc * 10 + (buf[i] - '0');
     return (const char *)loc;
 }
@@ -175,15 +207,40 @@ __moo_obj_location(const char *obj)
 struct moo_list *
 __moo_obj_contents(const char *obj)
 {
-    struct moo_list *l = __moo_arena_alloc(4);
+    int id = (int)obj;
+    struct moo_list *l;
+    int count = 0;
+    int after = 0;
+    int child;
 
-    l->count = 0;
+    /* sys_next walks direct contents in ascending id order, returning 0 at the
+     * end. Count first, then fill: the arena has no realloc. */
+    while ((child = sys_next(id, after)) != 0) {
+        count++;
+        after = child;
+    }
+    l = __moo_arena_alloc(4 + count * 4);
+    l->count = count;
+    after = 0;
+    for (int i = 0; i < count; i++) {
+        child = sys_next(id, after);
+        l->elem[i] = child;
+        after = child;
+    }
     return l;
 }
 
+/* Verb dispatch (`obj:verb(args)`) lands here. The MooScript backend passes
+ * the call on the stack, so the variadic arguments follow `argc` in memory
+ * (`&argc + 1` is the first). Only the built-in output verb `tell` is handled:
+ * it writes to fd 1, the invoking player's stream, so `player:tell(...)`
+ * reaches that player. Dispatching an arbitrary named verb on another object
+ * needs a host primitive to resolve and run it, which the ABI does not yet
+ * provide, so other verb names are ignored. */
 void
 __moo_verb_call(const char *obj, struct moo_str *verb, int argc)
 {
+    (void)obj;
     if (moo_str_eq_cstr(verb, "tell") && argc >= 1) {
         int *extra = &argc + 1;
         struct moo_str *msg = (struct moo_str *)extra[0];
@@ -206,8 +263,14 @@ __moo_obj_has_prop(const char *obj, struct moo_str *name)
     return sys_getprop(id, nbuf, buf, 4) >= 0;
 }
 
+/* Interface checks that ask whether an object defines a verb need a verb
+ * resolution primitive, which the ABI does not expose (verbs are matched by
+ * the host's dispatcher, not queried from a running verb). Reports false
+ * until such a syscall exists. */
 int
 __moo_obj_has_verb(const char *obj, struct moo_str *name)
 {
+    (void)obj;
+    (void)name;
     return 0;
 }
