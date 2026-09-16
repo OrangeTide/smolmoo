@@ -304,18 +304,19 @@ name).
 
 Verbs are ordinary objects. Add a source file and register it in `verbs.conf`
 with its object id, parent, verb word, source file, mode, and args spec.
-`make install` compiles each through the SDK and stores it in the depot, the
-same path all verbs use. Because the depot is a build artifact, always
-`make install` after changing a verb, the VM, or the world, and
-`rm -rf depot _build` for a clean baseline when in doubt.
+`make install` runs `smolmoo install verbs.conf`, which compiles each verb and
+stores it in the depot, the same path all verbs use. Because the depot is a
+build artifact, always `make install` after changing a verb, the VM, or the
+world, and `rm -rf depot _build` for a clean baseline when in doubt.
 
-Under the hood this is plain shell scripting, no special tools:
+Under the hood the `install` subcommand, for each line in `verbs.conf`:
 
-    0. cp world.data.sample world.data
-    1. cross-compile each verb_*.c with the skjegg RV32 toolchain -> .elf
-    2. hash the ELF with b2sum (BLAKE2b-256)
-    3. store in the CAS: depot/<2-char prefix>/<hash>
-    4. replace the {{verb_*.c}} mustache patterns in world.data with the hash
-    5. start the server
+    1. cross-compiles the .c source with the in-tree skjegg RV32 toolchain,
+       linking the verb runtime (sdk/runtime/verb_rt_rv.S) -> RV32 ELF
+    2. hashes the ELF with BLAKE2b-256
+    3. stores it in the CAS: depot/<2-char prefix>/<hash>
+    4. writes the verb object (id, parent, name, args, and elf=[mode, b2:hash])
+       into the depot's object map
 
-`bootstrap.sh` automates steps 1 to 4.
+The verb objects live in `verbs.conf`, not in `world.data`; the world snapshot
+carries only game data and references verbs by hash.

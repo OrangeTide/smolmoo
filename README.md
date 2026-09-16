@@ -115,7 +115,7 @@ Run it with no arguments for a usage summary. Every subcommand reads
 `depot`), so the examples below can be pointed at any depot.
 
     smolmoo serve [--bootstrap]        start the game server
-    smolmoo install [--sdk DIR|--gcc] <verbs.conf>
+    smolmoo install [--sdk DIR] <verbs.conf>
                                        compile verbs into the depot
     smolmoo export [N | N-M ...]       write world objects to stdout
     smolmoo merge <file>               import objects, renumbered
@@ -157,7 +157,7 @@ world into another without id collisions.
 
 ## Reference Project
 
-dm (deathmatch) MUD is out reference that inspires this projects.
+dm (deathmatch) MUD is our reference and the inspiration for this project.
 It was an attempt to write a Telnet-based MUD in 16 kilobytes of source code.
 Its sources are not bundled here. `dm-sm.c` is the minified version and
 `dm.c` is the commented version.

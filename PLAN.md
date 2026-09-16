@@ -184,6 +184,41 @@ were unified into one buffer parser (`obj_load_buf`) with an optional
 id-remap hook, which the merge path reuses. All subcommands now honor
 `SMOLMOO_DEPOT`. README documents the command-line tools.
 
+## Milestone 25: Combat System (ChromeSix)
+
+A point-based OpenD6 variant (Mini Six: Bare Knuckle Edition) tuned for the
+Liminal Frontiers setting, implemented as verbs on the VM in slices M25a
+through M25j: character sheet and skill checks, core combat and the spawned
+turn task, cover and NPC grades, range bands and movement, reactions,
+multi-foe fights and frontage, surprise, cross-room movement and fleeing, the
+Grit gauge with stims and push-a-roll, social conflict on the same engine,
+faction standing and vendor pricing, body slots and inventory, room span,
+death and recovery, and cached containment rollups. New host syscalls were
+added only where a verb could not do the job: `sys_random`, `sys_move`,
+`sys_next`, `sys_rollup`. Native TAP tests (`test/test_chromesix.c`) cover the
+helpers. The rules live in `chromesix.md` and `chromesix-smolmoo.md`; the
+balance decisions and deferred items are recorded in `history.md`.
+
+## Milestone 27: RISC-V RV32 Verb Engine (replaces ColdFire)
+
+Full cutover from the ColdFire (m68k) verb VM to the RV32 engine (`rv32.c`),
+now that skjegg ships an in-tree RISC-V assembler and linker. RV32 is the sole
+verb engine; `coldfire.c`, `coldfire.h`, `vm.ld`, and `test/test_coldfire.c`
+were deleted and the GNU gcc verb-build fallback dropped. The verb runtime is a
+single `sdk/runtime/verb_rt_rv.S` (ecall stubs plus the 64-bit integer helpers)
+linked with each self-contained `.c` verb; unit tests moved to
+`test/test_rv32.c`.
+
+Two vendored-SDK bugs surfaced while bringing up `__combat` (a verb with a
+2080-byte stack frame) and were fixed in-tree and upstreamed to skjegg:
+
+- `sdk/backend/rv_emit.c`: stack frames larger than a 12-bit signed immediate
+  emitted out-of-range `addi`/`lw`/`sw` for s0-relative access. Added
+  large-offset lowering that materialises `base + offset` in `t6`.
+- `sdk/as/rv_encode.c`: the immediate instructions and loads/stores silently
+  truncated an out-of-range 12-bit immediate; they now `die` with a clear
+  message instead of emitting a wrong instruction.
+
 ---
 
 # Future Milestones
@@ -202,65 +237,6 @@ MooScript is the default for world builders.
 Syntax follows LambdaMoo conventions (see `sdk/moo/lambdamoo-syntax.md`):
 property access via `obj.prop`, verb calls via `obj:verb(args)`,
 `$name` shorthand for `#0.name`.
-
-## Milestone 25: Combat System
-
-Trivial subset of OpenD6 RPG System, following Mini Six: Bare Knuckle
-Edition. Character stats, skill checks (dice pools), basic combat loop.
-BFRPG is the backup if OpenD6 is too complex. Likely
-implemented as scripts on top of the VM.
-
-## Milestone 27: RISC-V RV32 Verb Engine (replaces ColdFire)
-
-Full replacement of the ColdFire verb VM with the RV32 engine (`rv32.c`),
-now that skjegg v0.5.0 ships an in-tree RISC-V assembler and linker
-(`skj-as-rv`, `skj-ld-rv`). Single-milestone cutover: RV32 becomes the sole
-verb engine and ColdFire is removed from the server.
-
-- Verbs compile with `skj-cc-rv-psabi` -> `skj-as-rv` -> `skj-ld-rv`
-  (standard RISC-V ILP32: args in a0-a7, a7 = syscall number, a0 = return).
-  The GNU gcc fallback is dropped; the in-tree toolchain is the only path.
-- New smolmoo-local RV verb runtime: `start_rv_vm.S` (entry + MooScript
-  bump arena + 64-bit backend helpers), `hypercall_rv.S` (ecall stubs),
-  `vm_rv.ld` (little-endian, `elf32-littleriscv`, code at 0x400).
-  `host_vm.c`, `str.c`, `list.c`, `mulibc_vm.h` recompile unchanged.
-- Server (`smolmoo.c`): swap `coldfire.h`/`cf_cpu` for `rv32.h`/`rv_cpu`;
-  flip the six memory-bus callbacks and the ELF parse helpers to
-  little-endian; ELF checks become ELFDATA2LSB + EM_RISCV (243); entry is
-  passed to `rv_reset(cpu, entry)` instead of ColdFire memory reset vectors;
-  the LINE_A opword dispatcher becomes an `rv_set_ecall` handler reading a7
-  for the number and a0-a5 for args. The 14 syscall bodies are unchanged
-  apart from the register accessors.
-- `Makefile`: server links `rv32.c`; the `sdk` target builds the RV runtime
-  objects; `test_coldfire` becomes `test_rv32`.
-- ColdFire removed from the server: delete top-level `coldfire.c`/`.h` and
-  `vm.ld`. The ColdFire SDK components stay vendored for now; trimming them
-  from the `update-sdk.sh` component set is a separate cleanup.
-
-Implemented. The verb runtime landed as a single `sdk/runtime/verb_rt_rv.S`
-(ecall stubs plus the 64-bit integer helpers) linked with each self-contained
-`.c` verb; verbs supply their own `_start` and include `mulibc.h`. Unit tests
-moved to `test/test_rv32.c`. `coldfire.c`, `coldfire.h`, `vm.ld`, and
-`test/test_coldfire.c` are deleted.
-
-Two vendored-SDK bugs surfaced while bringing up `__combat` (a verb with a
-2080-byte stack frame) and were fixed in-tree, to be upstreamed to skjegg:
-
-- `sdk/backend/rv_emit.c`: a stack frame larger than a 12-bit signed
-  immediate (2047 bytes) made the prologue/epilogue and every s0-relative
-  local access emit out-of-range `addi`/`lw`/`sw`. Added large-offset
-  lowering (`emit_mem`, `emit_addbig`) that materialises `base + offset` in
-  `t6` (never allocated, never otherwise used) when the offset is out of
-  range, applied at the prologue frame adjust, the callee-save saves and
-  reloads, spill and i64-spill access, slot load/store, address-of-local,
-  and the continuation save.
-- `sdk/as/rv_encode.c`: `addi`/`slti`/.../`andi`, the loads, and the stores
-  silently truncated an out-of-range 12-bit immediate. They now `die` with a
-  clear message instead of emitting a wrong instruction.
-
-All three fixes were upstreamed to skjegg (branch off v0.5.0), verified against
-its own RISC-V test suite (`make check-rv-emu`, 16/16), and delivered as a
-`git format-patch` series for submission.
 
 ## Milestone 26: Threading
 
