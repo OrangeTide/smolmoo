@@ -5078,19 +5078,30 @@ cmd_install(const char *conf_path, const char *sdk)
         int need_compile = (stat(elf_path, &se) != 0 ||
                             ss.st_mtime > se.st_mtime);
         if (need_compile) {
-            char cmd[1024];
+            char cmd[2048];
             const char *ext = strrchr(elf_src, '.');
             int ok = 0;
 
-            if (ext && strcmp(ext, ".moo") == 0) {
-                /* MooScript verbs need the stack-convention MooScript runtime
-                 * (arena + str/list/host bridge), which is not built for the
-                 * RV32 target yet. Deferred to the MooScript milestone (M21);
-                 * no .moo verbs ship today. */
-                fprintf(stderr,
-                    "skip %s: MooScript RV32 runtime not built (M21)\n",
-                    elf_src);
-                ok = 0;
+            if (ext && strcmp(ext, ".moo") == 0 && sdk) {
+                /* MooScript verbs. skj-mooc-rv emits stack-convention RV32
+                 * assembly; the verb links against the MooScript runtime
+                 * (moo_rt entry/arena, host bridge, str/list, and the
+                 * stack-convention syscall stubs), all built into the SDK by
+                 * `make sdk`. The compiled verb exports `main`, which moo_rt's
+                 * _start calls with the vm_args context. */
+                snprintf(cmd, sizeof(cmd),
+                    "%s/skj-mooc-rv -o %s/_verb.s %s && "
+                    "%s/skj-as-rv -o %s/_verb.o %s/_verb.s && "
+                    "%s/skj-ld-rv -T vm_rv.ld -o %s %s/_verb.o "
+                    "%s/moo_rt.o %s/host_vm.o %s/str.o %s/list.o "
+                    "%s/moo_syscall_rv.o",
+                    sdk, sdk, elf_src,
+                    sdk, sdk, sdk,
+                    sdk, elf_path, sdk,
+                    sdk, sdk, sdk, sdk,
+                    sdk);
+                fprintf(stderr, "[build:moo] %s\n", elf_src);
+                ok = (system(cmd) == 0);
             } else if (ext && strcmp(ext, ".c") == 0 && sdk) {
                 /* C verbs. skj-cc-rv-psabi emits the standard RISC-V ILP32
                  * psABI, matching the ecall stubs in verb_rt_rv.o. Each verb

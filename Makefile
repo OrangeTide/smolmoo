@@ -36,10 +36,24 @@ $(B)/smolvfs/cas-codec.o : smolvfs/cas-codec.c smolvfs/cas-codec.h smolvfs/cas.h
 # RV32 verb runtime: the ecall syscall stubs plus the 64-bit integer helpers,
 # linked with every self-contained .c verb. Built with the in-tree RISC-V
 # assembler.
-sdk: skjegg $(BUILD)/verb_rt_rv.o
+#
+# MooScript verb runtime: the entry shim/arena (moo_rt), host bridge, string
+# and list libraries, and the stack-convention syscall stubs. The C parts are
+# built with skj-cc-rv (stack calling convention) to match the MooScript
+# backend, unlike the psABI C verbs above.
+MOO_RT_OBJS := $(BUILD)/moo_rt.o $(BUILD)/host_vm.o $(BUILD)/str.o \
+	$(BUILD)/list.o $(BUILD)/moo_syscall_rv.o
+sdk: skjegg $(BUILD)/verb_rt_rv.o $(MOO_RT_OBJS)
 
 $(BUILD)/verb_rt_rv.o: sdk/runtime/verb_rt_rv.S | $(BUILD)
 	$(BUILD)/skj-as-rv -o $@ $<
+
+$(BUILD)/moo_syscall_rv.o: sdk/runtime/moo_syscall_rv.S | skjegg $(BUILD)
+	$(BUILD)/skj-as-rv -o $@ $<
+
+$(BUILD)/moo_rt.o $(BUILD)/host_vm.o $(BUILD)/str.o $(BUILD)/list.o: \
+$(BUILD)/%.o: sdk/runtime/%.c | skjegg $(BUILD)
+	$(BUILD)/skj-cc-rv -o $(BUILD)/$*.s $< && $(BUILD)/skj-as-rv -o $@ $(BUILD)/$*.s
 
 install: $(B)/smolmoo sdk
 	$(B)/smolmoo install verbs.conf
