@@ -219,24 +219,55 @@ Two vendored-SDK bugs surfaced while bringing up `__combat` (a verb with a
   truncated an out-of-range 12-bit immediate; they now `die` with a clear
   message instead of emitting a wrong instruction.
 
+## Milestone 21: MooScript Verbs
+
+World builders write verbs in MooScript, a statically typed LambdaMOO-inspired
+language, and run them on the RV32 VM alongside the C verbs. The compiler was
+already vendored in `sdk/moo` and already targets RV32 (`skj-mooc-rv`), so this
+milestone was integration, not writing a compiler.
+
+The pipeline (`skj-mooc-rv` -> `skj-as-rv` -> `skj-ld-rv`) mirrors the C verb
+path. The one wrinkle is that the MooScript backend passes call arguments on
+the stack (result in a0), not in the psABI registers the C verbs use, so the
+MooScript verb runtime is compiled with `skj-cc-rv` and links stack-convention
+syscall stubs (`sdk/runtime/moo_syscall_rv.S`) rather than the register stubs
+in `verb_rt_rv.S`. The runtime is `sdk/runtime/moo_rt.c` (the `_start` entry, a
+bump arena, and the map from the host `vm_args` block to the verb's `main`) plus
+the host bridge `host_vm.c` and the `str.c`/`list.c` libraries. A verb's entry
+is `verb main(player, room, this, dobj, iobj, arg)`; it declares only the
+leading parameters it uses. `verb_look.c` was ported to `verb_look.moo` as the
+first MooScript verb.
+
+The host bridge (`host_vm.c`) was completed against the syscall ABI: properties
+are typed from their text form (`#N` -> obj, digits -> int, else str), moves go
+through `sys_move`, and contents walk with `sys_next`. Four host syscalls were
+added where a verb genuinely needed one: `sys_create` (16) and `sys_recycle`
+(17) for object lifecycle, `sys_call` (18) for verb-to-verb dispatch, and
+`sys_hasverb` (19) for interface checks. `sys_call` resolves a verb on the
+target and the global `#0.verb` prototype, checks execute permission, and runs
+it fire-and-forget with `this` bound to the target.
+
+Verb-call arguments are marshalled onto the classic MOO context by type: the
+compiler tags each `obj:verb(...)` argument with a compile-time typemask (the
+only change to the vendored compiler, in `sdk/moo/lower.c`), and the host routes
+object arguments to `dobj`/`iobj` and the first string to `argstr`. Other types
+are passed as strings via `tostr()`.
+
+`@program #N` compiles an object's `src` property into its verb `elf` in the
+running server, so verbs can be written and revised in-game through the web
+editor without a rebuild. It shells out to the same toolchain, so a server that
+hosts in-game programming ships the SDK and `vm_rv.ld` at runtime; a serve-only
+deployment does not.
+
+Each piece is covered by the HTTP smoke suite through small test verbs
+(`verb_test_create.c`, `verb_test_call.c`, `verb_greet.c`, `verb_reflect.c`,
+`verb_testref.moo`) and the ported `look`. Deferred: object arguments beyond
+`dobj`/`iobj`, non-string scalar arguments to a verb call, and a C verb path for
+`@program` (MooScript only).
+
 ---
 
 # Future Milestones
-
-## Milestone 21: MooScript Compiler (separate tool)
-
-Statically typed MooScript variant targeting RISC-V RV32. ~5-6 kLoC,
-built as a separate tool (not counted in smolmoo core). Can run as
-a library linked into smolmoo for `@program`, as a standalone
-compiler, or self-hosted inside the VM. The skjegg `skj-mooc-rv`
-compiler is the vendored starting point.
-
-The compiler is optional — any language with an RV32 backend works.
-MooScript is the default for world builders.
-
-Syntax follows LambdaMoo conventions (see `sdk/moo/lambdamoo-syntax.md`):
-property access via `obj.prop`, verb calls via `obj:verb(args)`,
-`$name` shorthand for `#0.name`.
 
 ## Milestone 26: Threading
 
