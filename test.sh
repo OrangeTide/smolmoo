@@ -951,6 +951,42 @@ grep -q "^#$B2 #$B" /tmp/smolmoo_m2.txt \
 grep -q "dest=#0" /tmp/smolmoo_m2.txt \
 	&& pass "merge external ref" || fail "merge external ref"
 
+# --- M29: signed world history (@history / @rewind) ---
+# Isolated instance on its own port and depot: @rewind disconnects every
+# session, so it cannot run against the shared sessions used above.
+HDEP=$(mktemp -d)
+cp -a depot/* "$HDEP/" 2>/dev/null || true
+SMOLMOO_PORT=7779 SMOLMOO_DEPOT="$HDEP" _build/smolmoo serve --bootstrap \
+	2>/tmp/smolmoo_h.log &
+HSRV=$!
+waitgrep /tmp/smolmoo_h.log 'world signing on' || true
+HINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_h.log \
+	| head -1 | cut -d' ' -f3)
+curl -sN http://localhost:7779/events > /tmp/smolmoo_h_p.log &
+HP1=$!
+waitgrep /tmp/smolmoo_h_p.log "^data: I" || true
+HSID=$(grep -m1 "^data: I" /tmp/smolmoo_h_p.log | sed 's/^data: I//')
+curl -sf -X POST -d "$HSID create HWiz hpass $HINV" \
+	http://localhost:7779/cmd >/dev/null
+# Build two versions: create an object and save, twice.
+curl -sf -X POST -d "$HSID @create #1" http://localhost:7779/cmd >/dev/null
+curl -sf -X POST -d "$HSID @save" http://localhost:7779/cmd >/dev/null
+curl -sf -X POST -d "$HSID @create #1" http://localhost:7779/cmd >/dev/null
+curl -sf -X POST -d "$HSID @save" http://localhost:7779/cmd >/dev/null
+curl -sf -X POST -d "$HSID @history" http://localhost:7779/cmd >/dev/null
+check_log /tmp/smolmoo_h_p.log 'World history' \
+	"@history lists the version chain"
+# Rewind to the first version; the session is disconnected and the world
+# is restored to that root.
+curl -sf -X POST -d "$HSID @rewind 1" http://localhost:7779/cmd >/dev/null \
+	|| true
+check_log /tmp/smolmoo_h_p.log 'rolled back' \
+	"@rewind notifies and disconnects sessions"
+check_log /tmp/smolmoo_h.log 'rewound to seq 1' \
+	"@rewind restores an earlier root"
+kill $HSRV $HP1 2>/dev/null
+rm -rf "$HDEP" "$HDEP.key" /tmp/smolmoo_h.log /tmp/smolmoo_h_p.log
+
 echo "---"
 echo "$PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

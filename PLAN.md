@@ -326,7 +326,7 @@ relicensed to the repo's own 0BSD OR CC0-1.0 to keep the tree uniform.
 
 ---
 
-## Milestone 29: Versioned World History (in progress)
+## Milestone 29: Versioned World History
 
 `world_save` writes a content-addressed root pointer. This milestone turns each
 save into a link in a signed, verifiable history of world roots, so the world
@@ -356,9 +356,18 @@ the history is a non-invasive overlay: a crash between the root write and the
 record write loses only a history entry, never world content. Records chain and
 verify end to end (confirmed with `cas_vchain_walk`).
 
-Phase 2 (next): in-game commands. `@history` lists the chain (seq, time, which
-root is live), and a wizard `@rewind <seq>` restores a prior root and records
-the rewind as a new version so the chain stays forward-only.
+Phase 2 (done): in-game commands. `@history` lists the chain newest first
+(seq, save time, root), marking the version whose root is currently live. The
+wizard-only `@rewind <seq>` restores the world to that version's root. The
+restore is first written as a new version record, so the chain only moves
+forward and the rollback is itself auditable; then the live persistent world is
+reloaded in place and every session is disconnected, since each player's
+in-world avatar is ephemeral and belongs to the state being replaced. Both
+commands read the chain head from `depot/head` rather than the writer thread's
+in-memory state, so they never race a save in flight. The smoke suite drives an
+isolated server through build-two-versions, `@history`, and `@rewind`, and the
+signed chain verifies end to end with `cas_vchain_walk` (seq drops by one, each
+prev links, signatures check).
 
 ---
 

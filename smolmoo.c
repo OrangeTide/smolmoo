@@ -3703,6 +3703,173 @@ program_compile(int sid, const char *src, char *hash_out)
     return OK;
 }
 
+/* Read the current history head address from head_file, race-free (the
+   writer thread updates it atomically). Returns 1 with addr filled, or 0
+   if there is no head yet. */
+static int
+history_head_addr(char *addr)
+{
+    FILE *f = fopen(head_file, "r");
+
+    addr[0] = '\0';
+    if (!f)
+        return 0;
+    if (fgets(addr, CAS_HASH_HEX + 2, f))
+        addr[strcspn(addr, "\r\n")] = '\0';
+    fclose(f);
+    return addr[0] ? 1 : 0;
+}
+
+struct hist_ctx {
+    int sid;
+    char live[CAS_HASH_HEX + 1];
+    int shown;
+    int limit;
+};
+
+static int
+hist_cb(const struct cas_vrec *v, const char *addr, void *ctx)
+{
+    struct hist_ctx *h = ctx;
+    char line[160], when[32];
+    time_t t = (time_t)v->timestamp;
+    struct tm tmv;
+
+    (void)addr;
+    localtime_r(&t, &tmv);
+    strftime(when, sizeof(when), "%Y-%m-%d %H:%M", &tmv);
+    snprintf(line, sizeof(line), "  %-4llu %s  %.12s%s",
+             (unsigned long long)v->seq, when, v->root,
+             strcmp(v->root, h->live) == 0 ? "  (live)" : "");
+    session_write(h->sid, line);
+    return ++h->shown >= h->limit;
+}
+
+/* @history: list the signed version chain, newest first, marking which
+   record names the world's current live root. */
+static void
+cmd_history(int sid)
+{
+    char head[CAS_HASH_HEX + 2];
+    struct hist_ctx h;
+    int rc;
+
+    if (!history_head_addr(head)) {
+        session_write(sid, "No world history yet.");
+        return;
+    }
+    h.sid = sid;
+    h.shown = 0;
+    h.limit = 50;
+    if (root_read(h.live) != OK)
+        h.live[0] = '\0';
+
+    session_write(sid, "World history (newest first):");
+    session_write(sid, "  seq  when              root");
+    rc = cas_vchain_walk(cas_store, head, 0, hist_cb, &h);
+    if (rc == CAS_SIGN_EINCOMPLETE)
+        session_write(sid, "  ... (older records not in this depot)");
+}
+
+struct rewind_ctx {
+    uint64_t want;
+    int found;
+    char root[CAS_HASH_HEX + 1];
+};
+
+static int
+rewind_cb(const struct cas_vrec *v, const char *addr, void *ctx)
+{
+    struct rewind_ctx *r = ctx;
+
+    (void)addr;
+    if (v->seq == r->want) {
+        memcpy(r->root, v->root, sizeof(r->root));
+        r->found = 1;
+        return 1;
+    }
+    return v->seq < r->want;   /* walked past it: stop */
+}
+
+/* @rewind <seq>: wizard-only. Restore the world to the root named by an
+   earlier version record. The restore is recorded as a new version so the
+   chain stays forward-only, the live persistent world is reloaded in place,
+   and every session is disconnected since its ephemeral avatar belongs to
+   the pre-rewind world. */
+static void
+cmd_rewind(int sid, const char *arg)
+{
+    char head[CAS_HASH_HEX + 2];
+    struct rewind_ctx r;
+    char *end;
+    long seq;
+    int count = 0;
+
+    if (!is_wizard(sid)) {
+        session_write(sid, "Only a wizard may @rewind.");
+        return;
+    }
+    if (!signing_on) {
+        session_write(sid, "World history is not enabled on this server.");
+        return;
+    }
+    seq = strtol(arg, &end, 10);
+    if (end == arg || seq < 1) {
+        session_write(sid, "Usage: @rewind <seq>  (see @history)");
+        return;
+    }
+    if (!history_head_addr(head)) {
+        session_write(sid, "No world history yet.");
+        return;
+    }
+
+    r.want = (uint64_t)seq;
+    r.found = 0;
+    if (cas_vchain_walk(cas_store, head, 0, rewind_cb, &r) < 0 &&
+        !r.found) {
+        session_write(sid, "Could not read the history chain.");
+        return;
+    }
+    if (!r.found) {
+        session_write(sid, "No such version. Try @history.");
+        return;
+    }
+
+    /* Quiesce the writer so nothing is mid-save, then record the rewind as
+       the new head before touching the live world. */
+    saver_wait_idle();
+    history_record(r.root);
+    if (root_write(r.root) != OK) {
+        session_write(sid, "@rewind failed: could not write root.");
+        return;
+    }
+
+    fprintf(stderr, "[history] rewinding world to seq %ld (root %.12s)\n",
+            seq, r.root);
+
+    /* Disconnect everyone: each session's in-world avatar is ephemeral and
+       belongs to the state being replaced. conn_close flushes the notice. */
+    for (int i = 0; i < MAX_CONN; i++) {
+        if (cc[i].fd) {
+            session_write(i, "The world was rolled back by an "
+                             "administrator. Please reconnect.");
+            conn_close(i);
+        }
+    }
+
+    /* Replace the live persistent world with the restored root. */
+    world_free();
+    if (cas_omap_load(obj_map, r.root) != CAS_OK) {
+        fprintf(stderr, "[history] FATAL: could not load rewound root\n");
+        running = 0;
+        return;
+    }
+    cas_omap_foreach(obj_map, load_one_cb, &count);
+    world_bootstrap();
+    fprintf(stderr, "[history] rewound to seq %ld: %d objects loaded\n",
+            seq, count);
+}
+
 static void
 cmd_feedback(int sid, const char *args)
 {
@@ -3726,6 +3893,16 @@ cmd_feedback(int sid, const char *args)
         world_save_async();
         saver_wait_idle();
         session_write(sid, "World saved.");
+        return;
+    }
+
+    /* Signed world history (M29): list the chain, or rewind to a version. */
+    if (strcmp(tag, "history") == 0) {
+        cmd_history(sid);
+        return;
+    }
+    if (strcmp(tag, "rewind") == 0) {
+        cmd_rewind(sid, p);
         return;
     }
 

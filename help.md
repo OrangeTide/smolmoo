@@ -100,6 +100,21 @@ A verb's entry is `verb main(player, room, this, dobj, iobj, arg)`; declare
 only the leading parameters it uses. Compiling requires the server to have the
 bundled SDK toolchain present. You can only program an object you own.
 
+## history
+
+Inspect and roll back the world's saved history. Every world save is
+recorded as a signed version in an append-only chain.
+
+    @history         list saved versions, newest first
+    @rewind <seq>    restore the world to an earlier version (wizard only)
+
+`@history` shows each version's sequence number, save time, and root, and
+marks the one that is currently live. `@rewind <seq>` restores the world to
+the root of that version. The rewind is itself recorded as a new version, so
+the chain only ever moves forward and the rollback is auditable. Rewinding
+reloads the live world and disconnects every session, since each player's
+in-world presence belongs to the state being replaced. Reconnect afterward.
+
 ## groups
 
     @group create <name>              create a permission group
