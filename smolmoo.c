@@ -4351,6 +4351,40 @@ cmd_rewind(int sid, const char *arg)
             seq, count);
 }
 
+/* Resolve an OLC object argument: #N, &N, or a name matched near the caller. */
+static int
+olc_ref(int sid, const char *s)
+{
+    while (*s == ' ') s++;
+    if (*s == '#') return (int)strtol(s + 1, NULL, 10);
+    if (*s == '&') return OBJ_EPH_BASE + (int)strtol(s + 1, NULL, 10);
+    if (!*s) return OBJ_NONE;
+    return obj_match_name(s, sid);
+}
+
+/* Deep-copy a property value for @clone, so the clone owns its own strings.
+   List values are not used on world objects and are left for the caller to
+   skip. */
+static struct value
+olc_val_copy(struct value v)
+{
+    if (v.type == VAL_STR)
+        return val_str(v.str ? v.str : "");
+    return v;
+}
+
+/* Case-insensitive substring test for @find. */
+static int
+olc_ci_contains(const char *hay, const char *needle)
+{
+    size_t nl = strlen(needle);
+
+    if (!nl) return 1;
+    for (; *hay; hay++)
+        if (strncasecmp(hay, needle, nl) == 0) return 1;
+    return 0;
+}
+
 static void
 cmd_feedback(int sid, const char *args)
 {
@@ -5047,6 +5081,251 @@ cmd_feedback(int sid, const char *args)
                 obj_fmt(parent, id2, sizeof(id2)));
         }
         session_write(sid, buf);
+        return;
+    }
+
+    /* @recycle #N : destroy an object you own (a wizard may destroy any). */
+    if (strcmp(tag, "recycle") == 0) {
+        int id = olc_ref(sid, p);
+        struct obj *o = obj_find(id);
+        char b[64], i1[16];
+
+        if (!o || id == 0 || obj_is_ephemeral(id)) {
+            session_write(sid, "Usage: @recycle #N");
+            return;
+        }
+        if (!is_wizard(sid) && !obj_owner_match(o, sid)) {
+            session_write(sid, "You don't own that.");
+            return;
+        }
+        snprintf(b, sizeof(b), "Recycled %s.",
+                 obj_fmt(id, i1, sizeof(i1)));
+        obj_free(o);
+        session_write(sid, b);
+        return;
+    }
+
+    /* @clone #N : make a copy of an object, owned by you. */
+    if (strcmp(tag, "clone") == 0) {
+        int srcid = olc_ref(sid, p);
+        struct obj *src = obj_find(srcid), *o;
+        struct obj *acct;
+        int newid;
+        char b[64], i1[16], i2[16];
+
+        if (!src || srcid == 0 || obj_is_ephemeral(srcid)) {
+            session_write(sid, "Usage: @clone #N");
+            return;
+        }
+        newid = 0;
+        while (newid < OBJ_EPH_BASE && obj_find(newid))
+            newid++;
+        if (newid >= OBJ_EPH_BASE) {
+            session_write(sid, "No more object IDs available.");
+            return;
+        }
+        o = obj_create(newid, src->parent);
+        if (!o) {
+            session_write(sid, "Failed to create object.");
+            return;
+        }
+        for (int i = 0; i < src->nprops; i++) {
+            if (src->props[i].val.type == VAL_LIST)
+                continue;   /* not used on world objects */
+            prop_set(o, src->props[i].name,
+                     olc_val_copy(src->props[i].val));
+        }
+        acct = acct_find(player_name(sid));
+        if (acct)
+            o->owner = acct->id;
+        snprintf(b, sizeof(b), "Cloned %s as %s.",
+                 obj_fmt(srcid, i1, sizeof(i1)),
+                 obj_fmt(newid, i2, sizeof(i2)));
+        session_write(sid, b);
+        return;
+    }
+
+    /* @move <obj> to <dest> (alias @teleport): relocate an object you own. */
+    if (strcmp(tag, "move") == 0 || strcmp(tag, "teleport") == 0) {
+        const char *to = strstr(p, " to ");
+        char os[64], b[96], i1[16], i2[16];
+        int oid, did, n;
+        struct obj *o;
+
+        if (!to) {
+            session_write(sid, "Usage: @move <obj> to <dest>");
+            return;
+        }
+        n = (int)(to - p);
+        if (n >= (int)sizeof(os)) n = sizeof(os) - 1;
+        memcpy(os, p, n);
+        os[n] = '\0';
+        while (n > 0 && os[n - 1] == ' ') os[--n] = '\0';
+        oid = olc_ref(sid, os);
+        did = olc_ref(sid, to + 4);
+        o = obj_find(oid);
+        if (!o) { session_write(sid, "Move what?"); return; }
+        if (!obj_find(did)) { session_write(sid, "Move it where?"); return; }
+        if (!is_wizard(sid) && !obj_owner_match(o, sid)) {
+            session_write(sid, "You don't own that.");
+            return;
+        }
+        prop_set(o, make_atom("location"), val_obj(did));
+        snprintf(b, sizeof(b), "Moved %s to %s.",
+                 obj_fmt(oid, i1, sizeof(i1)),
+                 obj_fmt(did, i2, sizeof(i2)));
+        session_write(sid, b);
+        return;
+    }
+
+    /* @go <room> : teleport your own avatar (wizard-only builder convenience). */
+    if (strcmp(tag, "go") == 0) {
+        int did = olc_ref(sid, p);
+        struct obj *d = obj_find(did), *me = obj_find(cc[sid].obj);
+        char b[64], i1[16];
+
+        if (!is_wizard(sid)) {
+            session_write(sid, "You are not authorized to do that.");
+            return;
+        }
+        if (!d || !me) { session_write(sid, "Go where?"); return; }
+        prop_set(me, make_atom("location"), val_obj(did));
+        snprintf(b, sizeof(b), "You go to %s.",
+                 obj_fmt(did, i1, sizeof(i1)));
+        session_write(sid, b);
+        status_update(sid);
+        return;
+    }
+
+    /* @find <name> : list objects whose name matches (case-insensitive). */
+    if (strcmp(tag, "find") == 0) {
+        const char *a_name = make_atom("name");
+        char b[128], i1[16];
+        int found = 0;
+
+        if (!*p) { session_write(sid, "Usage: @find <name>"); return; }
+        for (int i = 0; i < MAX_OBJ; i++) {
+            const char *nm;
+            if (objs[i].id == OBJ_NONE) continue;
+            nm = prop_str(&objs[i], a_name);
+            if (nm && olc_ci_contains(nm, p)) {
+                snprintf(b, sizeof(b), "  %s  %s",
+                         obj_fmt(objs[i].id, i1, sizeof(i1)), nm);
+                session_write(sid, b);
+                if (++found >= 50) {
+                    session_write(sid, "  (more matches not shown)");
+                    break;
+                }
+            }
+        }
+        if (!found) session_write(sid, "Nothing found.");
+        return;
+    }
+
+    /* @contents [#N] : list the objects located in #N (or the current room). */
+    if (strcmp(tag, "contents") == 0) {
+        int cid = *p ? olc_ref(sid, p) : room;
+        const char *a_loc = make_atom("location");
+        const char *a_name = make_atom("name");
+        char b[128], i1[16];
+        int found = 0;
+
+        if (!obj_find(cid)) { session_write(sid, "No such object."); return; }
+        for (int i = 0; i < MAX_OBJ; i++) {
+            const char *nm;
+            if (objs[i].id == OBJ_NONE) continue;
+            if (prop_objnum(&objs[i], a_loc) != cid) continue;
+            nm = prop_str(&objs[i], a_name);
+            snprintf(b, sizeof(b), "  %s  %s",
+                     obj_fmt(objs[i].id, i1, sizeof(i1)), nm ? nm : "(unnamed)");
+            session_write(sid, b);
+            found++;
+        }
+        if (!found) session_write(sid, "  (empty)");
+        return;
+    }
+
+    /* @dig <exit> to <room name | #N> : create a room (or link an existing
+       one) and a matching pair of exits. Only the room's owner (or a wizard)
+       may add an exit leading out of it. */
+    if (strcmp(tag, "dig") == 0) {
+        const char *to = strstr(p, " to "), *d;
+        char ename[32], b[128], i1[16], i2[16], numbuf[16];
+        int n, roomid, fwd = OBJ_NONE, rev;
+        struct obj *acct = acct_find(player_name(sid));
+        int owner = acct ? acct->id : OBJ_NONE;
+        struct obj *here = obj_find(room);
+
+        if (!here || (!is_wizard(sid) && !obj_owner_match(here, sid))) {
+            session_write(sid, "You don't own this room.");
+            return;
+        }
+        if (!to || to == p) {
+            session_write(sid, "Usage: @dig <exit> to <room name | #N>");
+            return;
+        }
+        n = (int)(to - p);
+        if (n >= (int)sizeof(ename)) n = sizeof(ename) - 1;
+        memcpy(ename, p, n);
+        ename[n] = '\0';
+        while (n > 0 && ename[n - 1] == ' ') ename[--n] = '\0';
+        d = to + 4;
+        while (*d == ' ') d++;
+        if (!*ename || !*d) {
+            session_write(sid, "Usage: @dig <exit> to <room name | #N>");
+            return;
+        }
+
+        if (*d == '#') {
+            roomid = (int)strtol(d + 1, NULL, 10);
+            if (!obj_find(roomid)) {
+                session_write(sid, "No such room.");
+                return;
+            }
+        } else {
+            struct obj *r;
+            roomid = obj_next_id();
+            if (roomid == OBJ_NONE) {
+                session_write(sid, "No more object IDs available.");
+                return;
+            }
+            r = obj_create(roomid, 100);
+            if (!r) {
+                session_write(sid, "Failed to create room.");
+                return;
+            }
+            r->owner = owner;
+            prop_set(r, make_atom("name"), val_str(d));
+        }
+
+        /* forward exit in the current room -> destination */
+        fwd = obj_next_id();
+        if (fwd != OBJ_NONE) {
+            struct obj *e = obj_create(fwd, 100);
+            if (e) {
+                e->owner = owner;
+                prop_set(e, make_atom("name"), val_str(ename));
+                prop_set(e, make_atom("location"), val_obj(room));
+                snprintf(numbuf, sizeof(numbuf), "%d", roomid);
+                prop_set(e, make_atom("dest"), val_str(numbuf));
+            }
+        }
+        /* reverse exit in the destination -> here, named "back" */
+        rev = obj_next_id();
+        if (rev != OBJ_NONE) {
+            struct obj *e = obj_create(rev, 100);
+            if (e) {
+                e->owner = owner;
+                prop_set(e, make_atom("name"), val_str("back"));
+                prop_set(e, make_atom("location"), val_obj(roomid));
+                snprintf(numbuf, sizeof(numbuf), "%d", room);
+                prop_set(e, make_atom("dest"), val_str(numbuf));
+            }
+        }
+        snprintf(b, sizeof(b), "Dug %s to %s (exit '%s', return 'back').",
+                 obj_fmt(fwd, i1, sizeof(i1)),
+                 obj_fmt(roomid, i2, sizeof(i2)), ename);
+        session_write(sid, b);
         return;
     }
 

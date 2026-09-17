@@ -113,24 +113,39 @@ generic clone is wanted; the type-aware form needs nothing.
 
 Each milestone after OLC-1 is entirely verb work, on top of the prerequisites.
 
-### OLC-1: Builder toolkit
+### OLC-1: Builder toolkit (shipped)
 
-The convenience commands that make building practical. The raw operations
-exist; these package them, and one operation (delete) has no in-game form yet.
+The convenience commands that make building practical. They are host commands
+in `smolmoo.c` beside `@create`/`@set`, not verbs: they are permission
+sensitive and must act with the caller's authority, which the host permission
+helpers (`is_wizard`, `obj_owner_match`) give directly, and generic `@clone`
+becomes trivial in the host (walk `o->props`) with no new syscall. P1's
+`@`-to-verb routing still stands for the verb-based world simulation in
+OLC-2..5; it just is not what these particular tools needed.
 
-- `@recycle #N`: delete an object (`sys_recycle`, owner or wizard). Closes the
-  current gap where builders can create but not destroy.
-- `@dig <exit> to [#room]`: create a room if no destination is given, then
-  create the exit object in the current room and a matching return exit
-  (`sys_create`, `sys_setprop`, `sys_move`). One step instead of several.
-- `@clone #N`: instance an object from a template with its properties copied.
-  Type-aware form works today; generic form needs P2.
-- `@move` / `@teleport #N to #R`: relocate an object (`sys_move`).
-- `@go #R`: move the builder's own avatar (`sys_move`; `verb_go` already moves
-  a player through an exit).
-- `@find <name>`, `@contents #R`: locate and list (`sys_objfind`, `sys_next`).
+- `@recycle #N`: destroy an object you own (a wizard may destroy any). Closes
+  the gap where builders could create but not delete.
+- `@clone #N`: copy an object's properties into a new object owned by the
+  cloner. Generic (all properties), done in the host; list-valued properties,
+  which world objects do not use, are skipped.
+- `@move #N to <dest>` (alias `@teleport`): relocate an object you own into a
+  room or container.
+- `@dig <exit> to <name|#N>`: create a room (or link an existing one) and a
+  matching exit pair, the forward exit named as given and the return named
+  `back`. Gated to the current room's owner or a wizard.
+- `@go #N`: teleport your own avatar to a room (wizard-only builder aid).
+- `@find <name>`, `@contents [#N]`: locate objects by name and list a
+  container's contents.
 
-Depends on: P1 (for the `@` names), P2 (only for generic `@clone`).
+Object arguments accept `#N`, `&N`, or a name near the caller (`olc_ref`).
+Documented in `help.md`; covered by the smoke suite, including the
+ownership gates via the non-admin player.
+
+Deferred within OLC-1: `@recycle` does not yet reparent or relocate an
+object's contents, so recycling a full room or container can orphan what it
+held (`@fsck` reports such dangling references). A `sys_move` authority check
+for the verb path is still open; the host `@move` is gated directly and does
+not need it.
 
 ### OLC-2: Area and reset system
 

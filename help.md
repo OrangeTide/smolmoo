@@ -74,14 +74,25 @@ to resume.
 Create and edit objects. Most building commands are wizard or owner gated.
 
     @create #<parent>        make a new object under a parent prototype
+    @clone #N                copy an object into a new one you own
+    @recycle #N              destroy an object you own
     @set #N.prop=value       set a property (also `&N.prop=value`)
     @examine #N              show an object's owner, group, and property flags
+    @move #N to <dest>       relocate an object you own into a room or container
+    @dig <exit> to <room>    make a room and a linked exit pair (room owner)
+    @go #N                   teleport yourself to a room (wizard only)
+    @find <name>             list objects whose name matches
+    @contents [#N]           list what is in a room or container
     @edit #N.prop            open a property in the web editor (read-write)
     @view #N.prop            open a property in the web viewer (read-only)
     @chmod #N.prop=rw,r,r    set per-property permission flags
     @chown #N=#M             transfer ownership (wizard only)
     @chgrp #N=#G             set an object's group
     @program #N              compile the object's src into a verb
+
+`@dig <exit> to <name>` creates a new room and links it, or `@dig <exit> to
+#N` links an existing room; both add a return exit named `back`. Object
+arguments are `#N`, `&N`, or a name near you.
 
 Permission flags are three comma-separated owner/group/world triplets of `r`
 and `w`; the default is `rw,r,r`. See also the `editor`, `programming`, and

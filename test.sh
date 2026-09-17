@@ -279,6 +279,48 @@ curl -sf -X POST -d "$SID3 @set #$P3OBJ.location=#101" http://localhost:$PORT/cm
 curl -sf -X POST -d "$SID3 p3set widget3" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'P3V:OK' "a player verb writes its own object at caller authority"
 
+# --- OLC-1: builder toolkit (see OLC.md) ---
+# @clone copies an object's properties into a new object owned by the cloner.
+curl -sf -X POST -d "$SID1 @create #300" http://localhost:$PORT/cmd >/dev/null
+OC=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$OC.name=gizmo" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @clone #$OC" http://localhost:$PORT/cmd >/dev/null
+CLONE=$(grep -oE 'as #[0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+NM=$(curl -sf "http://localhost:$PORT/prop?obj=$CLONE&prop=name&sid=$SID1")
+[ "$NM" = "gizmo" ] && pass "@clone copies properties" || fail "@clone copies properties"
+
+# @move relocates an object you own; @find and @contents locate it.
+curl -sf -X POST -d "$SID1 @move #$OC to #101" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log "Moved #$OC to #101" "@move relocates an owned object"
+curl -sf -X POST -d "$SID1 @find gizmo" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'gizmo' "@find matches by name"
+curl -sf -X POST -d "$SID1 @contents #101" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log "#$OC" "@contents lists a room's objects"
+
+# @recycle is gated by ownership: a non-owner is refused, the owner succeeds.
+curl -sf -X POST -d "$SID3 @recycle #$OC" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log "don't own that" "@recycle is refused to a non-owner"
+curl -sf -X POST -d "$SID1 @recycle #$OC" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log "Recycled #$OC" "@recycle destroys an owned object"
+curl -sf -X POST -d "$SID1 @examine #$OC" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Object not found' "the recycled object is gone"
+
+# @dig creates a room and a linked exit pair (admin owns the lobby as a wizard).
+curl -sf -X POST -d "$SID1 @dig hatch to Workshop" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Dug #' "@dig creates a room and exit"
+DUGEXIT=$(grep -oE 'Dug #[0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+DNM=$(curl -sf "http://localhost:$PORT/prop?obj=$DUGEXIT&prop=name&sid=$SID1")
+[ "$DNM" = "hatch" ] && pass "@dig names the forward exit" || fail "@dig names the forward exit"
+# A non-owner cannot dig out of a room they do not own.
+curl -sf -X POST -d "$SID3 @dig sneak to Nowhere" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log "don't own this room" "@dig is refused to a non-owner of the room"
+
+# @go teleports the builder and is wizard-only.
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'You go to #101' "@go teleports the builder"
+curl -sf -X POST -d "$SID3 @go #101" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'not authorized' "@go is refused to a non-wizard"
+
 # --- M19: sys_objfind ---
 
 # resolve existing object by name
