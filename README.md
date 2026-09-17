@@ -325,6 +325,7 @@ in the history.
     @history         list saved versions, newest first
     @rewind <seq>    restore the world to an earlier version (wizard only)
     @gc [keep]       collect old versions and dead objects (wizard only)
+    @fsck            check the depot for corruption (wizard only)
 
 `@history` shows each version's sequence number, save time, and root,
 and marks the one currently live. `@rewind <seq>` restores the world to
@@ -340,6 +341,13 @@ and the live world, marks every object still reachable from them, and
 removes the superseded object versions, object-map pages, and version
 records that nothing retained needs. Verb code (stored separately) is
 never collected, so the marking never has to reason about it.
+
+`@fsck` checks depot integrity without modifying anything. It recomputes
+every stored object's address from its bytes and flags any that no
+longer match (corruption or bit rot), confirms the live world's objects,
+object-map pages, and referenced verb ELFs are all present, and walks the
+signed history chain to verify each record's signature and linkage. It
+reports the counts of corrupt, unreadable, and missing objects.
 
 Saves themselves run off the main loop. A background writer thread does
 the fsync-durable store while the event loop keeps serving, throttled so

@@ -3939,6 +3939,160 @@ history_gc(int sid, int keep)
     free(g.roots);
 }
 
+/* ---- depot integrity check (@fsck) ---------------------------------
+ *
+ * Read-only verification. The content pass recomputes every stored object's
+ * address from its bytes and flags any that no longer hash to their name
+ * (corruption or bit rot). The reachability pass confirms the live world's
+ * objects, object-map pages, and the verb ELFs its objects reference are all
+ * present (no dangling references). The chain pass walks the signed version
+ * history, which verifies each record's signature and linkage as it goes. */
+
+struct fsck_ctx {
+    int checked;        /* objects examined in the content pass */
+    int corrupt;        /* content does not hash to its address */
+    int unreadable;     /* object could not be opened at all */
+    int missing;        /* a referenced object is absent */
+};
+
+static int
+fsck_content_cb(const char *hash, void *ctx)
+{
+    struct fsck_ctx *f = ctx;
+    struct cas_file cf;
+    char type[CAS_TYPE_MAX];
+    char computed[CAS_HASH_HEX + 1];
+
+    f->checked++;
+    if (cas_open_object(cas_store, &cf, hash, type,
+                        sizeof(type)) != CAS_OK) {
+        f->unreadable++;
+        return 0;
+    }
+    if (cas_hash_object(type, cf.data, cf.len, computed) != CAS_OK ||
+        strcmp(computed, hash) != 0)
+        f->corrupt++;
+    cas_close(&cf);
+    return 0;
+}
+
+/* Confirm each verb ELF referenced by a serialized object (spelled b2:<hex>)
+   is present in the store. */
+static void
+fsck_scan_refs(const char *data, size_t len, struct fsck_ctx *f)
+{
+    size_t i;
+
+    if (len < (size_t)(3 + CAS_HASH_HEX))
+        return;
+    for (i = 0; i + 3 + CAS_HASH_HEX <= len; i++) {
+        if (data[i] != 'b' || data[i + 1] != '2' || data[i + 2] != ':')
+            continue;
+        char ref[CAS_HASH_HEX + 1];
+        int ok = 1, k;
+        for (k = 0; k < CAS_HASH_HEX; k++) {
+            char c = data[i + 3 + k];
+            if (!isxdigit((unsigned char)c)) { ok = 0; break; }
+            ref[k] = c;
+        }
+        if (!ok)
+            continue;
+        ref[CAS_HASH_HEX] = '\0';
+        if (!cas_exists(cas_store, ref))
+            f->missing++;
+        i += 3 + CAS_HASH_HEX - 1;
+    }
+}
+
+static int
+fsck_reach_cb(uint64_t id, const char *hash, void *ctx)
+{
+    struct fsck_ctx *f = ctx;
+    struct cas_file cf;
+    char type[CAS_TYPE_MAX];
+
+    (void)id;
+    if (!cas_exists(cas_store, hash)) {
+        f->missing++;
+        return 0;
+    }
+    if (cas_open_object(cas_store, &cf, hash, type,
+                        sizeof(type)) == CAS_OK) {
+        fsck_scan_refs((const char *)cf.data, cf.len, f);
+        cas_close(&cf);
+    }
+    return 0;
+}
+
+static int
+fsck_page_cb(const char *hash, void *ctx)
+{
+    struct fsck_ctx *f = ctx;
+
+    if (!cas_exists(cas_store, hash))
+        f->missing++;
+    return 0;
+}
+
+static int
+fsck_chain_cb(const struct cas_vrec *v, const char *addr, void *ctx)
+{
+    (void)v;
+    (void)addr;
+    (void)ctx;
+    return 0;
+}
+
+static void
+history_fsck(int sid)
+{
+    struct fsck_ctx f = {0, 0, 0, 0};
+    char live[CAS_HASH_HEX + 1];
+    char head[CAS_HASH_HEX + 2];
+    char msg[192];
+    const char *chain;
+    const char *root_state = "ok";
+    int rc;
+
+    saver_wait_idle();          /* verify a stable snapshot */
+
+    /* content pass: every stored object hashes to its own address */
+    cas_foreach(cas_store, fsck_content_cb, &f);
+
+    /* reachability pass: the live world resolves with no dangling refs */
+    if (root_read(live) == OK) {
+        struct cas_omap *scratch = cas_omap_new(cas_store);
+
+        if (scratch && cas_omap_load(scratch, live) == CAS_OK) {
+            cas_omap_foreach(scratch, fsck_reach_cb, &f);
+            cas_omap_foreach_page(scratch, fsck_page_cb, &f);
+        } else {
+            root_state = "UNREADABLE";
+        }
+        if (scratch)
+            cas_omap_free(scratch);
+    }
+
+    /* chain pass: the signed history verifies end to end */
+    if (!history_head_addr(head)) {
+        chain = "none";
+    } else {
+        rc = cas_vchain_walk(cas_store, head, 0, fsck_chain_cb, NULL);
+        chain = rc == CAS_OK ? "verified" :
+                rc == CAS_SIGN_EINCOMPLETE ? "verified (older records pruned)" :
+                "BROKEN";
+    }
+
+    snprintf(msg, sizeof(msg),
+             "[fsck] %d objects: %d corrupt, %d unreadable; "
+             "live root %s, %d missing refs; history %s",
+             f.checked, f.corrupt, f.unreadable, root_state, f.missing,
+             chain);
+    if (sid >= 0)
+        session_write(sid, msg);
+    fprintf(stderr, "%s\n", msg);
+}
+
 struct hist_ctx {
     int sid;
     char live[CAS_HASH_HEX + 1];
@@ -4137,6 +4291,15 @@ cmd_feedback(int sid, const char *args)
         }
         session_write(sid, "Collecting depot garbage...");
         history_gc(sid, keep);
+        return;
+    }
+    if (strcmp(tag, "fsck") == 0) {
+        if (!is_wizard(sid)) {
+            session_write(sid, "Only a wizard may @fsck.");
+            return;
+        }
+        session_write(sid, "Checking depot integrity...");
+        history_fsck(sid);
         return;
     }
 

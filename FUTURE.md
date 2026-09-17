@@ -107,13 +107,13 @@ single bad property edit, and for a builder's "what did I change" view.
 
 Leans on: the version chain, object load at an arbitrary root.
 
-## Depot integrity and compaction
+## Depot compaction (packing)
 
-The reclaim half shipped as Milestone 30: `@gc` garbage-collects objects no
-retained root reaches and prunes old history, bounding growth for a
-mutation-heavy world. Two pieces remain. First, integrity: verify the depot
-against its own hashes to detect corruption early (an `@fsck`-style pass over
-reachable objects). Second, packing: fold the many small loose objects into
-packfiles to cut per-file overhead.
+Reclaim and integrity have shipped. `@gc` (Milestone 30) garbage-collects
+objects no retained root reaches and prunes old history, and `@fsck` verifies
+the depot against its own hashes, checks live-world reachability, and walks the
+signed history chain. What remains is packing: fold the many small loose objects
+into packfiles to cut per-file overhead, which matters most on the SD-card
+target where inode and directory-entry costs add up.
 
-Leans on: `cas-tree` fsck (integrity), `cas-pack` (packing, already vendored).
+Leans on: `cas-pack` (already vendored).

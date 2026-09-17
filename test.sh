@@ -1030,6 +1030,19 @@ check_log /tmp/smolmoo_g_p.log 'removed [1-9]' \
 # so its ELF blob was not collected.
 curl -sf -X POST -d "$GSID look" http://localhost:7780/cmd >/dev/null || true
 check_log /tmp/smolmoo_g_p.log 'Lobby' "world still serves after @gc"
+
+# @fsck: a healthy depot reports no corruption, and flipping a byte in a
+# stored object is detected on the next check.
+curl -sf -X POST -d "$GSID @fsck" http://localhost:7780/cmd >/dev/null || true
+check_log /tmp/smolmoo_g_p.log '0 corrupt' "@fsck passes on a clean depot"
+GVICTIM=$(find "$GDEP" -type f | grep -E '/[0-9a-f]{2}/[0-9a-f]{64}$' | head -1)
+printf 'X' | dd of="$GVICTIM" bs=1 seek=8 count=1 conv=notrunc 2>/dev/null
+curl -sf -X POST -d "$GSID @fsck" http://localhost:7780/cmd >/dev/null || true
+# A byte flip trips the hash check (corrupt); if the object was compressed it
+# may fail to decode instead (unreadable). Either is a detection.
+check_log /tmp/smolmoo_g_p.log '[1-9] corrupt\|[1-9] unreadable' \
+	"@fsck detects a damaged object"
+
 kill $GSRV $GP1 2>/dev/null || true
 rm -rf "$GDEP" "$GDEP.key" /tmp/smolmoo_g.log /tmp/smolmoo_g_p.log
 

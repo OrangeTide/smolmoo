@@ -410,6 +410,28 @@ worth upstreaming.
 
 ---
 
+## Milestone 31: Depot Integrity Check
+
+`@fsck` is the integrity companion to M30's reclaim. It is read-only and runs
+in three passes. The content pass walks every stored object with `cas_foreach`,
+reopens it, and recomputes its address with `cas_hash_object`; anything that no
+longer hashes to its own name is corruption or bit rot. The reachability pass
+loads the live root into a scratch object map and confirms every object it
+names, every directory page it holds, and every verb ELF its objects reference
+(scanned as `b2:<hex>` in the serialized bytes) is present, catching dangling
+references. The chain pass walks the signed history with `cas_vchain_walk`,
+which verifies each record's signature and predecessor linkage as it goes; a
+pruned tail reports as verified-with-older-records-gone rather than an error.
+
+The wizard-only command reports counts of corrupt, unreadable, and missing
+objects plus the chain status, and changes nothing. Verb ELFs and other
+non-map object types are checked for content integrity in the first pass and for
+presence in the second, so the check covers them without the collector's
+type restrictions. The smoke suite runs it on a clean depot and again after
+flipping a byte in a stored object, confirming the damage is detected.
+
+---
+
 # Future Milestones
 
 A broader menu of directions the CAS and signing foundation opens up (SHOAL,

@@ -111,6 +111,7 @@ recorded as a signed version in an append-only chain.
     @history         list saved versions, newest first
     @rewind <seq>    restore the world to an earlier version (wizard only)
     @gc [keep]       collect old versions and dead objects (wizard only)
+    @fsck            check the depot for corruption (wizard only)
 
 `@history` shows each version's sequence number, save time, and root, and
 marks the one that is currently live. `@rewind <seq>` restores the world to
@@ -122,6 +123,12 @@ in-world presence belongs to the state being replaced. Reconnect afterward.
 `@gc` bounds depot growth. It keeps the newest `keep` versions (default 128)
 plus the live world, and removes the saved object versions and old version
 records that nothing retained still needs. Verb code is never touched.
+
+`@fsck` checks the depot for damage without changing anything. It confirms
+every stored object still hashes to its own address, that the live world's
+objects, pages, and referenced verb code are all present, and that the signed
+history chain verifies. It reports counts of any corrupt, unreadable, or
+missing objects.
 
 ## groups
 
