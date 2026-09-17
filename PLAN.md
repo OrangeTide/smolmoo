@@ -369,6 +369,41 @@ signatures check).
 
 ---
 
+## Milestone 30: Depot Garbage Collection
+
+The signed history keeps every save's root, and the content-addressed store
+never overwrites, so each changed object and object-map page leaves its old
+version behind. Left alone the depot grows without bound, which matters on the
+Pi/SD target. `@gc` bounds it.
+
+It is a mark-and-sweep keyed on the version chain. The mark phase retains the
+newest `keep` version records (default 128) and the live root, and for each
+retained root marks the root object, every object the map names
+(`cas_omap_foreach`), and every directory page the map holds
+(`cas_omap_foreach_page`, a small enumerator added to the vendored `cas-omap`).
+The sweep walks the whole store with `cas_foreach` and removes any unmarked
+object, but only of the four types whose reachability is fully enumerated here:
+world objects, object-map pages and roots, and version records. Verb ELFs
+(stored as `blob` and referenced by object properties, not by the map) and any
+other type are never touched, so the collector never has to reason about
+references it does not model. Pruning old history falls out of the same sweep,
+since an unretained version record is simply left unmarked.
+
+Correctness leans on two things. The mark set must be complete, so an allocation
+failure while marking aborts the whole collection rather than risk deleting a
+live object. And the sweep must not race a save, so the save writer is drained
+first; with writes quiesced, an unmarked object of a swept type is provably
+unreachable and removed regardless of age. The wizard-only `@gc [keep]` runs it
+on demand and reports how many objects were kept and removed. The smoke suite
+builds several versions, collects down to the newest, and confirms the depot
+shrinks while the live world (including a MooScript verb, whose ELF survives)
+still serves.
+
+The one vendored change, `cas_omap_foreach_page`, is a small local addition
+worth upstreaming.
+
+---
+
 # Future Milestones
 
 A broader menu of directions the CAS and signing foundation opens up (SHOAL,

@@ -324,6 +324,7 @@ in the history.
 
     @history         list saved versions, newest first
     @rewind <seq>    restore the world to an earlier version (wizard only)
+    @gc [keep]       collect old versions and dead objects (wizard only)
 
 `@history` shows each version's sequence number, save time, and root,
 and marks the one currently live. `@rewind <seq>` restores the world to
@@ -332,6 +333,13 @@ the chain only moves forward and every rollback stays auditable.
 Rewinding reloads the live world and disconnects every session, since a
 player's in-world presence belongs to the state being replaced; players
 reconnect afterward.
+
+Because every save keeps its root forever, the depot grows over time.
+`@gc` bounds that: it retains the newest `keep` versions (default 128)
+and the live world, marks every object still reachable from them, and
+removes the superseded object versions, object-map pages, and version
+records that nothing retained needs. Verb code (stored separately) is
+never collected, so the marking never has to reason about it.
 
 Saves themselves run off the main loop. A background writer thread does
 the fsync-durable store while the event loop keeps serving, throttled so

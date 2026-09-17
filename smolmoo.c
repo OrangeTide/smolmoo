@@ -3720,6 +3720,211 @@ history_head_addr(char *addr)
     return addr[0] ? 1 : 0;
 }
 
+/* ---- depot garbage collection (M30) --------------------------------
+ *
+ * The signed history keeps every save's root, and every changed object or
+ * directory page leaves its old CAS version behind, so the depot grows
+ * without bound. history_gc marks every object reachable from the retained
+ * version records (the newest `keep`) plus the live root, then removes any
+ * unmarked object of a type whose reachability it fully enumerates: world
+ * objects, object-map pages and roots, and version records. Verb ELFs
+ * (type "blob") and anything else are never touched, since their
+ * reachability is not enumerated here. Pruning old version records falls
+ * out of the same sweep: an unretained record is simply left unmarked. */
+
+#define GC_KEEP_DEFAULT 128     /* version records retained by default */
+
+struct markset {
+    char (*h)[CAS_HASH_HEX + 1];
+    int n, cap, failed;
+};
+
+static void
+mark_add(struct markset *m, const char *hash)
+{
+    if (m->n == m->cap) {
+        int cap = m->cap ? m->cap * 2 : 512;
+        void *p = realloc(m->h, (size_t)cap * sizeof(*m->h));
+        if (!p) { m->failed = 1; return; }
+        m->h = p;
+        m->cap = cap;
+    }
+    memcpy(m->h[m->n++], hash, CAS_HASH_HEX + 1);
+}
+
+static int
+mark_cmp(const void *a, const void *b)
+{
+    return strcmp((const char *)a, (const char *)b);
+}
+
+static int
+mark_has(const struct markset *m, const char *hash)
+{
+    return bsearch(hash, m->h, (size_t)m->n, sizeof(*m->h),
+                   mark_cmp) != NULL;
+}
+
+static int
+gc_mark_obj(uint64_t id, const char *hash, void *ctx)
+{
+    (void)id;
+    mark_add(ctx, hash);
+    return 0;
+}
+
+static int
+gc_mark_page(const char *hash, void *ctx)
+{
+    mark_add(ctx, hash);
+    return 0;
+}
+
+struct gc_walk {
+    struct markset *mark;
+    char (*roots)[CAS_HASH_HEX + 1];
+    int nroots, caproots, keep, seen, failed;
+};
+
+static void
+gc_add_root(struct gc_walk *g, const char *root)
+{
+    for (int i = 0; i < g->nroots; i++)
+        if (strcmp(g->roots[i], root) == 0)
+            return;
+    if (g->nroots == g->caproots) {
+        int cap = g->caproots ? g->caproots * 2 : 64;
+        void *p = realloc(g->roots, (size_t)cap * sizeof(*g->roots));
+        if (!p) { g->failed = 1; return; }
+        g->roots = p;
+        g->caproots = cap;
+    }
+    memcpy(g->roots[g->nroots++], root, CAS_HASH_HEX + 1);
+}
+
+static int
+gc_walk_cb(const struct cas_vrec *v, const char *addr, void *ctx)
+{
+    struct gc_walk *g = ctx;
+    mark_add(g->mark, addr);        /* keep this version record */
+    gc_add_root(g, v->root);
+    return ++g->seen >= g->keep;    /* stop after `keep` records */
+}
+
+struct gc_sweep {
+    const struct markset *mark;
+    struct markset *dead;
+    time_t now;
+    int grace;
+    int kept;
+};
+
+static int
+gc_sweep_cb(const char *hash, void *ctx)
+{
+    struct gc_sweep *s = ctx;
+    struct cas_file cf;
+    char type[CAS_TYPE_MAX];
+    int sweepable;
+    time_t mt;
+
+    if (mark_has(s->mark, hash)) { s->kept++; return 0; }
+
+    if (cas_open_object(cas_store, &cf, hash, type,
+                        sizeof(type)) != CAS_OK) {
+        s->kept++;
+        return 0;
+    }
+    sweepable = strcmp(type, "obj") == 0 || strcmp(type, "opage") == 0 ||
+                strcmp(type, "omap") == 0 || strcmp(type, "vrec") == 0;
+    cas_close(&cf);
+    if (!sweepable) { s->kept++; return 0; }
+
+    if (s->grace > 0 && cas_object_mtime(cas_store, hash, &mt) == CAS_OK &&
+        s->now - mt < s->grace) { s->kept++; return 0; }
+
+    mark_add(s->dead, hash);        /* defer removal past the iteration */
+    return 0;
+}
+
+/* Collect depot garbage. Reports to `sid` if >= 0, else only to stderr. */
+static void
+history_gc(int sid, int keep)
+{
+    char head[CAS_HASH_HEX + 2];
+    char live[CAS_HASH_HEX + 1];
+    struct markset mark = {0};
+    struct markset dead = {0};
+    struct gc_walk g = {0};
+    struct gc_sweep sw;
+    struct cas_omap *scratch;
+    char msg[128];
+    int removed = 0;
+
+    if (!signing_on) {
+        if (sid >= 0)
+            session_write(sid, "World history is not enabled.");
+        return;
+    }
+    if (keep < 1)
+        keep = 1;
+
+    saver_wait_idle();      /* no save in flight while we mark and sweep */
+
+    g.mark = &mark;
+    g.keep = keep;
+    if (history_head_addr(head))
+        cas_vchain_walk(cas_store, head, 0, gc_walk_cb, &g);
+    if (root_read(live) == OK)
+        gc_add_root(&g, live);
+
+    scratch = cas_omap_new(cas_store);
+    for (int i = 0; i < g.nroots; i++) {
+        mark_add(&mark, g.roots[i]);    /* the object-map root object */
+        if (scratch && cas_omap_load(scratch, g.roots[i]) == CAS_OK) {
+            cas_omap_foreach(scratch, gc_mark_obj, &mark);
+            cas_omap_foreach_page(scratch, gc_mark_page, &mark);
+        }
+    }
+    if (scratch)
+        cas_omap_free(scratch);
+
+    /* An incomplete mark set could delete a live object, so bail rather
+       than sweep if any mark allocation failed. */
+    if (mark.failed || g.failed) {
+        if (sid >= 0)
+            session_write(sid, "@gc aborted: out of memory.");
+        fprintf(stderr, "[gc] aborted: out of memory\n");
+        free(mark.h);
+        free(g.roots);
+        return;
+    }
+
+    qsort(mark.h, (size_t)mark.n, sizeof(*mark.h), mark_cmp);
+
+    sw.mark = &mark;
+    sw.dead = &dead;
+    sw.now = time(NULL);
+    sw.grace = 0;           /* saves are quiesced, so age is not needed */
+    sw.kept = 0;
+    cas_foreach(cas_store, gc_sweep_cb, &sw);
+
+    for (int i = 0; i < dead.n; i++)
+        if (cas_remove(cas_store, dead.h[i]) == CAS_OK)
+            removed++;
+
+    snprintf(msg, sizeof(msg),
+             "[gc] kept %d, removed %d objects (%d versions retained)",
+             sw.kept, removed, g.seen);
+    if (sid >= 0)
+        session_write(sid, msg);
+    fprintf(stderr, "%s\n", msg);
+
+    free(mark.h);
+    free(dead.h);
+    free(g.roots);
+}
+
 struct hist_ctx {
     int sid;
     char live[CAS_HASH_HEX + 1];
@@ -3903,6 +4108,21 @@ cmd_feedback(int sid, const char *args)
     }
     if (strcmp(tag, "rewind") == 0) {
         cmd_rewind(sid, p);
+        return;
+    }
+    if (strcmp(tag, "gc") == 0) {
+        int keep = GC_KEEP_DEFAULT;
+        if (!is_wizard(sid)) {
+            session_write(sid, "Only a wizard may @gc.");
+            return;
+        }
+        if (*p) {
+            int k = atoi(p);
+            if (k > 0)
+                keep = k;
+        }
+        session_write(sid, "Collecting depot garbage...");
+        history_gc(sid, keep);
         return;
     }
 

@@ -984,8 +984,42 @@ check_log /tmp/smolmoo_h_p.log 'rolled back' \
 	"@rewind notifies and disconnects sessions"
 check_log /tmp/smolmoo_h.log 'rewound to seq 1' \
 	"@rewind restores an earlier root"
-kill $HSRV $HP1 2>/dev/null
+kill $HSRV $HP1 2>/dev/null || true
 rm -rf "$HDEP" "$HDEP.key" /tmp/smolmoo_h.log /tmp/smolmoo_h_p.log
+
+# --- M30: depot garbage collection (@gc) ---
+# Isolated instance: build several versions so there is superseded garbage,
+# then collect it down to the newest version and confirm the world survives.
+GDEP=$(mktemp -d)
+cp -a depot/* "$GDEP/" 2>/dev/null || true
+SMOLMOO_PORT=7780 SMOLMOO_DEPOT="$GDEP" _build/smolmoo serve --bootstrap \
+	2>/tmp/smolmoo_g.log &
+GSRV=$!
+waitgrep /tmp/smolmoo_g.log 'world signing on' || true
+GINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_g.log \
+	| head -1 | cut -d' ' -f3)
+curl -sN http://localhost:7780/events > /tmp/smolmoo_g_p.log &
+GP1=$!
+waitgrep /tmp/smolmoo_g_p.log "^data: I" || true
+GSID=$(grep -m1 "^data: I" /tmp/smolmoo_g_p.log | sed 's/^data: I//')
+curl -sf -X POST -d "$GSID create GWiz gpass $GINV" \
+	http://localhost:7780/cmd >/dev/null || true
+for _n in 1 2 3 4; do
+	curl -sf -X POST -d "$GSID @create #1" http://localhost:7780/cmd \
+		>/dev/null || true
+	curl -sf -X POST -d "$GSID @save" http://localhost:7780/cmd \
+		>/dev/null || true
+done
+# Collect down to the newest version; older records and superseded pages go.
+curl -sf -X POST -d "$GSID @gc 1" http://localhost:7780/cmd >/dev/null || true
+check_log /tmp/smolmoo_g_p.log 'removed [1-9]' \
+	"@gc collects superseded depot objects"
+# The live world must still work after a sweep: look runs a MooScript verb,
+# so its ELF blob was not collected.
+curl -sf -X POST -d "$GSID look" http://localhost:7780/cmd >/dev/null || true
+check_log /tmp/smolmoo_g_p.log 'Lobby' "world still serves after @gc"
+kill $GSRV $GP1 2>/dev/null || true
+rm -rf "$GDEP" "$GDEP.key" /tmp/smolmoo_g.log /tmp/smolmoo_g_p.log
 
 echo "---"
 echo "$PASS passed, $FAIL failed"

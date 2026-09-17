@@ -126,4 +126,15 @@ int
 cas_omap_foreach(struct cas_omap *om, cas_omap_foreach_fn fn,
                  void *ctx);
 
+/** Callback for cas_omap_foreach_page. Return nonzero to stop. */
+typedef int (*cas_omap_page_fn)(const char *hash, void *ctx);
+
+/** Iterate over the CAS hashes of the loaded map's directory pages.
+ *  Together with cas_omap_foreach (the mapped object hashes) and the
+ *  root hash itself, this yields every CAS object a stored map reaches,
+ *  which a garbage collector needs to mark a map as live.
+ *  (Local addition to the vendored copy; worth upstreaming.) */
+int
+cas_omap_foreach_page(struct cas_omap *om, cas_omap_page_fn fn, void *ctx);
+
 #endif /* CAS_OMAP_H */

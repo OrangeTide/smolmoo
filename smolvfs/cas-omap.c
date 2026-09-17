@@ -649,3 +649,16 @@ cas_omap_foreach(struct cas_omap *om, cas_omap_foreach_fn fn,
 
     return CAS_OK;
 }
+
+int
+cas_omap_foreach_page(struct cas_omap *om, cas_omap_page_fn fn, void *ctx)
+{
+    char hexhash[CAS_HASH_HEX + 1];
+
+    for (int i = 0; i < om->dir_count; i++) {
+        cas_hex_encode(om->dir[i].page_hash, CAS_HASH_LEN, hexhash);
+        if (fn(hexhash, ctx) != 0)
+            return CAS_OK;
+    }
+    return CAS_OK;
+}
