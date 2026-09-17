@@ -353,6 +353,14 @@ Saves themselves run off the main loop. A background writer thread does
 the fsync-durable store while the event loop keeps serving, throttled so
 at most two saves are ever outstanding.
 
+This signed, verifiable history is the local half of what the CAS and
+signing foundation makes possible. The networked half, federation across
+servers (publishing the world root as a signed topic, peering by hash,
+and off-site backup followers), is deferred by decision: it needs an
+unvendored sync protocol and ref layers, and amounts to a new networked
+subsystem that a single-server world does not need. See FUTURE.md for
+that menu and the full rationale.
+
 ## Browser UI
 
 The client (`index.html`) is a full-screen monospace terminal driven

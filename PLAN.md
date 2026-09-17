@@ -436,3 +436,11 @@ flipping a byte in a stored object, confirming the damage is detected.
 
 A broader menu of directions the CAS and signing foundation opens up (SHOAL,
 peering, backup followers, branching, asset storage) lives in FUTURE.md.
+
+The federation stack (SHOAL, multi-server peering, and the backup follower) is
+deferred by decision. It needs the unvendored have/want sync protocol plus the
+`cas-topic` and `cas-tree` ref layers, and amounts to a new networked
+subsystem. The local half already shipped as versioned history (M29-M31), which
+covers what a single-server world needs. Packfile compaction is likewise
+deferred. Both are documented with full rationale in FUTURE.md; revisit either
+when a concrete use case justifies the code.

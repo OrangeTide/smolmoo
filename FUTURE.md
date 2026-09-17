@@ -31,6 +31,9 @@ a peer, or off a USB stick.
 Leans on: `cas-sign` plus `cas-topic` and `cas-tree` (the ref machinery
 that keeps a topic head with an update log and crash rollback).
 
+Deferred with the federation stack (see "Multi-server peering and
+federation").
+
 ## Multi-server peering and federation
 
 Servers address every object by hash, so two smolmoo instances can
@@ -44,6 +47,16 @@ Leans on: CAS addressing, a fetch-by-hash sync protocol (REEF, the
 have/want exchange upstream describes), `cas-sign` for trust between
 peers.
 
+Deferred for now, by decision. This is the anchor of the federation
+stack (SHOAL above, the backup follower below, and REEF sync), and none
+of it is cheap: the have/want sync protocol is not vendored, `cas-topic`
+and `cas-tree` are not vendored, and a networked object exchange is a new
+subsystem rather than a small addition. The local half of the story has
+already shipped as versioned history (`@history`/`@rewind`/`@gc`/`@fsck`),
+which is what most single-server worlds need. Revisit when a concrete
+multi-server or off-site use case justifies vendoring the sync and ref
+layers.
+
 ## Remote backup follower
 
 A read-only follower subscribes to a server's world topic, pulls each
@@ -53,6 +66,9 @@ backup is exactly what the origin published. Promote a follower to
 primary if the origin is lost.
 
 Leans on: `cas-sign`, `cas-topic`, the sync protocol.
+
+Deferred with the federation stack (see "Multi-server peering and
+federation").
 
 ## World branching and seasonal forks
 
@@ -110,10 +126,29 @@ Leans on: the version chain, object load at an arbitrary root.
 ## Depot compaction (packing)
 
 Reclaim and integrity have shipped. `@gc` (Milestone 30) garbage-collects
-objects no retained root reaches and prunes old history, and `@fsck` verifies
-the depot against its own hashes, checks live-world reachability, and walks the
-signed history chain. What remains is packing: fold the many small loose objects
-into packfiles to cut per-file overhead, which matters most on the SD-card
-target where inode and directory-entry costs add up.
+objects no retained root reaches and prunes old history, and `@fsck` (Milestone
+31) verifies the depot against its own hashes, checks live-world reachability,
+and walks the signed history chain. What remains is packing: fold the many small
+loose objects into a packfile to cut per-file overhead, which matters most on the
+SD-card target where inode and directory-entry costs add up.
 
-Leans on: `cas-pack` (already vendored).
+Deferred for now, by decision, as low payoff against the code it would take:
+
+- The vendored `cas-pack` is bundle-oriented. `cas_pack_create` builds a
+  `pack.dat` from loose objects but does not delete them or merge an existing
+  pack, and the store has no runtime pack-rebuild API. Real space reclamation
+  (delete loose after packing) that stays correct across repeated packing needs
+  either an offline subcommand that rebuilds the whole store through a scratch
+  copy, or new vendored `cas_detach_pack` / `cas_reopen_pack` calls for a live
+  command. Both are a fair amount of tricky file-swapping code.
+- No compressor is vendored (the miniz codec is left out), so packing would
+  save only per-file overhead, not bytes.
+- `@gc` already bounds the loose file count by removing garbage, so growth is
+  not unbounded.
+
+Revisit if the depot file count becomes a real problem on the target, or if
+upstream grows an in-place repack API. Bringing in the miniz codec would add
+compression on top.
+
+Leans on: `cas-pack` (already vendored), plus an offline rebuild or new
+vendored repack calls; optionally the miniz codec for compression.
