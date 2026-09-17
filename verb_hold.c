@@ -12,6 +12,9 @@ _start(void)
     int room = vm_args->room;
     char nm[32];
 
+    /* Combat state lives on the room (owner #0); elevate to write it. */
+    grant_accept();
+
     if (cs_geti(room, "cb_active", 0) != 1) {
         puts("You are not in a fight.");
         _exit(0);

@@ -105,6 +105,8 @@ _start(void)
     char *verb = (char *)vm_args->verb;
     char nm[32], an[32];
 
+    grant_accept();   /* moves items in and out of containers not owned by the caller */
+
     cs_getstr(self, "name", an, sizeof(an));
 
     if (cs_streq(verb, "drop")) {

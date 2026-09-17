@@ -89,6 +89,25 @@ extern int sys_recycle(int obj);
 extern int sys_call(int target, const char *verb, const char *argstr,
                     int dobj, int iobj);
 extern int sys_hasverb(int target, const char *verb);
+extern int sys_setpriv(int on);
+
+/* Privilege bracketing (see OLC.md). A verb runs with its caller's authority by
+ * default. grant_accept() elevates to the verb owner's authority, but only if
+ * the verb object carries the setuid capability (04000 in its elf mode);
+ * otherwise it returns nonzero and authority is unchanged. grant_release()
+ * drops back to the caller. Elevation also ends when the verb task exits.
+ * Elevate for the narrowest span that needs it. */
+static int
+grant_accept(void)
+{
+    return sys_setpriv(1);
+}
+
+static int
+grant_release(void)
+{
+    return sys_setpriv(0);
+}
 
 /* puts — write string + newline to stdout */
 static int

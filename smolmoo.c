@@ -2086,8 +2086,13 @@ struct vm {
     rv_cpu cpu;
     uint8_t mem[VM_MEMSZ];
     int sid;
-    int verb_obj;   /* the verb object this task runs; its owner is the
-                       authority the verb acts with (LambdaMOO-style) */
+    /* Privilege bracketing (see OLC.md). A verb runs with the caller's
+       authority; grant_accept elevates to the verb owner, but only if the verb
+       carries the setuid capability. */
+    int caller_acct;   /* invoking player's account id (the real authority) */
+    int verb_owner;    /* account (or #0) the verb elevates to on grant */
+    int can_elevate;   /* verb's elf carries the setuid bit (04000) */
+    int elevated;      /* currently running as verb_owner */
     char out[BUFSIZE];
     int outlen;
     struct vm_fd fds[VM_MAX_FD];
@@ -2270,17 +2275,17 @@ vm_read_str(struct vm *vm, uint32_t addr, char *buf, int bufsz)
  * value in a0. ARG(n) reads the nth argument register (a0 = x10), RET() sets
  * the return register. A 64-bit argument occupies an aligned register pair,
  * which is why sys_wait's timeout lands in a4/a5. */
-/* The account a running verb acts as. A verb owned by the System Object (#0)
- * is a trusted system verb and carries wizard authority; *sys is set for it.
- * Any other verb acts as its owner account (which may be NULL, e.g. an unowned
- * verb, in which case only world-permission bits apply). */
+/* The account a running verb currently acts as: the caller by default, or the
+ * verb owner while elevated (grant_accept). Authority #0 is the System Object,
+ * which carries wizard power; *sys is set for it. A non-#0 authority resolves
+ * to its account object (NULL if none, in which case only world bits apply). */
 static struct obj *
 vm_authority(struct vm *vm, int *sys)
 {
-    struct obj *vobj = obj_find(vm->verb_obj);
+    int who = vm->elevated ? vm->verb_owner : vm->caller_acct;
 
-    *sys = vobj && vobj->owner == 0;
-    return (vobj && !*sys) ? obj_find(vobj->owner) : NULL;
+    *sys = (who == 0);
+    return (who > 0) ? obj_find(who) : NULL;
 }
 
 static int
@@ -2529,10 +2534,13 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
             RET(-1);
             return 0;
         }
-        /* A spawned task inherits the spawner's authority, so a system verb's
-           background work stays privileged and a player's verb cannot escalate
-           by spawning. */
-        tasks[ti].vm.verb_obj = vm->verb_obj;
+        /* A spawned task inherits the spawner's authority and privilege state,
+           so a verb's background work keeps the same rights it had at spawn and
+           a player's verb cannot escalate by spawning. */
+        tasks[ti].vm.caller_acct = vm->caller_acct;
+        tasks[ti].vm.verb_owner = vm->verb_owner;
+        tasks[ti].vm.can_elevate = vm->can_elevate;
+        tasks[ti].vm.elevated = vm->elevated;
 
         if (delay > 0) {
             tasks[ti].state = TASK_SLEEPING;
@@ -2718,6 +2726,20 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
         RET(verb_resolve_on(target, verb, vm->sid, &m) == OK ? 1 : 0);
         return 0;
     }
+    case 20: { /* sys_setpriv(on): raise to / drop from the verb owner's
+                * authority. Raising needs the setuid capability. */
+        if (ARG(0)) {
+            if (!vm->can_elevate) {
+                RET(-E_PERM);
+                return 0;
+            }
+            vm->elevated = 1;
+        } else {
+            vm->elevated = 0;
+        }
+        RET(0);
+        return 0;
+    }
     }
     return -1;
 
@@ -2881,11 +2903,25 @@ task_setup(int ti, const char *hash, int player, int room_id,
     struct cas_file cf;
     uint32_t entry, str_off = 0;
 
-    /* Record the verb object so syscalls can check the verb owner's authority.
-       A verb reached through a match carries that verb; a task spawned from a
-       bare hash (sys_spawn, m == NULL) inherits the spawner's authority, which
-       sys_spawn sets after this returns. */
-    vm->verb_obj = m ? m->verb_obj : OBJ_NONE;
+    /* Set up privilege bracketing. The verb starts at the caller's authority;
+       grant_accept can raise it to the verb owner if the verb's elf carries the
+       setuid bit. A task spawned from a bare hash (sys_spawn, m == NULL)
+       inherits the spawner's state, which sys_spawn copies after this returns. */
+    {
+        struct obj *ca = player_acct(vm->sid);
+        struct obj *vobj = m ? obj_find(m->verb_obj) : NULL;
+
+        vm->caller_acct = ca ? ca->id : OBJ_NONE;
+        vm->verb_owner = vobj ? vobj->owner : OBJ_NONE;
+        vm->can_elevate = 0;
+        vm->elevated = 0;
+        if (vobj) {
+            const char *ev = prop_str(vobj, make_atom("elf"));
+            int mode; char h[65];
+            if (ev && elf_parse(ev, &mode, h, sizeof(h)) == OK)
+                vm->can_elevate = (mode & 04000) != 0;
+        }
+    }
 
     if (cas_open(cas_store, &cf, hash) != CAS_OK) return ERR;
 

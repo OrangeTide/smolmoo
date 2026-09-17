@@ -241,38 +241,43 @@ SID3=$(grep -m1 "^data: I" /tmp/smolmoo_p3.log | sed 's/^data: I//')
 curl -sf -X POST -d "$SID3 create TestPlayer3 pass3 $INVITE2" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'data: +' "create acct 3"
 
-# --- OLC P2: verb-owner authority (see OLC.md) ---
-# A verb runs with its OWNER's authority, not the caller's. testsetprop is a
-# system verb (installed from verbs.conf, owned by #0), so it writes on behalf
-# of any caller, including a non-admin. This is the path combat and other
-# installed verbs take, so ordinary players can use them.
+# --- OLC P2: privilege bracketing (seteuid model, see OLC.md) ---
+# A verb runs with the CALLER's authority by default. testsetprop is not setuid,
+# so a non-admin running it on an object it does not own is refused, even though
+# it is installed system code.
 curl -sf -X POST -d "$SID3 testsetprop Rusty Sword" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p3.log 'SETPROP:OK' "a system verb writes on behalf of a non-admin caller"
+check_log /tmp/smolmoo_p3.log 'SETPROP:DENIED' "a non-setuid verb runs at caller authority (denied on a non-owned object)"
 
-# A player-owned verb carries only its owner's authority, so it cannot escalate.
-# TestPlayer3 programs a C verb it owns that writes a property on its dobj and
-# reports the result.
+# testpriv IS setuid (owned by #0). It writes its dobj before elevating, after
+# grant_accept, and after grant_release. For a non-admin on a non-owned object:
+# caller authority is refused, elevated-to-#0 (wizard) succeeds, then refused
+# again after release.
+curl -sf -X POST -d "$SID3 testpriv Rusty Sword" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'PRE:DENIED'  "before grant_accept a setuid verb still runs at caller authority"
+check_log /tmp/smolmoo_p3.log 'POST:OK'     "grant_accept elevates a setuid verb to its owner (#0)"
+check_log /tmp/smolmoo_p3.log 'DROP:DENIED' "grant_release drops back to caller authority"
+
+# A player-programmed verb is not setuid, so grant_accept cannot elevate it: a
+# non-admin cannot escalate by calling grant_accept in a verb they own.
 curl -sf -X POST -d "$SID3 @create #400" http://localhost:$PORT/cmd >/dev/null
 P3V=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p3.log | tail -1 | grep -o '[0-9]*')
-printf '#include "mulibc.h"\nvoid _start(void){int rc=sys_setprop(vm_args->dobj,"_p3","x");puts(rc==0?"P3V:OK":"P3V:DENIED");_exit(0);}\n' \
+printf '#include "mulibc.h"\nvoid _start(void){grant_accept();int rc=sys_setprop(vm_args->dobj,"_p3","x");puts(rc==0?"P3V:OK":"P3V:DENIED");_exit(0);}\n' \
 	| curl -sf -X POST --data-binary @- \
 	  "http://localhost:$PORT/prop?obj=$P3V&prop=src&sid=$SID3" >/dev/null
 curl -sf -X POST -d "p3set" \
 	"http://localhost:$PORT/prop?obj=$P3V&prop=verb&sid=$SID3" >/dev/null
 curl -sf -X POST -d "$SID3 @set #$P3V.args=<obj>" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID3 @program #$P3V" http://localhost:$PORT/cmd >/dev/null
-
-# Writing to an object TestPlayer3 does not own is refused.
+# grant_accept fails (no setuid), so the write to a non-owned object is refused.
 curl -sf -X POST -d "$SID3 p3set Rusty Sword" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p3.log 'P3V:DENIED' "a player-owned verb cannot write a non-owned object"
-
-# Writing to an object TestPlayer3 owns is allowed.
+check_log /tmp/smolmoo_p3.log 'P3V:DENIED' "grant_accept cannot elevate a non-setuid player verb"
+# The same verb can still write objects TestPlayer3 owns, at caller authority.
 curl -sf -X POST -d "$SID3 @create #300" http://localhost:$PORT/cmd >/dev/null
 P3OBJ=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p3.log | tail -1 | grep -o '[0-9]*')
 curl -sf -X POST -d "$SID3 @set #$P3OBJ.name=widget3" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID3 @set #$P3OBJ.location=#101" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID3 p3set widget3" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p3.log 'P3V:OK' "a player-owned verb can write its owner's object"
+check_log /tmp/smolmoo_p3.log 'P3V:OK' "a player verb writes its own object at caller authority"
 
 # --- M19: sys_objfind ---
 
@@ -972,6 +977,27 @@ check_log /tmp/smolmoo_p2.log 'hauls a body along' "the body is dragged room to 
 curl -sf -X POST -d "$SID2 revive TestPlayer1" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p2.log 'patches TestPlayer1 back to life' "an ally revives the body in place"
 check_log /tmp/smolmoo_p1.log 'back from the brink' "the casualty is alive again"
+
+# --- OLC P2 migration check: a non-admin runs the setuid combat verbs ---
+# Placed after all admin combat so it cannot disturb those fights. Test accounts
+# are admin, which masks permission checks, so prove the real path: the non-admin
+# TestPlayer3 (still in the lobby) fights a fresh NPC. attack and the __combat
+# turn task write the room and NPC (owner #0) and succeed only because those
+# verbs are setuid and call grant_accept(); a missed grant would fail silently
+# for a player.
+# Clear any residual fight in the lobby left by the admin combats above, so
+# TestPlayer3's attack opens a fresh fight rather than joining a stale one.
+curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #201" http://localhost:$PORT/cmd >/dev/null
+GOON=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$GOON.name=goon" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GOON.location=#101" http://localhost:$PORT/cmd >/dev/null
+# The raider prototype #201 was downed in the combat above; the child inherits
+# that, so clear it to field a fresh, standing foe.
+curl -sf -X POST -d "$SID1 @set #$GOON.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 attack goon" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'combat begins' "non-admin attack starts a fight (setuid attack writes the room)"
+check_log /tmp/smolmoo_p3.log 'your turn' "non-admin turn task renders (setuid __combat elevates)"
 
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running

@@ -34,6 +34,8 @@ _start(void)
     int dest;
     char nm[32], en[24], dbuf[16];
 
+    grant_accept();   /* clears combat state on the room when fleeing */
+
     if (exit <= 0) { puts("Go where?"); _exit(0); }
     cs_getstr(exit, "dest", dbuf, sizeof(dbuf));
     dest = cs_atoi(dbuf);

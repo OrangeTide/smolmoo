@@ -21,6 +21,8 @@ _start(void)
     char nm[32];
     int foes[8], k, i, enc;
 
+    grant_accept();   /* writes room combat state and foe sheets */
+
     o.len = 0;
     if (cs_wrong_mode(room, 0)) _exit(0);
     if (cs_geti(room, "cb_active", 0) != 1) { puts("You are not in a fight."); _exit(0); }

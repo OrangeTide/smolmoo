@@ -23,6 +23,8 @@ _start(void)
     char roster[24], num[12];
     int i = 0, j;
 
+    grant_accept();   /* writes room combat state and the foe's sheet */
+
     o.len = 0;
     while (foename && *foename == ' ') foename++;
     if (!foename || !*foename) { puts("Ambush whom?"); _exit(0); }

@@ -15,6 +15,8 @@ _start(void)
     int fighting = cs_geti(room, "cb_active", 0) == 1;
     char nm[32];
 
+    grant_accept();   /* writes the weapon's ammo and combat state on the room */
+
     o.len = 0;
     if (!cs_uses_ammo(weapon)) {
         puts("That weapon takes no ammunition.");

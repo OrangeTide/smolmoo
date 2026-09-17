@@ -35,6 +35,7 @@
     .globl sys_recycle
     .globl sys_call
     .globl sys_hasverb
+    .globl sys_setpriv
 
 _exit:                                  /* void _exit(int status)  a0=status */
     li      a7, 0
@@ -135,6 +136,11 @@ sys_call:                               /* a0=target a1=verb a2=argstr
 
 sys_hasverb:                            /* a0=target, a1=verb -> a0=0/1 */
     li      a7, 19
+    ecall
+    ret
+
+sys_setpriv:                            /* a0=on -> a0=0 ok, negative denied */
+    li      a7, 20
     ecall
     ret
 

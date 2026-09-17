@@ -28,6 +28,8 @@ _start(void)
     int foe, defsh, weapon, down, band, pool_mod, pd_bonus;
     int push = 0, push_bonus = 0, aimed = 0;
 
+    grant_accept();   /* writes room combat state and the foe's sheet */
+
     o.len = 0;
     while (foename && *foename == ' ') foename++;
     if (foename) push = cs_parse_push(foename);   /* strips trailing "push N" */

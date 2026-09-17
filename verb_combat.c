@@ -288,6 +288,8 @@ _start(void)
     int ids[MAX_CB], init[MAX_CB];
     int n, i, round;
 
+    grant_accept();   /* the turn task writes the room and every combatant */
+
     /* guard: do nothing unless a fight is actually set up */
     if (cs_geti(room, "cb_active", 0) != 1) _exit(0);
     sys_suspend(0);

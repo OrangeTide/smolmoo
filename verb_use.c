@@ -35,6 +35,8 @@ _start(void)
     char word[16], nm[32];
     int i = 0, infight, crashed;
 
+    grant_accept();   /* writes combat state on the room */
+
     o.len = 0;
     while (arg && *arg == ' ') arg++;
     if (!arg || !*arg) { puts("Use what?"); _exit(0); }

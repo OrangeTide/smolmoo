@@ -28,6 +28,7 @@
     .globl sys_recycle
     .globl sys_call
     .globl sys_hasverb
+    .globl sys_setpriv
 
 _exit:                                  /* 0(sp)=status */
     lw      a0, 0(sp)
@@ -141,5 +142,11 @@ sys_hasverb:                            /* 0(sp)=target 4=verb -> a0=0/1 */
     lw      a0, 0(sp)
     lw      a1, 4(sp)
     li      a7, 19
+    ecall
+    ret
+
+sys_setpriv:                            /* 0(sp)=on -> a0=0 ok, negative denied */
+    lw      a0, 0(sp)
+    li      a7, 20
     ecall
     ret

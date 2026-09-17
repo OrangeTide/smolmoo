@@ -13,6 +13,8 @@ _start(void)
     char *verb = (char *)vm_args->verb;
     char nm[32], tag[16], pref[12];
 
+    grant_accept();   /* writes worn/wielded state on the gear item */
+
     o.len = 0;
     if (item <= 0) { puts("You do not have that."); _exit(0); }
     cs_getstr(item, "name", nm, sizeof(nm));

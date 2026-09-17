@@ -54,28 +54,48 @@ cannot shadow `@create` or `@set`. The smoke suite covers both paths.
 Decision made: keep the `@` prefix for builder commands. It reads as "builder
 or admin command" and is the MUD convention.
 
-### P2: Verb-owner authority (shipped)
+### P2: Privilege bracketing (shipped)
 
-The original plan was to tighten `sys_setprop` so a verb could not add a
-property to an object its caller does not own. Testing with a non-admin player
-showed the premise was backwards. `sys_setprop` checked the caller's ownership,
-which blocked ordinary players from the property writes that combat and other
-installed verbs make to shared objects (rooms, NPC sheets). It only appeared to
-work because every test account is an admin, which bypasses the checks.
+The first cut checked the caller's ownership in `sys_setprop`, which blocked
+ordinary players from the property writes that combat and other installed verbs
+make to shared objects (rooms, NPC sheets). It only appeared to work because
+every test account is an admin, which bypasses the checks. A second cut ran
+every verb with its owner's authority (LambdaMOO ambient setuid). That worked
+but gave trusted verbs broad ambient power and had no way for a verb to say
+"only this part is privileged."
 
-The fix follows LambdaMOO: a verb runs with its owner's authority, not the
-caller's. Each task records the verb object it runs (`vm.verb_obj`), and
-`sys_setprop` and `sys_recycle` check the verb owner's account. A verb owned by
-the System Object (#0) is a trusted system verb with wizard authority. Verbs
-installed from `verbs.conf` are now stamped owner #0, so combat and the rest
-work for any player. A verb written in-game with `@program` is owned by its
-programmer, so it carries only that player's authority and cannot escalate. A
-spawned task (`sys_spawn`) inherits the spawner's authority. Execute permission
-still gates who may run a verb, and the direct-player `@set` path keeps its own
-checks. `owner` and `group` remain unsettable as ordinary properties through
-`sys_setprop`, matching `@set`. The smoke suite proves a system verb writes for
-a non-admin caller, and a player-owned verb can write its owner's objects but
-not others'.
+The shipped model is explicit privilege bracketing, the setuid/seteuid pattern:
+
+- A verb runs with the caller's authority by default. `sys_setprop` and
+  `sys_recycle` check the effective account, which starts as the caller.
+- `grant_accept()` raises the effective account to the verb owner, but only if
+  the verb carries the setuid capability; `grant_release()` drops back. Both are
+  thin wrappers over `sys_setpriv(on)` (syscall 20). Elevation also ends when
+  the verb task exits, so a missed release cannot leak past the verb.
+- The capability is the setuid bit (`04000`) in the verb's `elf` mode. A verb
+  elevates to its owner, so the dangerous case, setuid on a `#0`- or admin-owned
+  verb, is reachable only through `@chown`, which is wizard-only. Setuid on a
+  verb you own only elevates to yourself, which is no gain.
+- Verbs installed from `verbs.conf` that write shared state carry `04755` and
+  call `grant_accept()`; a verb written in-game with `@program` is mode `0755`,
+  so `grant_accept()` fails for it and a player cannot escalate through a verb
+  they own. A spawned task (`sys_spawn`) inherits the spawner's privilege state.
+
+The VM tracks this per task: `vm.caller_acct`, `vm.verb_owner`, `vm.can_elevate`
+(from the setuid bit), and `vm.elevated`. A verb owned by the System Object (#0)
+elevates to wizard authority. `owner` and `group` stay unsettable as ordinary
+properties through `sys_setprop`, matching `@set`, and execute permission still
+gates who may run a verb.
+
+The gameplay verbs that write shared state (combat, social, gear, get/put, use,
+reload, movement, flee) were migrated to `grant_accept()` at the top of the
+verb; narrowing each to bracket only the privileged span is future refinement,
+and the MooScript `with priv` block will make that ergonomic. The smoke suite
+proves the full model with a non-admin player: a non-setuid verb is refused on a
+non-owned object, a setuid verb is refused before `grant_accept`, succeeds after
+it, and is refused again after `grant_release`, `grant_accept` cannot elevate a
+player's own non-setuid verb, and a non-admin fights an NPC end to end through
+the setuid combat verbs.
 
 Note: `sys_move` does not yet carry an authority check. A builder-move guard
 belongs with OLC-1's `@move` / `@teleport`, so it is folded into that

@@ -17,6 +17,8 @@ _start(void)
     char *arg = (char *)vm_args->dobjstr;
     char nm[32];
 
+    grant_accept();   /* writes combat state on the room */
+
     o.len = 0;
     if (cs_wrong_mode(room, 0)) _exit(0);
     if (cs_geti(room, "cb_active", 0) != 1) { puts("You are not in a fight."); _exit(0); }

@@ -48,6 +48,8 @@ _start(void)
     const char *skill = approach_skill((char *)vm_args->verb);
     int tgt, tsh, yield;
 
+    grant_accept();   /* writes social-conflict state on the room and target */
+
     o.len = 0;
     while (tgtname && *tgtname == ' ') tgtname++;
     if (!tgtname || !*tgtname) { puts("Lean on whom?"); _exit(0); }
