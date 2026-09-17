@@ -10,6 +10,10 @@ directions the current foundation makes cheap to reach.
 Each entry notes the smolvfs pieces it leans on, so the build cost is
 visible up front.
 
+Online creation (letting builders make areas, rooms, items, NPCs, stores,
+and vehicles in-game) is planned separately in `OLC.md`, since it builds on
+the verb VM rather than the CAS and signing foundation.
+
 ## Versioned world history (shipped: Milestones 29-30)
 
 Done, and the foundation several items below build on. Each world save

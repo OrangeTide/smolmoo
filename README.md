@@ -489,6 +489,8 @@ and `dm.c` is the commented version.
   commands (combat, gear, skills).
 - `FUTURE.md`: the deferred feature menu (federation, packing, asset store)
   and the rationale for each.
+- `OLC.md`: the online-creation plan. How builders will create areas, rooms,
+  items, NPCs, stores, and vehicles in-game, mostly as verbs.
 - [Mini Six: Bare Knuckle Edition](http://www.antipaladingames.com/p/mini-six.html)
 - [Mini Six: Bare Bones Edition](https://www.drivethrurpg.com/en/product/144558/mini-six-bare-bones-edition)
 </content>
