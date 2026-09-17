@@ -1,6 +1,6 @@
 /* cas-pack.c : packfile format for content-addressable store */
 /* Copyright (c) 2026 Jon Mayo <jon@rm-f.net>
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+ * Licensed under BSD-2-Clause-Patent OR MIT */
 
 #define _POSIX_C_SOURCE 200809L
 
@@ -24,8 +24,19 @@ struct cas_pack {
 	void *map;
 	size_t maplen;
 	uint64_t entry_count;
-	const struct cas_pack_index_entry *index;
+	const unsigned char *index;   /* start of the index region in map */
 };
+
+/* Field byte offsets within a 64-byte index entry and the footer.  The
+ * index and footer sit at arbitrary (unaligned) file offsets in the
+ * mmap, so reads go through these offsets with the little-endian
+ * helpers rather than a struct cast, which would be a misaligned access
+ * for the 8-byte fields. */
+#define PACK_IDX_HASH    0
+#define PACK_IDX_OFFSET  CAS_HASH_LEN          /* 32 */
+#define PACK_IDX_STORED  (CAS_HASH_LEN + 8)    /* 40 */
+#define PACK_FT_COUNT    CAS_PACK_MAGIC_LEN    /* 8 */
+#define PACK_FT_CKSUM    (CAS_PACK_MAGIC_LEN + 8)  /* 16 */
 
 /****************************************************************
  * Helpers
@@ -148,19 +159,18 @@ cas_pack_open(const char *path)
 	if (map == MAP_FAILED)
 		return NULL;
 
-	const struct cas_pack_footer *ft =
-		(const struct cas_pack_footer *)
-		((char *)map + filesz - CAS_PACK_BLOCK);
+	const unsigned char *ft =
+		(const unsigned char *)map + filesz - CAS_PACK_BLOCK;
 
 	static const unsigned char footer_magic[] =
 		CAS_PACK_FOOTER_MAGIC_V1;
 
-	if (memcmp(ft->magic, footer_magic, CAS_PACK_MAGIC_LEN) != 0) {
+	if (memcmp(ft, footer_magic, CAS_PACK_MAGIC_LEN) != 0) {
 		munmap(map, filesz);
 		return NULL;
 	}
 
-	uint64_t count = load_le64((const unsigned char *)&ft->entry_count);
+	uint64_t count = load_le64(ft + PACK_FT_COUNT);
 	size_t index_size = (size_t)count * CAS_PACK_BLOCK;
 	size_t tail_size = index_size + CAS_PACK_BLOCK;
 
@@ -169,16 +179,15 @@ cas_pack_open(const char *path)
 		return NULL;
 	}
 
-	const struct cas_pack_index_entry *index =
-		(const struct cas_pack_index_entry *)
-		((char *)map + filesz - tail_size);
+	const unsigned char *index =
+		(const unsigned char *)map + filesz - tail_size;
 
 	size_t check_len = index_size + 16;
 	unsigned char expected[CAS_HASH_LEN];
 
 	cas_digest(index, check_len, expected);
 
-	if (memcmp(expected, ft->checksum, CAS_HASH_LEN) != 0) {
+	if (memcmp(expected, ft + PACK_FT_CKSUM, CAS_HASH_LEN) != 0) {
 		munmap(map, filesz);
 		return NULL;
 	}
@@ -211,7 +220,7 @@ cas_pack_close(struct cas_pack *pack)
  * Lookup
  ****************************************************************/
 
-static const struct cas_pack_index_entry *
+static const unsigned char *
 find_entry(const struct cas_pack *pack,
            const unsigned char *bin_hash)
 {
@@ -219,15 +228,15 @@ find_entry(const struct cas_pack *pack,
 
 	while (lo < hi) {
 		uint64_t mid = lo + (hi - lo) / 2;
-		int cmp = memcmp(pack->index[mid].hash, bin_hash,
-		                 CAS_HASH_LEN);
+		const unsigned char *e = pack->index + mid * CAS_PACK_BLOCK;
+		int cmp = memcmp(e + PACK_IDX_HASH, bin_hash, CAS_HASH_LEN);
 
 		if (cmp < 0)
 			lo = mid + 1;
 		else if (cmp > 0)
 			hi = mid;
 		else
-			return &pack->index[mid];
+			return e;
 	}
 	return NULL;
 }
@@ -249,13 +258,12 @@ cas_pack_lookup(struct cas_pack *pack, struct cas_file *cf,
 	                   sizeof(bin)) != 0)
 		return CAS_ERR;
 
-	const struct cas_pack_index_entry *e =
-		find_entry(pack, bin);
+	const unsigned char *e = find_entry(pack, bin);
 
 	if (!e)
 		return CAS_ENOTFOUND;
 
-	uint64_t trailer_off = load_le64((const unsigned char *)&e->offset);
+	uint64_t trailer_off = load_le64(e + PACK_IDX_OFFSET);
 
 	if (trailer_off + CAS_PACK_BLOCK > pack->maplen)
 		return CAS_ERR;
@@ -286,7 +294,7 @@ cas_pack_lookup(struct cas_pack *pack, struct cas_file *cf,
 	/* stored_size is the on-disk region length; a zero value
 	 * means "same as the plaintext length" for packs written
 	 * before compression existed. */
-	uint64_t stored = load_le64((const unsigned char *)&e->stored_size);
+	uint64_t stored = load_le64(e + PACK_IDX_STORED);
 	uint64_t region_size = stored ? stored : content_len;
 
 	if (region_size > trailer_off)
@@ -353,8 +361,8 @@ cas_pack_foreach(struct cas_pack *pack, cas_pack_foreach_fn fn,
 	for (uint64_t i = 0; i < pack->entry_count; i++) {
 		char hex[CAS_HASH_HEX + 1];
 
-		cas_hex_encode(pack->index[i].hash, CAS_HASH_LEN,
-		               hex);
+		cas_hex_encode(pack->index + i * CAS_PACK_BLOCK + PACK_IDX_HASH,
+		               CAS_HASH_LEN, hex);
 		if (fn(hex, ctx) != 0)
 			break;
 	}
@@ -371,15 +379,14 @@ cas_pack_fsck(struct cas_pack *pack, cas_fsck_fn fn, void *ctx)
 	int errors = 0;
 
 	for (uint64_t i = 0; i < pack->entry_count; i++) {
-		const struct cas_pack_index_entry *e =
-			&pack->index[i];
+		const unsigned char *e =
+			pack->index + i * CAS_PACK_BLOCK;
 		char hex[CAS_HASH_HEX + 1];
 		int status;
 
-		cas_hex_encode(e->hash, CAS_HASH_LEN, hex);
+		cas_hex_encode(e + PACK_IDX_HASH, CAS_HASH_LEN, hex);
 
-		uint64_t trailer_off =
-			load_le64((const unsigned char *)&e->offset);
+		uint64_t trailer_off = load_le64(e + PACK_IDX_OFFSET);
 
 		if (trailer_off + CAS_PACK_BLOCK > pack->maplen) {
 			status = CAS_FSCK_IOERR;
@@ -423,8 +430,7 @@ cas_pack_fsck(struct cas_pack *pack, cas_fsck_fn fn, void *ctx)
 			goto report;
 		}
 
-		uint64_t stored =
-			load_le64((const unsigned char *)&e->stored_size);
+		uint64_t stored = load_le64(e + PACK_IDX_STORED);
 		uint64_t region_size = stored ? stored : content_len;
 
 		if (region_size > trailer_off) {
@@ -461,7 +467,7 @@ cas_pack_fsck(struct cas_pack *pack, cas_fsck_fn fn, void *ctx)
 		cas_digest_object(type, data, len, digest);
 		free(owned);
 
-		if (memcmp(digest, e->hash, CAS_HASH_LEN) != 0) {
+		if (memcmp(digest, e + PACK_IDX_HASH, CAS_HASH_LEN) != 0) {
 			status = CAS_FSCK_CORRUPT;
 			goto report;
 		}
@@ -489,6 +495,7 @@ struct import_ctx {
 	struct cas *store;
 	int policy;
 	int codec;
+	cas_pack_verify_fn verify;
 	uint64_t total;
 	uint64_t stored;
 	int rc;
@@ -508,17 +515,30 @@ import_one(const char *hash, void *ctx)
 		return 1;
 	}
 
-	/* An "htree" object is a lookup-optimized re-encoding of a "tree"
-	 * whose address is the hash of the canonical text form, not of the
-	 * htree bytes; that text form cannot be rebuilt here, so the bytes
-	 * are stored verbatim at the pack's address and trusted (the pack
-	 * index is checksummed, and the htree carries its own adler32).
-	 * Every other type is self-addressed: its content must hash to the
-	 * claimed address, so a tampered object is rejected before it is
-	 * written into the depot. */
+	/* A bundle is somebody else's bytes, so this is a trust boundary and
+	 * nothing crosses it unchecked.
+	 *
+	 * With a verifier, it is the authority for every type and replaces
+	 * the check below.  Without one, a self-addressed object still has
+	 * to hash to the address it claims, but a re-encoded object is
+	 * refused: its address commits to a canonical form this layer cannot
+	 * rebuild, so there is nothing here to check it against.  Refusing
+	 * is the only safe answer.  Trusting the pack index checksum and the
+	 * htree's own adler32 is not: both are computed by whoever produced
+	 * the bundle. */
 	int reencoded = cas_type_is_reencoded(type);
 
-	if (!reencoded) {
+	if (ic->verify) {
+		if (ic->verify(type, cf.data, cf.len, hash) != CAS_OK) {
+			cas_close(&cf);
+			ic->rc = CAS_ERR;
+			return 1;
+		}
+	} else if (reencoded) {
+		cas_close(&cf);
+		ic->rc = CAS_ERR;
+		return 1;
+	} else {
 		char computed[CAS_HASH_HEX + 1];
 
 		cas_hash_object(type, cf.data, cf.len, computed);
@@ -556,14 +576,15 @@ import_one(const char *hash, void *ctx)
 
 int
 cas_pack_import(struct cas_pack *pack, struct cas *store,
-                int policy, int codec, uint64_t *total_out,
-                uint64_t *stored_out)
+                int policy, int codec, cas_pack_verify_fn verify,
+                uint64_t *total_out, uint64_t *stored_out)
 {
 	struct import_ctx ic = {
 		.pack = pack,
 		.store = store,
 		.policy = policy,
 		.codec = codec,
+		.verify = verify,
 	};
 
 	cas_pack_foreach(pack, import_one, &ic);

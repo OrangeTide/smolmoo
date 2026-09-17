@@ -1,6 +1,6 @@
 /* cas.h : content-addressable store using BLAKE2b hashing */
 /* Copyright (c) 2026 Jon Mayo <jon@rm-f.net>
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+ * Licensed under BSD-2-Clause-Patent OR MIT */
 
 #ifndef CAS_H
 #define CAS_H
@@ -28,6 +28,104 @@ enum {
 /** Return a human-readable string for a CAS error code. */
 const char *
 cas_strerror(int err);
+
+/****************************************************************
+ * Logging (optional, disabled by default)
+ ****************************************************************/
+
+/** Logging event codes. Stock messages are provided by cas_log_strerror().
+ *  Callers provide context via __FILE__ and __LINE__ pointers.
+ */
+enum cas_log_code {
+    /* Open/read operations */
+    CAS_LOG_OPEN_START = 1,
+    CAS_LOG_OPEN_MMAP,
+    CAS_LOG_OPEN_DECODE_START,
+    CAS_LOG_OPEN_DECODE_DONE,
+
+    /* Write operations */
+    CAS_LOG_PUT_TEMP_CREATE = 20,
+    CAS_LOG_PUT_WRITE_DATA,
+    CAS_LOG_PUT_FSYNC,
+    CAS_LOG_PUT_RENAME,
+
+    /* Lock operations */
+    CAS_LOG_LOCK_ACQUIRE = 40,
+    CAS_LOG_LOCK_RELEASE,
+
+    /* Iteration/fsck */
+    CAS_LOG_FOREACH_START = 60,
+    CAS_LOG_FSCK_CHECK,
+
+    /* Errors */
+    CAS_LOG_ERR_LOCK_FAILED = 100,
+    CAS_LOG_ERR_MALLOC,
+    CAS_LOG_ERR_MMAP,
+    CAS_LOG_ERR_WRITE,
+    CAS_LOG_ERR_DECODE,
+    CAS_LOG_ERR_UNLINK,
+    CAS_LOG_ERR_RENAME,
+    CAS_LOG_ERR_FSYNC,
+};
+
+/** Logging callback type. Called with event code, source location, and optional
+ *  message. Stock message is available via cas_log_strerror(code).
+ *  msg may be NULL; file and line are always valid.
+ */
+typedef void (*cas_log_fn)(int code, const char *file, int line,
+                           const char *msg, void *ctx);
+
+/** Register a logging callback. Only one callback may be active at a time.
+ *  Returns CAS_OK on success, CAS_ENOMEM on allocation failure.
+ *  Call cas_log_unregister() to disable logging.
+ */
+int
+cas_log_register(cas_log_fn fn, void *ctx);
+
+/** Unregister the logging callback and disable logging. */
+void
+cas_log_unregister(void);
+
+/** Return the stock message for a logging event code. */
+const char *
+cas_log_strerror(int code);
+
+/****************************************************************
+ * Compression Policy (optional, defaults apply if not set)
+ ****************************************************************/
+
+/** Compression policy configuration.
+ *  Controls whether and when cas_put_object_z() compresses objects.
+ *  All fields optional; use 0 for defaults.
+ */
+struct cas_compress_config {
+    /** Enable compression (1 = yes, 0 = disable all compression) */
+    int enabled;
+
+    /** Minimum object size to attempt compression, in bytes (0 = default 512).
+     *  Very small objects add more codec overhead than they save.
+     */
+    size_t min_size;
+
+    /** Minimum savings to keep compressed form, as percentage (0 = default 12).
+     *  If compressed size + tag does not save at least this percentage of
+     *  plaintext, store the raw form instead. Range: 1-99.
+     */
+    int min_savings_pct;
+};
+
+/** Set global compression policy. Returns CAS_OK on success.
+ *  All fields in cfg are copied; caller retains ownership.
+ *  Set cfg to NULL to use hard-coded defaults (512B minimum, 12% savings).
+ */
+int
+cas_compression_config(const struct cas_compress_config *cfg);
+
+/** Reset compression policy to hard-coded defaults.
+ *  Equivalent to cas_compression_config(NULL).
+ */
+void
+cas_compression_reset(void);
 
 /****************************************************************
  * Data structures
@@ -212,7 +310,9 @@ enum {
     CAS_FSCK_IOERR,
     CAS_FSCK_NOCODEC,    /* compressed, but no decoder to verify with */
     CAS_FSCK_REENCODED,  /* re-encoded object (htree); verify at the
-                            tree layer with cas_tree_fsck */
+                            tree layer with cas_tree_verify */
+    CAS_FSCK_FOREIGN,    /* a valid object, but not the kind this check
+                            understands; see cas_tree_verify */
 };
 
 /** Callback for cas_fsck.  Called for each object checked.  status
@@ -221,7 +321,7 @@ enum {
  *  in, so it could not be verified.  REENCODED means the object is an
  *  htree, whose address commits to its canonical text form rather than
  *  to its stored bytes; this layer does not decode it, so verifying it
- *  is left to cas_tree_fsck.  Both are reported but not counted as a
+ *  is left to cas_tree_verify.  Both are reported but not counted as a
  *  failure.  Return 0 to continue, nonzero to stop.
  */
 typedef int (*cas_fsck_fn)(const char *hash, int status, void *ctx);

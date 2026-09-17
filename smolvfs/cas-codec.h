@@ -1,5 +1,5 @@
 /* cas-codec.h : compile-time compression codec table for CAS */
-/* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* PUBLIC DOMAIN (CC0-1.0) */
 
 #ifndef CAS_CODEC_H
 #define CAS_CODEC_H
@@ -152,10 +152,10 @@ cas_codec_encode(int codec, const void *in, size_t inlen,
  * to raw or NONE objects (already bounded by the stored size).
  */
 #ifndef CAS_CODEC_MAX_PLAINTEXT
-#define CAS_CODEC_MAX_PLAINTEXT ((size_t)1 << 30)  /* 1 GiB ceiling */
+#define CAS_CODEC_MAX_PLAINTEXT ((size_t)100 << 20)  /* 100 MiB ceiling */
 #endif
 #ifndef CAS_CODEC_MAX_RATIO
-#define CAS_CODEC_MAX_RATIO 4096  /* max plaintext:payload expansion */
+#define CAS_CODEC_MAX_RATIO 256  /* max plaintext:payload expansion */
 #endif
 
 /** Decode an on-disk object data region into a plaintext view.

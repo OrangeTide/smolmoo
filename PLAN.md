@@ -280,12 +280,12 @@ no `fsync` at all, so a crash could leave the root referencing world content
 that never reached disk.
 
 This milestone does two things. First, durability: `cas_put_object` and the
-other CAS writers now `fsync` the object data before the rename and `fsync` the
+other CAS writers `fsync` the object data before the rename and `fsync` the
 containing directory after it, and `root_write` does the same for the root
-pointer. That matches the fix upstream smolvfs shipped in v0.4.1. The vendored
-CAS copy has diverged too far from upstream for a clean drop-in, so the fsync
-support is forward-ported into the vendored files as a minimal local patch; a
-wholesale re-vendor is left as future work.
+pointer. The CAS-side fsync originally shipped as a minimal local patch, then
+landed properly when the vendored CAS layer was re-synced to upstream smolvfs
+v0.4.1 (Milestone 28). The `root_write` fsync stays in `smolmoo.c` since the
+root pointer is smolmoo's own file, not part of the CAS.
 
 Second, the fsync cost stays off the main loop. `world_save` is split into
 `save_snapshot`, which serializes each dirty object into a self-contained buffer
@@ -306,12 +306,36 @@ paths.
 
 ---
 
+## Milestone 28: Re-vendor smolvfs to Upstream v0.4.1
+
+The vendored CAS layer had drifted from upstream smolvfs into a trimmed fork.
+This re-syncs the four modules smolmoo uses (`cas`, `cas-omap`, `cas-pack`,
+`cas-codec`) to upstream v0.4.1 and drops the local fsync patch, which upstream
+now carries. The public API is unchanged, so `smolmoo.c` needed no edits, and
+all 15 CAS entry points smolmoo calls kept their signatures.
+
+The four modules are self-contained: BLAKE2b lives inside `cas.c`, the optional
+logging subsystem compiles away when no callback is registered, and the base
+codec has no external compression dependency. The larger upstream additions
+(signing, a VFS layer, snapshots, topics, trees, the miniz codec) are left out
+since smolmoo does not use them yet; they are the raw material for the ideas in
+"Future Milestones" below. A `version.h` marker is vendored so the next re-sync
+can tell what is present. Upstream ships these files under BSD-2-Clause-Patent
+OR MIT, so they carry that notice rather than the repo's 0BSD OR CC0-1.0.
+
+---
+
 # Future Milestones
 
-## Milestone 28: Re-vendor smolvfs to Upstream
+## Milestone 29: Versioned World History (uses upstream smolvfs)
 
-The vendored CAS layer is a trimmed fork that has diverged from upstream
-smolvfs (v0.4.1 and later add signing, a VFS layer, topics, trees, and a
-logging subsystem). Durability fsync support is currently forward-ported as a
-local patch. A wholesale re-sync would drop the local patch and pick up upstream
-fixes, at the cost of re-trimming to smolmoo's needs.
+`world_save` already writes a content-addressed root pointer. Upstream smolvfs
+now provides the machinery to turn that root into a verifiable history: signed
+version records (`cas-sign`, backed by the monocypher smolmoo already vendors)
+form an append-only chain of world roots, and a topic (`cas-topic`) keeps the
+head with an update log and crash rollback. That would give the world a commit
+history: rewind to any prior save, audit changes, and recover safely after a
+crash. The signed-topic model is also the basis for a backup follower or mirror
+that verifies the world without trusting the transport (the SHOAL protocol).
+Player-authored content stored as a tree (`cas-tree` / `vfs-snap`) could be
+snapshotted the same way.

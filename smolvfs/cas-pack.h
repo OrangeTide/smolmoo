@@ -207,18 +207,36 @@ cas_pack_foreach(struct cas_pack *pack, cas_pack_foreach_fn fn,
 int
 cas_pack_fsck(struct cas_pack *pack, cas_fsck_fn fn, void *ctx);
 
-/** Merge every object from a packfile into store, deduplicated by
- *  address.  Each object's address is re-verified against its decoded
- *  content, so a bundle downloaded from an untrusted server cannot
- *  poison the depot: a mismatch aborts with CAS_ERR before that object
- *  is stored (objects merged earlier in the same call remain, so an
- *  import is not atomic).  Objects already present are skipped.
+/** Decide whether an object from a bundle may be admitted.
  *
- *  An "htree" object is addressed by the hash of its canonical text
- *  form rather than of its own bytes, so it is stored verbatim at the
- *  bundle's address and trusted (the pack index is checksummed and the
- *  htree carries an internal adler32); only self-addressed objects
- *  (blobs, text trees, compressed blobs) get the content re-hash check.
+ *  Receives the plaintext and the address the bundle claims for it.
+ *  Return CAS_OK to admit, anything else to refuse.
+ *  cas_tree_check_object in cas-tree.h has this signature and is the
+ *  intended implementation.
+ */
+typedef int (*cas_pack_verify_fn)(const char *type, const void *data,
+                                  size_t len, const char *hash);
+
+/** Merge every object from a packfile into store, deduplicated by
+ *  address.  A failed check aborts with CAS_ERR before that object is
+ *  stored (objects merged earlier in the same call remain, so an import
+ *  is not atomic).  Objects already present are skipped.
+ *
+ *  A bundle is somebody else's bytes, so importing one is a trust
+ *  boundary and nothing crosses it unchecked.
+ *
+ *  Pass `verify` to decide what is admissible.  It sees every object and
+ *  replaces the built-in check, so it is the authority; pass
+ *  cas_tree_check_object from cas-tree.h unless there is a reason not
+ *  to.  A nonzero return refuses the object and fails the import.
+ *
+ *  Pass NULL only when no depot content of a re-encoded type is
+ *  expected.  A self-addressed object (blob, text tree, compressed blob)
+ *  still has to hash to the address it claims, but a re-encoded object
+ *  ("htree") is then *refused*: its address commits to a canonical form
+ *  this layer cannot rebuild, so there is nothing here to check it
+ *  against.  Neither the pack index checksum nor the htree's internal
+ *  adler32 substitutes, since whoever produced the bundle computed both.
  *
  *  Objects are stored compressed per policy and codec (a CAS_COMPRESS_*
  *  mode and codec tag from cas-codec.h), exactly as cas_put_object_z
@@ -231,7 +249,7 @@ cas_pack_fsck(struct cas_pack *pack, cas_fsck_fn fn, void *ctx);
  */
 int
 cas_pack_import(struct cas_pack *pack, struct cas *store,
-                int policy, int codec, uint64_t *total_out,
-                uint64_t *stored_out);
+                int policy, int codec, cas_pack_verify_fn verify,
+                uint64_t *total_out, uint64_t *stored_out);
 
 #endif /* CAS_PACK_H */

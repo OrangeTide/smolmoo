@@ -1,5 +1,5 @@
 /* cas-omap.h : sparse object map -- numeric ID to CAS hash */
-/* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* PUBLIC DOMAIN (CC0-1.0) */
 
 #ifndef CAS_OMAP_H
 #define CAS_OMAP_H

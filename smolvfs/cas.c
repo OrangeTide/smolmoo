@@ -1,8 +1,25 @@
 /* cas.c : content-addressable store using BLAKE2b hashing */
 /* Copyright (c) 2026 Jon Mayo <jon@rm-f.net>
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+ * Licensed under BSD-2-Clause-Patent OR MIT */
+
+/* IMPLEMENTATION NOTES
+ *
+ * Path Limits (CAS_PATH_MAX):
+ *   Paths are limited to 512 bytes. For basedir/XX/HASH layout, this means
+ *   basedir should stay under 400 bytes to be safe. Operations that would
+ *   exceed the limit fail with CAS_ERR. Check build_path/build_dir return
+ *   values when using very long basedir paths (>350 bytes).
+ *
+ * Compression:
+ *   Objects are compressed only if:
+ *   1. Object size >= 512 bytes (skip codec overhead on tiny objects)
+ *   2. Compressed form saves > 12% of original size
+ *   Threshold: (payload + 1 byte tag) < 87.5% of original.
+ *   This avoids wasting CPU on incompressible data (images, video, etc.)
+ */
 
 #define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE  /* musl exposes realpath() only under this or _XOPEN_SOURCE */
 
 #include "cas.h"
 #include "cas-pack.h"
@@ -23,6 +40,14 @@
  * Internal constants
  ****************************************************************/
 
+/** Maximum depot path length (512 bytes).
+ *  Paths are constructed as: basedir/XX/HASH where XX is the first
+ *  two hex digits of the hash (object sharding).
+ *  If a path would exceed 512 bytes (e.g., very long basedir),
+ *  build_path and build_dir return CAS_ERR. Callers should use
+ *  reasonable basedir paths (< 400 bytes recommended).
+ *  This limit is a practical constraint, not a security boundary.
+ */
 #define CAS_PATH_MAX    512
 #define CAS_HEADER_MAX  32
 #define BLAKE2B_BLOCKLEN 128
@@ -43,6 +68,112 @@ cas_strerror(int err)
     case CAS_ETYPE:     return "type mismatch";
     default:            return "unknown error";
     }
+}
+
+/****************************************************************
+ * Logging (optional, runtime-configurable)
+ ****************************************************************/
+
+static cas_log_fn cas__log_callback = NULL;
+static void *cas__log_ctx = NULL;
+
+int
+cas_log_register(cas_log_fn fn, void *ctx)
+{
+    cas__log_callback = fn;
+    cas__log_ctx = ctx;
+    return CAS_OK;
+}
+
+void
+cas_log_unregister(void)
+{
+    cas__log_callback = NULL;
+    cas__log_ctx = NULL;
+}
+
+const char *
+cas_log_strerror(int code)
+{
+    switch (code) {
+    /* Open/read operations */
+    case CAS_LOG_OPEN_START:        return "open object";
+    case CAS_LOG_OPEN_MMAP:         return "mmap region";
+    case CAS_LOG_OPEN_DECODE_START: return "decompress start";
+    case CAS_LOG_OPEN_DECODE_DONE:  return "decompress done";
+
+    /* Write operations */
+    case CAS_LOG_PUT_TEMP_CREATE:   return "create temp file";
+    case CAS_LOG_PUT_WRITE_DATA:    return "write data";
+    case CAS_LOG_PUT_FSYNC:         return "fsync";
+    case CAS_LOG_PUT_RENAME:        return "atomic rename";
+
+    /* Lock operations */
+    case CAS_LOG_LOCK_ACQUIRE:      return "acquire lock";
+    case CAS_LOG_LOCK_RELEASE:      return "release lock";
+
+    /* Iteration/fsck */
+    case CAS_LOG_FOREACH_START:     return "scan depot";
+    case CAS_LOG_FSCK_CHECK:        return "check object";
+
+    /* Errors */
+    case CAS_LOG_ERR_LOCK_FAILED:   return "lock failed";
+    case CAS_LOG_ERR_MALLOC:        return "malloc failed";
+    case CAS_LOG_ERR_MMAP:          return "mmap failed";
+    case CAS_LOG_ERR_WRITE:         return "write failed";
+    case CAS_LOG_ERR_DECODE:        return "decode failed";
+    case CAS_LOG_ERR_UNLINK:        return "unlink failed";
+    case CAS_LOG_ERR_RENAME:        return "rename failed";
+    case CAS_LOG_ERR_FSYNC:         return "fsync failed";
+    default:                        return "unknown event";
+    }
+}
+
+/** Internal helper: emit a log event if callback is registered. */
+static inline void
+cas__log_emit(int code, const char *file, int line, const char *msg)
+{
+    if (cas__log_callback != NULL) {
+        (*cas__log_callback)(code, file, line, msg, cas__log_ctx);
+    }
+}
+
+/** Macro for logging events. Compiles away if callback is not registered. */
+#define CAS_LOG(code, msg) \
+    cas__log_emit(code, __FILE__, __LINE__, msg)
+
+/****************************************************************
+ * Compression Policy (global configuration)
+ ****************************************************************/
+
+static struct cas_compress_config cas__compress_cfg = {
+    .enabled = 1,
+    .min_size = 512,        /* default: skip codec overhead on tiny objects */
+    .min_savings_pct = 12,  /* default: require >12% savings to justify codec cost */
+};
+
+int
+cas_compression_config(const struct cas_compress_config *cfg)
+{
+    if (!cfg)
+        return CAS_ERR;
+
+    /* Validate min_savings_pct range. */
+    if (cfg->min_savings_pct < 1 || cfg->min_savings_pct > 99)
+        return CAS_ERR;
+
+    cas__compress_cfg = *cfg;
+    return CAS_OK;
+}
+
+void
+cas_compression_reset(void)
+{
+    cas__compress_cfg = (struct cas_compress_config){
+        .enabled = 1,
+        .min_size = 512,
+        .min_savings_pct = 12,
+    };
 }
 
 /****************************************************************
@@ -223,6 +354,10 @@ blake2b_final(struct blake2b *S, void *out)
 
 static const char hex_chars[] = "0123456789abcdef";
 
+/** Encode binary to hex string.
+ *  Encodes len bytes from bin into out as null-terminated hex string.
+ *  out must be at least len*2+1 bytes.
+ */
 static void
 to_hex(const uint8_t *bin, size_t len, char *out)
 {
@@ -233,6 +368,10 @@ to_hex(const uint8_t *bin, size_t len, char *out)
     out[len * 2] = '\0';
 }
 
+/** Validate hex hash string format.
+ *  Checks that hash is exactly CAS_HASH_HEX characters of valid hex.
+ *  Returns nonzero if valid, 0 if invalid.
+ */
 static int
 valid_hash(const char *hash)
 {
@@ -256,12 +395,51 @@ valid_hash(const char *hash)
 struct cas {
     char *basedir;
     struct cas_pack *pack;
+    int lock_fd;  /* exclusive lock on depot directory */
 };
+
+/** Validate basedir to prevent path traversal attacks.
+ *  Returns 0 if valid, -1 if suspicious patterns detected.
+ *  Checks: no ".." components, no symlinks leading outside.
+ *  (realpath() requires the path to exist, so we do best-effort validation)
+ */
+static int
+validate_basedir(const char *basedir)
+{
+    if (!basedir || !*basedir)
+        return -1;
+
+    /* Check for ".." path traversal attempts */
+    const char *p = basedir;
+    while (*p) {
+        if (p[0] == '.' && p[1] == '.' && (p[2] == '/' || p[2] == '\0'))
+            return -1;  /* ".." found */
+        p++;
+    }
+
+    /* If path exists, verify it resolves cleanly.  realpath() can write
+     * up to PATH_MAX bytes, which exceeds any fixed CAS_PATH_MAX buffer,
+     * so let it allocate the result and free it. */
+    if (access(basedir, F_OK) == 0) {
+        char *canonical = realpath(basedir, NULL);
+
+        if (canonical == NULL)
+            return -1;  /* realpath failed or path is invalid */
+        free(canonical);
+    }
+
+    return 0;
+}
 
 static int
 build_path(const struct cas *store, const char *hash,
            char *buf, size_t bufsz)
 {
+    /* Construct object path: basedir/XX/HASH
+     * Returns CAS_ERR if path would exceed buffer size (typically CAS_PATH_MAX).
+     * If basedir is very long (>400 bytes), this will fail.
+     * Use reasonable basedir paths to avoid truncation issues.
+     */
     int n = snprintf(buf, bufsz, "%s/%.2s/%s",
                      store->basedir, hash, hash);
 
@@ -274,12 +452,68 @@ static int
 build_dir(const struct cas *store, const char *hash,
           char *buf, size_t bufsz)
 {
+    /* Construct bucket directory path: basedir/XX
+     * Returns CAS_ERR if path would exceed buffer size (typically CAS_PATH_MAX).
+     * See build_path for notes on path length limits.
+     */
     int n = snprintf(buf, bufsz, "%s/%.2s",
                      store->basedir, hash);
 
     if (n < 0 || (size_t)n >= bufsz)
         return CAS_ERR;
     return CAS_OK;
+}
+
+/****************************************************************
+ * Locking
+ ****************************************************************/
+
+/** Acquire an exclusive lock on the depot.
+ *  Opens .lock file in basedir and locks it with fcntl.
+ *  Returns the open fd on success, or -1 on failure.
+ *  The lock is held until cas_unlock_depot() or process exit.
+ */
+static int
+cas_lock_depot(const char *basedir)
+{
+    char lockpath[CAS_PATH_MAX];
+    int n = snprintf(lockpath, sizeof(lockpath), "%s/.lock", basedir);
+
+    if (n < 0 || (size_t)n >= sizeof(lockpath))
+        return -1;
+
+    int fd = open(lockpath, O_WRONLY | O_CREAT, 0644);
+
+    if (fd < 0)
+        return -1;
+
+    struct flock lock = {
+        .l_type = F_WRLCK,     /* exclusive write lock */
+        .l_whence = SEEK_SET,
+        .l_start = 0,
+        .l_len = 0,            /* lock entire file */
+    };
+
+    if (fcntl(fd, F_SETLKW, &lock) < 0) {
+        CAS_LOG(CAS_LOG_ERR_LOCK_FAILED, NULL);
+        close(fd);
+        return -1;
+    }
+
+    CAS_LOG(CAS_LOG_LOCK_ACQUIRE, NULL);
+    return fd;
+}
+
+/** Release the depot lock.
+ *  Closes the lock fd, which implicitly releases the lock.
+ */
+static void
+cas_unlock_depot(int lock_fd)
+{
+    if (lock_fd >= 0) {
+        CAS_LOG(CAS_LOG_LOCK_RELEASE, NULL);
+        close(lock_fd);
+    }
 }
 
 /****************************************************************
@@ -299,6 +533,24 @@ cas_new(const char *basedir)
         return NULL;
     }
 
+    if (validate_basedir(store->basedir) != 0) {
+        free(store->basedir);
+        free(store);
+        return NULL;
+    }
+
+    /* The lock file lives inside the depot, so the depot directory must
+     * exist before we can create it.  Historically the depot was made
+     * lazily on first write; the depot-wide lock now forces it here. */
+    mkdir(store->basedir, 0755);
+
+    store->lock_fd = cas_lock_depot(store->basedir);
+    if (store->lock_fd < 0) {
+        free(store->basedir);
+        free(store);
+        return NULL;
+    }
+
     char packpath[CAS_PATH_MAX];
 
     if (snprintf(packpath, sizeof(packpath), "%s/pack.dat",
@@ -314,6 +566,7 @@ cas_free(struct cas *store)
     if (!store)
         return;
     cas_pack_close(store->pack);
+    cas_unlock_depot(store->lock_fd);
     free(store->basedir);
     free(store);
 }
@@ -328,6 +581,10 @@ cas_basedir(struct cas *store)
  * Write / header helpers
  ****************************************************************/
 
+/** Write data to fd, handling partial writes and EINTR.
+ *  Continues until all len bytes are written or an error occurs.
+ *  Returns CAS_OK on success, CAS_EIO on I/O error.
+ */
 static int
 write_full(int fd, const void *data, size_t len)
 {
@@ -347,10 +604,40 @@ write_full(int fd, const void *data, size_t len)
     return CAS_OK;
 }
 
+/*
+ * fsync a directory so a rename or unlink of an entry within it is made
+ * durable. The object data is fsynced before the rename, but the rename
+ * itself only reaches disk once the directory is fsynced. Without this a
+ * crash can leave a committed ref pointing at an object whose directory
+ * entry was lost. Failure to open or fsync the directory is best effort:
+ * the caller has already reported success for the object write, and there
+ * is no clean way to unwind a completed rename.
+ */
+static void
+fsync_dir(const char *dirpath)
+{
+    int fd = open(dirpath, O_RDONLY | O_DIRECTORY);
+
+    if (fd < 0)
+        return;
+    fsync(fd);
+    close(fd);
+}
+
 /** Format "type len\0" into buf, return total length including NUL. */
 static int
 format_header(char *buf, size_t bufsz, const char *type, size_t len)
 {
+    /* Validate type before formatting to prevent silent corruption.
+     * type must be non-empty and within CAS_TYPE_MAX.
+     * These preconditions match the expectations of parse_header.
+     */
+    if (!type || !*type)
+        return -1;
+    size_t typelen = strlen(type);
+    if (typelen > CAS_TYPE_MAX)
+        return -1;
+
     int n = snprintf(buf, bufsz, "%s %zu", type, len);
 
     if (n < 0 || (size_t)n + 1 > bufsz)
@@ -397,7 +684,12 @@ parse_header(const char *hdr, size_t hdrsz,
         size_t prev = len;
 
         len = len * 10 + (size_t)(*d - '0');
-        if (len < prev)
+        /* Detect overflow: wrapped value will be < prev.
+         * Also apply reasonable upper bound (1GB) to reject absurdly
+         * large sizes that can't be allocated or processed.
+         * Note: cas-codec uses 1GB as its default upper limit.
+         */
+        if (len < prev || len > (size_t)1 << 30)
             return CAS_ERR;
     }
 
@@ -449,12 +741,18 @@ cas_hash_object(const char *type, const void *data, size_t len,
  * cas_file teardown
  ****************************************************************/
 
+/** Cleanup for mmap-backed cas_file.
+ *  Unmaps the mmap region. Used as _release callback.
+ */
 static void
 release_munmap(struct cas_file *cf)
 {
     munmap(cf->_priv, cf->_privlen);
 }
 
+/** Cleanup for malloc-backed cas_file.
+ *  Frees the heap buffer. Used as _release callback.
+ */
 static void
 release_free(struct cas_file *cf)
 {
@@ -465,6 +763,8 @@ int
 cas_open_object(struct cas *store, struct cas_file *cf,
                 const char *hash, char *type_out, size_t type_bufsz)
 {
+    CAS_LOG(CAS_LOG_OPEN_START, hash);
+
     if (!valid_hash(hash))
         return CAS_ERR;
 
@@ -493,18 +793,27 @@ cas_open_object(struct cas *store, struct cas_file *cf,
         return CAS_EIO;
     }
 
-    size_t filesz = (size_t)sb.st_size;
-
-    if (filesz < CAS_PACK_BLOCK) {
+    /* Validate file size before casting and mmapping.
+     * st_size is signed (off_t); a negative value indicates corruption.
+     * Also enforce an upper bound (1GB) to prevent memory exhaustion
+     * and match cas-codec limits.
+     */
+    if (sb.st_size < (off_t)CAS_PACK_BLOCK || sb.st_size > (off_t)(1 << 30)) {
         close(fd);
         return CAS_ERR;
     }
 
+    size_t filesz = (size_t)sb.st_size;
+
     void *ptr = mmap(NULL, filesz, PROT_READ, MAP_PRIVATE, fd, 0);
 
     close(fd);
-    if (ptr == MAP_FAILED)
+    if (ptr == MAP_FAILED) {
+        CAS_LOG(CAS_LOG_ERR_MMAP, NULL);
         return CAS_EIO;
+    }
+
+    CAS_LOG(CAS_LOG_OPEN_MMAP, NULL);
 
     const struct cas_pack_trailer *tr =
         (const struct cas_pack_trailer *)
@@ -544,14 +853,19 @@ cas_open_object(struct cas *store, struct cas_file *cf,
     const unsigned char *data;
     size_t len;
     unsigned char *owned;
+
+    CAS_LOG(CAS_LOG_OPEN_DECODE_START, NULL);
     int rc = cas_codec_region_decode(ptr, filesz - CAS_PACK_BLOCK,
                                      framed, content_len,
                                      &data, &len, &owned);
 
     if (rc != CAS_OK) {
+        CAS_LOG(CAS_LOG_ERR_DECODE, NULL);
         munmap(ptr, filesz);
         return rc;
     }
+
+    CAS_LOG(CAS_LOG_OPEN_DECODE_DONE, NULL);
 
     if (owned) {
         /* decoded into a heap buffer; the source is no longer needed */
@@ -594,12 +908,17 @@ cas_open_loose_raw(struct cas *store, struct cas_file *cf,
         return CAS_EIO;
     }
 
-    size_t filesz = (size_t)sb.st_size;
-
-    if (filesz < CAS_PACK_BLOCK) {
+    /* Validate file size before casting and mmapping.
+     * st_size is signed (off_t); a negative value indicates corruption.
+     * Also enforce an upper bound (1GB) to prevent memory exhaustion
+     * and match cas-codec limits.
+     */
+    if (sb.st_size < (off_t)CAS_PACK_BLOCK || sb.st_size > (off_t)(1 << 30)) {
         close(fd);
         return CAS_ERR;
     }
+
+    size_t filesz = (size_t)sb.st_size;
 
     void *ptr = mmap(NULL, filesz, PROT_READ, MAP_PRIVATE, fd, 0);
 
@@ -648,37 +967,20 @@ cas_open(struct cas *store, struct cas_file *cf, const char *hash)
 void
 cas_close(struct cas_file *cf)
 {
-    if (cf->_release)
-        cf->_release(cf);
+    /* Save and clear the release function pointer before calling it.
+     * This makes cas_close idempotent: calling it multiple times is safe.
+     * On the second call, _release is NULL, so nothing happens.
+     */
+    void (*release_fn)(struct cas_file *cf) = cf->_release;
+    cf->_release = NULL;
+
+    if (release_fn)
+        release_fn(cf);
+
     cf->data = NULL;
     cf->len = 0;
     cf->_priv = NULL;
     cf->_privlen = 0;
-    cf->_release = NULL;
-}
-
-/* Flush a just-written temp file to disk before it is renamed into place,
-   so a stored object's content is durable before anything can reference it.
-   Returns CAS_OK on success. On failure the caller unlinks the temp file. */
-static int
-cas_fsync_fd(int fd)
-{
-    if (fsync(fd) != 0)
-        return CAS_EIO;
-    return CAS_OK;
-}
-
-/* Flush a directory entry to disk so a completed rename survives a crash.
-   Best effort: a missing directory fd is not treated as fatal. */
-static void
-cas_fsync_dir(const char *dir)
-{
-    int dfd = open(dir, O_RDONLY);
-
-    if (dfd >= 0) {
-        fsync(dfd);
-        close(dfd);
-    }
 }
 
 int
@@ -721,6 +1023,7 @@ cas_put_object(struct cas *store, const char *type,
     mkdir(store->basedir, 0755);
     mkdir(dir, 0755);
 
+    /* Check that temp filename fits in buffer before mkstemp. */
     if (snprintf(tmp, sizeof(tmp), "%s/.cas.XXXXXX", dir) >=
         (int)sizeof(tmp))
         return CAS_ERR;
@@ -730,15 +1033,19 @@ cas_put_object(struct cas *store, const char *type,
     if (fd < 0)
         return CAS_EIO;
 
+    CAS_LOG(CAS_LOG_PUT_TEMP_CREATE, NULL);
+
     int rc;
 
     if (len > 0) {
         rc = write_full(fd, data, len);
         if (rc != CAS_OK) {
+            CAS_LOG(CAS_LOG_ERR_WRITE, NULL);
             close(fd);
             unlink(tmp);
             return rc;
         }
+        CAS_LOG(CAS_LOG_PUT_WRITE_DATA, NULL);
     }
 
     struct cas_pack_trailer tr;
@@ -755,19 +1062,35 @@ cas_put_object(struct cas *store, const char *type,
         return rc;
     }
 
-    if (cas_fsync_fd(fd) != CAS_OK) {
+    if (fsync(fd) != 0) {
+        CAS_LOG(CAS_LOG_ERR_FSYNC, NULL);
         close(fd);
         unlink(tmp);
         return CAS_EIO;
     }
+
+    CAS_LOG(CAS_LOG_PUT_FSYNC, NULL);
     close(fd);
 
+    /* Atomically move temp file to final location.
+     * If rename fails (rare on local filesystems, possible on NFS),
+     * check if the target already exists. This handles dedup: if another
+     * process wrote the same hash before our rename completed, the target
+     * file is already there. With the depot lock held (Item 2), only
+     * external processes can create races; internal concurrent access is
+     * serialized. Treat target existence as a dedup success.
+     */
     if (rename(tmp, path) != 0) {
+        CAS_LOG(CAS_LOG_ERR_RENAME, NULL);
         unlink(tmp);
         if (access(path, F_OK) != 0)
             return CAS_EIO;
+        /* Target exists: dedup success, fall through */
+    } else {
+        CAS_LOG(CAS_LOG_PUT_RENAME, NULL);
     }
-    cas_fsync_dir(dir);
+
+    fsync_dir(dir);
 
     memcpy(hash_out, hash, CAS_HASH_HEX + 1);
     return CAS_OK;
@@ -803,6 +1126,7 @@ cas_put_object_at(struct cas *store, const char *type,
     mkdir(store->basedir, 0755);
     mkdir(dir, 0755);
 
+    /* Check that temp filename fits in buffer before mkstemp. */
     if (snprintf(tmp, sizeof(tmp), "%s/.cas.XXXXXX", dir) >=
         (int)sizeof(tmp))
         return CAS_ERR;
@@ -837,19 +1161,25 @@ cas_put_object_at(struct cas *store, const char *type,
         return rc;
     }
 
-    if (cas_fsync_fd(fd) != CAS_OK) {
+    if (fsync(fd) != 0) {
         close(fd);
         unlink(tmp);
         return CAS_EIO;
     }
+
     close(fd);
 
+    /* Atomically move temp file to final location.
+     * See cas_put_object for dedup logic and TOCTOU analysis.
+     */
     if (rename(tmp, path) != 0) {
         unlink(tmp);
         if (access(path, F_OK) != 0)
             return CAS_EIO;
+        /* Target exists: dedup success, fall through */
     }
-    cas_fsync_dir(dir);
+
+    fsync_dir(dir);
 
     return CAS_OK;
 }
@@ -888,6 +1218,7 @@ cas_put_precompressed(struct cas *store, const char *type, int codec,
     mkdir(store->basedir, 0755);
     mkdir(dir, 0755);
 
+    /* Check that temp filename fits in buffer before mkstemp. */
     if (snprintf(tmp, sizeof(tmp), "%s/.cas.XXXXXX", dir) >=
         (int)sizeof(tmp))
         return CAS_ERR;
@@ -923,19 +1254,25 @@ cas_put_precompressed(struct cas *store, const char *type, int codec,
         return rc;
     }
 
-    if (cas_fsync_fd(fd) != CAS_OK) {
+    if (fsync(fd) != 0) {
         close(fd);
         unlink(tmp);
         return CAS_EIO;
     }
+
     close(fd);
 
+    /* Atomically move temp file to final location.
+     * See cas_put_object for dedup logic and TOCTOU analysis.
+     */
     if (rename(tmp, path) != 0) {
         unlink(tmp);
         if (access(path, F_OK) != 0)
             return CAS_EIO;
+        /* Target exists: dedup success, fall through */
     }
-    cas_fsync_dir(dir);
+
+    fsync_dir(dir);
 
     return CAS_OK;
 }
@@ -955,9 +1292,14 @@ cas_put_object_z(struct cas *store, const char *type, int codec,
         return CAS_OK;
     }
 
-    /* try to compress; keep it only if the payload plus its one
-     * codec tag byte beats the raw size by more than ~12% */
-    if (codec != CAS_CODEC_NONE && len > 0 &&
+    /* Try to compress if enabled and object is large enough.
+     * Keep compressed form only if savings justify codec overhead.
+     * The savings threshold is configurable via cas_compression_config().
+     * Already-compressed data (e.g., JPEG) is not re-compressed,
+     * so codec attempt is a sunk cost; keep result only if it wins.
+     */
+    if (cas__compress_cfg.enabled && codec != CAS_CODEC_NONE &&
+        len >= cas__compress_cfg.min_size &&
         cas_codec_can_encode(codec)) {
         unsigned char *buf = malloc(len);
 
@@ -965,7 +1307,13 @@ cas_put_object_z(struct cas *store, const char *type, int codec,
             size_t plen = len;
             int rc = cas_codec_encode(codec, data, len, buf, &plen);
 
-            if (rc == CAS_OK && plen + 1 < len - len / 8) {
+            /* Calculate minimum savings required (in bytes).
+             * Example: 1000B object, 12% savings = 120B savings required
+             * So compressed must be < 1000 - 120 = 880 bytes (plus 1 byte for codec tag)
+             */
+            size_t min_savings = len * (size_t)cas__compress_cfg.min_savings_pct / 100;
+
+            if (rc == CAS_OK && plen + 1 < len - min_savings) {
                 rc = cas_put_precompressed(store, type, codec, buf,
                                            plen, len, hash);
                 free(buf);
@@ -1016,8 +1364,15 @@ cas_foreach(struct cas *store, cas_foreach_fn fn, void *ctx)
 {
     DIR *top = opendir(store->basedir);
 
-    if (!top)
-        return CAS_OK;
+    if (!top) {
+        /* Distinguish between "directory not found" (OK for new depot)
+         * and other errors (permission, I/O, etc., which should be
+         * reported so callers can detect corruption/access issues).
+         */
+        if (errno == ENOENT)
+            return CAS_OK;  /* Depot dir not created yet; OK */
+        return CAS_EIO;     /* Other error: permission, I/O, etc. */
+    }
 
     struct dirent *bucket;
 
