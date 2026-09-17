@@ -5209,6 +5209,19 @@ cmd_feedback(int sid, const char *args)
         return;
     }
 
+    /* No built-in @tag matched. Try a builder or admin verb named "@tag"
+       (see OLC.md) before treating the line as feedback, so online-creation
+       tools can ship as verbs on the VM rather than as host code. */
+    if (*tag) {
+        char vname[sizeof(tag) + 1];
+
+        snprintf(vname, sizeof(vname), "@%s", tag);
+        if (verb_dispatch(sid, vname, p) == OK) {
+            status_update(sid);
+            return;
+        }
+    }
+
     /* Default feedback path for @gripe, @typo, @bug, etc. */
     if (!*tag || !*p) {
         session_write(sid,

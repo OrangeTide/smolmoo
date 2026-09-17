@@ -284,6 +284,23 @@ check_log /tmp/smolmoo_p1.log 'Programmed.' "@program compiles source"
 curl -sf -X POST -d "$SID1 myprog" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'PROGRAMMED OK' "@program verb runs"
 
+# --- OLC P1: an @-prefixed command routes to a verb (see OLC.md) ---
+# A verb whose `verb` property is "@olctest" is reached by typing @olctest,
+# instead of the input being logged as feedback.
+curl -sf -X POST -d "$SID1 @create #400" http://localhost:$PORT/cmd >/dev/null
+OLCV=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+printf 'verb main(player: obj, room: obj)\n    player:tell("OLC ROUTED");\nendverb\n' \
+	| curl -sf -X POST --data-binary @- \
+	  "http://localhost:$PORT/prop?obj=$OLCV&prop=src&sid=$SID1" >/dev/null
+curl -sf -X POST --data-raw "@olctest" \
+	"http://localhost:$PORT/prop?obj=$OLCV&prop=verb&sid=$SID1" >/dev/null
+curl -sf -X POST -d "$SID1 @program #$OLCV" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @olctest" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'OLC ROUTED' "@-command routes to a verb"
+# An unmatched @tag with no verb still falls through to the feedback log.
+curl -sf -X POST -d "$SID1 @gripe still works" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'your feedback has been noted' "unmatched @tag still logs feedback"
+
 # @program also compiles a C verb; the language is sniffed from #include.
 curl -sf -X POST -d "$SID1 @create #400" http://localhost:$PORT/cmd >/dev/null
 CPROG=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')

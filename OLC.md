@@ -42,18 +42,17 @@ constraint. They stay where they are. OLC builds new tools alongside them.
 
 Two small host changes unlock the verb-based approach. Both are one-time.
 
-### P1: Route `@`-commands to verbs
+### P1: Route `@`-commands to verbs (shipped)
 
-Today an unknown `@tag` never reaches `verb_dispatch`. The `@` handler runs
-its chain of built-in tags and, on no match, falls through to the feedback
-log (the `@gripe` / `@typo` path). Plain-word commands already fall through
-to verbs, so a builder verb named `dig` or `recycle` works today with no host
-change. To keep the `@` convention for builder verbs, the `@` handler needs a
-`verb_dispatch` attempt before the feedback fallback. About three lines.
+The `@` handler (`cmd_feedback`) now tries a verb named `@tag` through
+`verb_dispatch` after its chain of built-in tags and before the feedback
+fallback. So a verb whose `verb` property is `@dig` is reached by typing
+`@dig`, while an unmatched `@tag` with no verb still logs as feedback
+(`@gripe` and friends are unchanged). Built-in tags keep priority, so a verb
+cannot shadow `@create` or `@set`. The smoke suite covers both paths.
 
-Decision needed: keep the `@` prefix for builder commands (needs P1), or use
-plain words for the verb-based tools (no host change). The `@` prefix reads as
-"builder or admin command" and is the MUD convention, so P1 is recommended.
+Decision made: keep the `@` prefix for builder commands. It reads as "builder
+or admin command" and is the MUD convention.
 
 ### P2: Tighten `sys_setprop`, and add a clone primitive
 
