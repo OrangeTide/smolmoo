@@ -9,3 +9,6 @@
 /REF/
 /JUNK/
 /OLD/
+
+# signing keys (secret, never commit)
+*.key

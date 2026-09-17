@@ -326,17 +326,43 @@ relicensed to the repo's own 0BSD OR CC0-1.0 to keep the tree uniform.
 
 ---
 
+## Milestone 29: Versioned World History (in progress)
+
+`world_save` writes a content-addressed root pointer. This milestone turns each
+save into a link in a signed, verifiable history of world roots, so the world
+gains a commit log: rewind to any prior save, audit what changed and when, and
+recover after a bad edit.
+
+Scope note: the design uses `cas-sign` alone, not `cas-topic`/`cas-tree`. A
+version record is a signed, self-addressed object that names a root, carries a
+sequence number, and links to its predecessor; the chain is the audit trail.
+Walking and verifying it needs only `cas_vchain_walk`, which takes a plain
+`struct cas`. The topic and tree layers add a ref with an update log and crash
+rollback, which matters for federation and mirroring but not for a single
+server keeping its own history. smolmoo already has a durable atomic
+pointer-write, so the head is kept the same way as the root. This keeps the new
+vendored code to `cas-sign` plus its monocypher backend, about 850 lines,
+rather than pulling in the 1946-line `cas-tree`. Federation stays available as
+future work (see FUTURE.md).
+
+Phase 1 (done): vendor `cas-sign` and the monocypher signing backend, wire the
+build with `-DCAS_WITH_MONOCYPHER`, and generate or load a server signing key
+at serve start. The key is a 32-byte seed in a 0600 file outside the depot,
+since a secret must never live in the served store. Each world save, after the
+root is durable, appends a signed version record naming that root and advances a
+`depot/head` pointer. Record creation runs on the save writer thread, so signing
+stays off the main loop. The root pointer remains the load source of truth, so
+the history is a non-invasive overlay: a crash between the root write and the
+record write loses only a history entry, never world content. Records chain and
+verify end to end (confirmed with `cas_vchain_walk`).
+
+Phase 2 (next): in-game commands. `@history` lists the chain (seq, time, which
+root is live), and a wizard `@rewind <seq>` restores a prior root and records
+the rewind as a new version so the chain stays forward-only.
+
+---
+
 # Future Milestones
 
-## Milestone 29: Versioned World History (uses upstream smolvfs)
-
-`world_save` already writes a content-addressed root pointer. Upstream smolvfs
-now provides the machinery to turn that root into a verifiable history: signed
-version records (`cas-sign`, backed by the monocypher smolmoo already vendors)
-form an append-only chain of world roots, and a topic (`cas-topic`) keeps the
-head with an update log and crash rollback. That would give the world a commit
-history: rewind to any prior save, audit changes, and recover safely after a
-crash. The signed-topic model is also the basis for a backup follower or mirror
-that verifies the world without trusting the transport (the SHOAL protocol).
-Player-authored content stored as a tree (`cas-tree` / `vfs-snap`) could be
-snapshotted the same way.
+A broader menu of directions the CAS and signing foundation opens up (SHOAL,
+peering, backup followers, branching, asset storage) lives in FUTURE.md.

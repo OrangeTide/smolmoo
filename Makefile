@@ -6,7 +6,8 @@ STRIP ?= strip
 RM ?= rm -f
 CFLAGS := -Wall -Wextra -g -Og -fno-omit-frame-pointer
 SMOLVFS_OBJS := $(B)/smolvfs/cas.o $(B)/smolvfs/cas-pack.o $(B)/smolvfs/cas-omap.o \
-	$(B)/smolvfs/cas-codec.o
+	$(B)/smolvfs/cas-codec.o $(B)/smolvfs/cas-sign.o \
+	$(B)/smolvfs/cas-sign-monocypher.o
 OBJS := $(B)/smolmoo.o $(B)/rv32.o $(B)/monocypher.o $(SMOLVFS_OBJS)
 
 all: $(B)/smolmoo
@@ -33,6 +34,10 @@ $(B)/smolvfs/cas-omap.o : smolvfs/cas-omap.c smolvfs/cas-omap.h smolvfs/cas.h | 
 	$(CC) -c -o $@ -MMD -MF $(@:.o=.dep) $(CFLAGS) $(CPPFLAGS) $<
 $(B)/smolvfs/cas-codec.o : smolvfs/cas-codec.c smolvfs/cas-codec.h smolvfs/cas.h | $(B)/smolvfs
 	$(CC) -c -o $@ -MMD -MF $(@:.o=.dep) $(CFLAGS) $(CPPFLAGS) $<
+$(B)/smolvfs/cas-sign.o : smolvfs/cas-sign.c smolvfs/cas-sign.h smolvfs/cas.h | $(B)/smolvfs
+	$(CC) -c -o $@ -MMD -MF $(@:.o=.dep) $(CFLAGS) $(CPPFLAGS) -DCAS_WITH_MONOCYPHER $<
+$(B)/smolvfs/cas-sign-monocypher.o : smolvfs/cas-sign-monocypher.c smolvfs/cas-sign.h monocypher.h | $(B)/smolvfs
+	$(CC) -c -o $@ -MMD -MF $(@:.o=.dep) $(CFLAGS) $(CPPFLAGS) -I. $<
 # RV32 verb runtime: the ecall syscall stubs plus the 64-bit integer helpers,
 # linked with every self-contained .c verb. Built with the in-tree RISC-V
 # assembler.

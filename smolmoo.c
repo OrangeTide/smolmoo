@@ -22,6 +22,7 @@
 #include "monocypher.h"
 #include "smolvfs/cas.h"
 #include "smolvfs/cas-omap.h"
+#include "smolvfs/cas-sign.h"
 
 #define MAX_CONN 99
 #define MAX_OBJ  1024
@@ -66,6 +67,17 @@ static struct cas_omap *obj_map;
 static const char *depot_dir = "depot";
 static const char *html_file = "index.html";
 static char root_file[256] = "depot/root";
+static char head_file[256] = "depot/head";
+static char key_file[256] = "depot.key";
+
+/* Signed world history (M29). The signing key is loaded at serve start;
+ * head_addr/head_seq track the newest version record and are owned by the
+ * save writer thread once serving begins. */
+static unsigned char server_sk[CAS_SIGN_SECKEY_LEN];
+static unsigned char server_pk[CAS_SIGN_PUBKEY_LEN];
+static int signing_on = 0;
+static char head_addr[CAS_HASH_HEX + 1] = "";
+static uint64_t head_seq = 0;
 
 static void
 on_signal(int sig)
@@ -1107,31 +1119,39 @@ root_read(char *hash_out)
     return OK;
 }
 
+/* Atomically and durably write a one-line pointer file (root or history
+   head). The value is flushed and fsynced before the rename, and the
+   containing directory is fsynced after, so the pointer never references
+   content that has not itself reached disk. */
 static int
-root_write(const char *hash)
+ptr_write(const char *file, const char *val)
 {
     char tmp[260];
     FILE *f;
 
-    snprintf(tmp, sizeof(tmp), "%s.tmp", root_file);
+    snprintf(tmp, sizeof(tmp), "%s.tmp", file);
     f = fopen(tmp, "w");
     if (!f) return ERR;
-    fprintf(f, "%s\n", hash);
-    /* Flush the root pointer to disk before renaming it into place, so it
-       never references world content that has not itself been synced. */
+    fprintf(f, "%s\n", val);
     if (fflush(f) != 0 || fsync(fileno(f)) != 0) {
         fclose(f); unlink(tmp); return ERR;
     }
     if (fclose(f) != 0) { unlink(tmp); return ERR; }
-    if (rename(tmp, root_file) != 0) { unlink(tmp); return ERR; }
+    if (rename(tmp, file) != 0) { unlink(tmp); return ERR; }
     {
         char dir[260];
-        snprintf(dir, sizeof(dir), "%s", root_file);
+        snprintf(dir, sizeof(dir), "%s", file);
         char *slash = strrchr(dir, '/');
         int dfd = open(slash ? (*slash = '\0', dir) : ".", O_RDONLY);
         if (dfd >= 0) { fsync(dfd); close(dfd); }
     }
     return OK;
+}
+
+static int
+root_write(const char *hash)
+{
+    return ptr_write(root_file, hash);
 }
 
 static int
@@ -1217,6 +1237,36 @@ save_snapshot(void)
     return job;
 }
 
+/* Append a signed version record naming `root` to the world history chain
+   and advance the head pointer. Called from save_flush after the root is
+   durable, so a crash before the record is written loses only a history
+   entry, never world content. Head state is owned by the writer thread
+   during serve. */
+static void
+history_record(const char *root)
+{
+    struct cas_vrec v;
+    unsigned char rec[CAS_VREC_LEN];
+    char vaddr[CAS_HASH_HEX + 1];
+
+    memcpy(v.pubkey, server_pk, CAS_SIGN_PUBKEY_LEN);
+    v.seq = head_seq + 1;
+    v.timestamp = (int64_t)time(NULL);
+    memcpy(v.root, root, CAS_HASH_HEX + 1);
+    memcpy(v.prev, head_addr, CAS_HASH_HEX + 1);
+
+    if (cas_vrec_encode(&v, server_sk, rec) != CAS_OK ||
+        cas_put_object(cas_store, CAS_VREC_TYPE, rec, CAS_VREC_LEN,
+                       vaddr) != CAS_OK ||
+        ptr_write(head_file, vaddr) != OK) {
+        fprintf(stderr, "[history] failed to record version %llu\n",
+                (unsigned long long)v.seq);
+        return;
+    }
+    memcpy(head_addr, vaddr, CAS_HASH_HEX + 1);
+    head_seq = v.seq;
+}
+
 /* Write a snapshot into the CAS, update the object map, rewrite the root,
    and free the job. Touches obj_map and the root file; during serve this
    runs only on the writer thread. */
@@ -1238,8 +1288,11 @@ save_flush(struct save_job *job)
         if (cas_omap_store(obj_map, root) != CAS_OK ||
             root_write(root) != OK)
             rc = ERR;
-        else
+        else {
             fprintf(stderr, "[save] %d dirty objects stored\n", job->n);
+            if (signing_on)
+                history_record(root);
+        }
     }
     free(job->ents);
     free(job);
@@ -1375,6 +1428,74 @@ world_save_async(void)
     saver.count++;
     pthread_cond_signal(&saver.not_empty);
     pthread_mutex_unlock(&saver.mtx);
+}
+
+/* Load the current history head from head_file, verifying the record it
+   names, and set head_addr/head_seq. A missing or unreadable head is a
+   fresh chain (seq 0), not an error. */
+static void
+history_load_head(void)
+{
+    FILE *f;
+    char line[CAS_HASH_HEX + 2];
+
+    head_addr[0] = '\0';
+    head_seq = 0;
+
+    f = fopen(head_file, "r");
+    if (!f)
+        return;
+    if (fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\r\n")] = '\0';
+        struct cas_file cf;
+        char type[CAS_TYPE_MAX];
+        if (cas_open_object(cas_store, &cf, line, type,
+                            sizeof(type)) == CAS_OK) {
+            struct cas_vrec v;
+            if (cas_vrec_decode((const unsigned char *)cf.data, cf.len,
+                                &v) == CAS_OK) {
+                memcpy(head_addr, line, CAS_HASH_HEX + 1);
+                head_seq = v.seq;
+            }
+            cas_close(&cf);
+        }
+    }
+    fclose(f);
+}
+
+/* Prepare signed world history for the serve loop: load the server's
+   signing key (generating one on first run), then read the chain head.
+   On any key problem, signing is left off and saves proceed unsigned. */
+static void
+history_init(void)
+{
+    int rc;
+
+    signing_on = 0;
+    if (!cas_sign_available()) {
+        fprintf(stderr, "[history] no signing backend; history disabled\n");
+        return;
+    }
+
+    rc = cas_sign_key_load(key_file, server_sk, server_pk);
+    if (rc == CAS_ENOTFOUND) {
+        rc = cas_sign_key_generate(key_file, server_pk);
+        if (rc == CAS_OK)
+            rc = cas_sign_key_load(key_file, server_sk, server_pk);
+        if (rc == CAS_OK)
+            fprintf(stderr, "[history] generated signing key %s\n",
+                    key_file);
+    }
+    if (rc != CAS_OK) {
+        fprintf(stderr, "[history] signing disabled: %s\n",
+                cas_sign_strerror(rc));
+        return;
+    }
+
+    history_load_head();
+    signing_on = 1;
+    fprintf(stderr, "[history] world signing on, chain at seq %llu\n",
+            (unsigned long long)head_seq);
 }
 
 /* Read an entire file into a malloc'd, NUL-terminated buffer.
@@ -5705,6 +5826,11 @@ main(int argc, char *argv[])
         if ((v = getenv("SMOLMOO_HTML"))) html_file = v;
     }
     snprintf(root_file, sizeof(root_file), "%s/root", depot_dir);
+    snprintf(head_file, sizeof(head_file), "%s/head", depot_dir);
+    { const char *v = getenv("SMOLMOO_KEY");
+        if (v) snprintf(key_file, sizeof(key_file), "%s", v);
+        else   snprintf(key_file, sizeof(key_file), "%s.key", depot_dir);
+    }
 
     if (strcmp(argv[1], "export") == 0 || strcmp(argv[1], "dump") == 0)
         return cmd_export(argc, argv, 2);
@@ -5778,6 +5904,7 @@ main(int argc, char *argv[])
     world_bootstrap();
     task_init();
     timer_init();
+    history_init();
     if (saver_start() != OK) {
         fprintf(stderr, "failed to start save thread\n");
         return 1;
