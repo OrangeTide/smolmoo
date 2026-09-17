@@ -74,12 +74,20 @@ Leans on: CAS, `cas-tree` and `vfs-snap` for content trees.
 
 ## Signed content and verb packs
 
-Publish compiled verb ELFs or themed content packs as signed CAS
-objects. A server fetches a pack by address and verifies its signature
-before installing it, so a world can pull a "mod" from a publisher it
-trusts without a trusted download channel.
+Publish themed content packs as signed CAS objects. A server fetches a
+pack by address and verifies its signature before installing it, so a
+world can pull a "mod" from a publisher it trusts without a trusted
+download channel.
 
-Leans on: `cas-sign`, the sync protocol.
+A pack could carry precompiled verb ELFs, or verb source. In-game
+programming already compiles both MooScript and C through `@program`, so
+a source pack would install by running that same pipeline on the
+receiving server, which keeps the shipped artifact readable and lets
+each server compile against its own toolchain. Precompiled ELFs suit
+serve-only deployments that do not ship the SDK.
+
+Leans on: `cas-sign`, the sync protocol, the existing `@program` compile
+pipeline.
 
 ## Offline and air-gapped world transfer
 
