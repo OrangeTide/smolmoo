@@ -321,7 +321,8 @@ codec has no external compression dependency. The larger upstream additions
 since smolmoo does not use them yet; they are the raw material for the ideas in
 "Future Milestones" below. A `version.h` marker is vendored so the next re-sync
 can tell what is present. Upstream ships these files under BSD-2-Clause-Patent
-OR MIT, so they carry that notice rather than the repo's 0BSD OR CC0-1.0.
+OR MIT; since the same author owns both projects, the vendored copies are
+relicensed to the repo's own 0BSD OR CC0-1.0 to keep the tree uniform.
 
 ---
 

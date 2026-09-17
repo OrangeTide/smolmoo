@@ -1,5 +1,5 @@
 /* cas-omap.c : sparse object map -- numeric ID to CAS hash */
-/* PUBLIC DOMAIN (CC0-1.0) */
+/* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
 #define _POSIX_C_SOURCE 200809L
 

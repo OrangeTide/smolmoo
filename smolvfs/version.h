@@ -1,5 +1,5 @@
 /* version.h : smolvfs library version */
-/* PUBLIC DOMAIN (CC0-1.0) */
+/* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
 #ifndef SMOLVFS_VERSION_H
 #define SMOLVFS_VERSION_H

@@ -1,6 +1,6 @@
 /* cas-pack.h : packfile format for content-addressable store */
 /* Copyright (c) 2026 Jon Mayo <jon@rm-f.net>
- * Licensed under BSD-2-Clause-Patent OR MIT */
+ * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
 #ifndef CAS_PACK_H
 #define CAS_PACK_H

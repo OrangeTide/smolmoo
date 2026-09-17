@@ -1,6 +1,6 @@
 /* cas.c : content-addressable store using BLAKE2b hashing */
 /* Copyright (c) 2026 Jon Mayo <jon@rm-f.net>
- * Licensed under BSD-2-Clause-Patent OR MIT */
+ * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
 /* IMPLEMENTATION NOTES
  *

@@ -1,5 +1,5 @@
 /* cas-codec.h : compile-time compression codec table for CAS */
-/* PUBLIC DOMAIN (CC0-1.0) */
+/* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
 #ifndef CAS_CODEC_H
 #define CAS_CODEC_H
