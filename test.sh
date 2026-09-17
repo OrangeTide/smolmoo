@@ -240,9 +240,22 @@ SID3=$(grep -m1 "^data: I" /tmp/smolmoo_p3.log | sed 's/^data: I//')
 curl -sf -X POST -d "$SID3 create TestPlayer3 pass3 $INVITE2" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'data: +' "create acct 3"
 
-# non-admin tries to write existing property — should be denied
+# non-admin tries to write an EXISTING property on an object it does not own:
+# denied. This is the same path combat verbs take when they write cb_* and
+# sheet state to rooms and NPCs, so ordinary (non-admin) players are blocked
+# from it today (see OLC.md P2, the write-model reassessment).
 curl -sf -X POST -d "$SID3 testsetprop Rusty Sword" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p3.log 'SETPROP:DENIED' "sys_setprop denied"
+check_log /tmp/smolmoo_p3.log 'SETPROP:DENIED' "non-admin verb cannot overwrite an existing prop on a non-owned object"
+
+# By contrast, a NEW property on a non-owned object is NOT gated today: only
+# existing properties are permission-checked, so a non-admin's verb can still
+# add properties to objects it does not own. This is the gap OLC.md P2 named.
+curl -sf -X POST -d "$SID1 @create #300" http://localhost:$PORT/cmd >/dev/null
+P2OBJ=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$P2OBJ.name=widget" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P2OBJ.location=#101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 testsetprop widget" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'SETPROP:OK' "non-admin verb can add a new prop to a non-owned object (P2 gap)"
 
 # --- M19: sys_objfind ---
 
