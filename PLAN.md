@@ -326,48 +326,46 @@ relicensed to the repo's own 0BSD OR CC0-1.0 to keep the tree uniform.
 
 ---
 
-## Milestone 29: Versioned World History
+## Milestone 29: Versioned World History (a88cf38, 4ca03b6)
 
-`world_save` writes a content-addressed root pointer. This milestone turns each
-save into a link in a signed, verifiable history of world roots, so the world
-gains a commit log: rewind to any prior save, audit what changed and when, and
-recover after a bad edit.
+Each world save is now a link in a signed, verifiable chain of world roots, so
+the world keeps a commit log: rewind to any prior save, audit what changed and
+when, and recover after a bad edit.
 
-Scope note: the design uses `cas-sign` alone, not `cas-topic`/`cas-tree`. A
-version record is a signed, self-addressed object that names a root, carries a
-sequence number, and links to its predecessor; the chain is the audit trail.
-Walking and verifying it needs only `cas_vchain_walk`, which takes a plain
-`struct cas`. The topic and tree layers add a ref with an update log and crash
-rollback, which matters for federation and mirroring but not for a single
-server keeping its own history. smolmoo already has a durable atomic
-pointer-write, so the head is kept the same way as the root. This keeps the new
-vendored code to `cas-sign` plus its monocypher backend, about 850 lines,
-rather than pulling in the 1946-line `cas-tree`. Federation stays available as
-future work (see FUTURE.md).
+The design uses `cas-sign` alone, not `cas-topic`/`cas-tree`. A version record
+is a signed, self-addressed object that names a root, carries a sequence number,
+and links to its predecessor; the chain is the audit trail. Walking and
+verifying it needs only `cas_vchain_walk`, which takes a plain `struct cas`. The
+topic and tree layers add a ref with an update log and crash rollback, which
+matters for federation and mirroring but not for a single server keeping its own
+history, so they were left out. smolmoo already had a durable atomic
+pointer-write, so the chain head is kept the same way as the root. That held the
+new vendored code to `cas-sign` plus its monocypher backend, about 850 lines,
+rather than the 1946-line `cas-tree`. Federation stays available as future work
+(see FUTURE.md).
 
-Phase 1 (done): vendor `cas-sign` and the monocypher signing backend, wire the
-build with `-DCAS_WITH_MONOCYPHER`, and generate or load a server signing key
-at serve start. The key is a 32-byte seed in a 0600 file outside the depot,
-since a secret must never live in the served store. Each world save, after the
-root is durable, appends a signed version record naming that root and advances a
-`depot/head` pointer. Record creation runs on the save writer thread, so signing
-stays off the main loop. The root pointer remains the load source of truth, so
-the history is a non-invasive overlay: a crash between the root write and the
-record write loses only a history entry, never world content. Records chain and
-verify end to end (confirmed with `cas_vchain_walk`).
+The signing side vendored `cas-sign` and the monocypher backend, built with
+`-DCAS_WITH_MONOCYPHER`, and generates or loads a server signing key at serve
+start. The key is a 32-byte seed in a 0600 file outside the depot, since a
+secret must never live in the served store. Each save, once its root is durable,
+appends a signed record naming that root and advances a `depot/head` pointer.
+Record creation runs on the save writer thread, so signing stays off the main
+loop. The root pointer remains the load source of truth, so history is a
+non-invasive overlay: a crash between the root write and the record write loses
+only a history entry, never world content.
 
-Phase 2 (done): in-game commands. `@history` lists the chain newest first
-(seq, save time, root), marking the version whose root is currently live. The
+Two in-game commands expose the chain. `@history` lists it newest first (seq,
+save time, root), marking the version whose root is currently live. The
 wizard-only `@rewind <seq>` restores the world to that version's root. The
 restore is first written as a new version record, so the chain only moves
 forward and the rollback is itself auditable; then the live persistent world is
 reloaded in place and every session is disconnected, since each player's
-in-world avatar is ephemeral and belongs to the state being replaced. Both
-commands read the chain head from `depot/head` rather than the writer thread's
-in-memory state, so they never race a save in flight. The smoke suite drives an
-isolated server through build-two-versions, `@history`, and `@rewind`, and the
-signed chain verifies end to end with `cas_vchain_walk` (seq drops by one, each
-prev links, signatures check).
+in-world avatar is ephemeral and belongs to the replaced state. Both commands
+read the head from `depot/head` rather than the writer thread's in-memory state,
+so they never race a save in flight. The smoke suite drives an isolated server
+through build-two-versions, `@history`, and `@rewind`, and the signed chain
+verifies end to end with `cas_vchain_walk` (seq drops by one, each prev links,
+signatures check).
 
 ---
 
