@@ -305,6 +305,38 @@ property listing account object references. Commands:
     @chgrp #N=#G          set object group (owner or wizard)
     @examine #N           shows owner, group, per-property flags
 
+## World History
+
+Every world save is recorded as a signed version in an append-only
+chain, so the world keeps a verifiable, rewindable history. Each version
+names the saved root, carries a sequence number, and links to its
+predecessor. A record is signed with the server's key (EdDSA over
+curve25519 with BLAKE2b, via monocypher) and self-addressed in the CAS,
+so it verifies with no registry and no trust in whoever served it.
+
+The signing key is generated on first serve as a 32-byte seed in a
+`0600` file next to the depot (`<depot>.key`, or `SMOLMOO_KEY`). It is
+never written into the depot, since the depot is the part that gets
+served. If no key can be loaded, saves still work but are not recorded
+in the history.
+
+### Commands
+
+    @history         list saved versions, newest first
+    @rewind <seq>    restore the world to an earlier version (wizard only)
+
+`@history` shows each version's sequence number, save time, and root,
+and marks the one currently live. `@rewind <seq>` restores the world to
+that version's root. The rewind is itself recorded as a new version, so
+the chain only moves forward and every rollback stays auditable.
+Rewinding reloads the live world and disconnects every session, since a
+player's in-world presence belongs to the state being replaced; players
+reconnect afterward.
+
+Saves themselves run off the main loop. A background writer thread does
+the fsync-durable store while the event loop keeps serving, throttled so
+at most two saves are ever outstanding.
+
 ## Browser UI
 
 The client (`index.html`) is a full-screen monospace terminal driven
