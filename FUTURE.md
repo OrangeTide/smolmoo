@@ -10,13 +10,12 @@ directions the current foundation makes cheap to reach.
 Each entry notes the smolvfs pieces it leans on, so the build cost is
 visible up front.
 
-## Versioned world history (in progress: Milestone 29)
+## Versioned world history (shipped: Milestones 29-30)
 
-Each world save already writes a content-addressed root. Wrapping that
-root in a signed version record, chained to its predecessor, turns the
-save history into an append-only, verifiable log. Rewind the world to
-any prior save, audit what changed and when, and recover safely after a
-bad edit or a crash.
+Done, and the foundation several items below build on. Each world save
+appends a signed version record, chained to its predecessor, forming an
+append-only, verifiable log of world roots. `@history` lists it, `@rewind`
+restores an earlier root, and `@gc` bounds the depot growth it creates.
 
 Leans on: `cas-sign` (records and chain walk), monocypher (already
 vendored). No `cas-tree` needed for the local case.
@@ -102,9 +101,11 @@ Leans on: the version chain, object load at an arbitrary root.
 
 ## Depot integrity and compaction
 
-Verify the depot against its own hashes to detect corruption early, and
-reclaim space by garbage-collecting objects no root reaches and packing
-loose objects into packfiles. History pruning bounds growth for a
-mutation-heavy world.
+The reclaim half shipped as Milestone 30: `@gc` garbage-collects objects no
+retained root reaches and prunes old history, bounding growth for a
+mutation-heavy world. Two pieces remain. First, integrity: verify the depot
+against its own hashes to detect corruption early (an `@fsck`-style pass over
+reachable objects). Second, packing: fold the many small loose objects into
+packfiles to cut per-file overhead.
 
-Leans on: `cas-tree` fsck and gc, `cas-pack` (already vendored).
+Leans on: `cas-tree` fsck (integrity), `cas-pack` (packing, already vendored).

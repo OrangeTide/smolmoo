@@ -136,14 +136,11 @@ New hypercalls:
 
 ## Milestone 20: VM Yield & Wait Hypercalls
 
-Depends on M18 (Task Scheduling) — now complete.
-
-    sys_yield   — voluntary preemption, suspend VM and return to host
-    sys_wait    — suspend until event (fd ready, timer, signal)
-
-`sys_suspend` from M18 already provides basic yield/sleep. M20 extends
-this with fd-based event waiting (verb fds, stdin) and the full
-`sys_wait` multiplexer for long-lived processes.
+Depends on M18 (Task Scheduling). `sys_suspend` from M18 already provides
+basic yield and sleep. M20 adds the fd-based event hypercalls, `sys_open`,
+`sys_close`, `sys_read`, and the `sys_wait` multiplexer (fd ready, timer, or
+signal), so a verb can run as a persistent, long-lived handler that waits on
+events instead of running to completion.
 
 ## Milestone 23: Web Text Editor (26ad076)
 
@@ -166,11 +163,6 @@ invite code paste-to-split across input boxes.
 `sys_setprop` (8) and `sys_objfind` (9) hypercalls. Typed slot system
 replacing M16's none/any/this + preposition table: `<obj>`, `<text>`,
 `<player>`, `<exit>`, `<atom=X|Y|Z>`, bareword sugar.
-
-## Milestone 20: VM Yield & Wait Hypercalls
-
-`sys_open`/`sys_close`/`sys_read`/`sys_wait` hypercalls, persistent
-verb handlers with fd-based event waiting.
 
 ## Milestone 24: Server Database Commands
 
