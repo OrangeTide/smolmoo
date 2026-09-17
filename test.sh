@@ -225,7 +225,8 @@ check_log /tmp/smolmoo_p1.log 'SETPROP:OK' "sys_setprop ok"
 PVAL3=$(curl -sf "http://localhost:$PORT/prop?obj=301&prop=_test&sid=$SID1")
 [ "$PVAL3" = "hello" ] && pass "sys_setprop verify" || fail "sys_setprop verify"
 
-# permission denial: create non-admin player
+# create a non-admin player (used for the verb-owner authority checks below and
+# in later sections that need an ordinary, non-wizard account)
 curl -sf -X POST -d "$SID1 @invite new" http://localhost:$PORT/cmd >/dev/null
 waitgrep /tmp/smolmoo_p1.log 'New code:' || true
 INVITE2=$(grep -o 'New code: [A-Z0-9-]*' /tmp/smolmoo_p1.log | tail -1 | sed 's/New code: //')
@@ -240,22 +241,38 @@ SID3=$(grep -m1 "^data: I" /tmp/smolmoo_p3.log | sed 's/^data: I//')
 curl -sf -X POST -d "$SID3 create TestPlayer3 pass3 $INVITE2" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'data: +' "create acct 3"
 
-# non-admin tries to write an EXISTING property on an object it does not own:
-# denied. This is the same path combat verbs take when they write cb_* and
-# sheet state to rooms and NPCs, so ordinary (non-admin) players are blocked
-# from it today (see OLC.md P2, the write-model reassessment).
+# --- OLC P2: verb-owner authority (see OLC.md) ---
+# A verb runs with its OWNER's authority, not the caller's. testsetprop is a
+# system verb (installed from verbs.conf, owned by #0), so it writes on behalf
+# of any caller, including a non-admin. This is the path combat and other
+# installed verbs take, so ordinary players can use them.
 curl -sf -X POST -d "$SID3 testsetprop Rusty Sword" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p3.log 'SETPROP:DENIED' "non-admin verb cannot overwrite an existing prop on a non-owned object"
+check_log /tmp/smolmoo_p3.log 'SETPROP:OK' "a system verb writes on behalf of a non-admin caller"
 
-# By contrast, a NEW property on a non-owned object is NOT gated today: only
-# existing properties are permission-checked, so a non-admin's verb can still
-# add properties to objects it does not own. This is the gap OLC.md P2 named.
-curl -sf -X POST -d "$SID1 @create #300" http://localhost:$PORT/cmd >/dev/null
-P2OBJ=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
-curl -sf -X POST -d "$SID1 @set #$P2OBJ.name=widget" http://localhost:$PORT/cmd >/dev/null
-curl -sf -X POST -d "$SID1 @set #$P2OBJ.location=#101" http://localhost:$PORT/cmd >/dev/null
-curl -sf -X POST -d "$SID3 testsetprop widget" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p3.log 'SETPROP:OK' "non-admin verb can add a new prop to a non-owned object (P2 gap)"
+# A player-owned verb carries only its owner's authority, so it cannot escalate.
+# TestPlayer3 programs a C verb it owns that writes a property on its dobj and
+# reports the result.
+curl -sf -X POST -d "$SID3 @create #400" http://localhost:$PORT/cmd >/dev/null
+P3V=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p3.log | tail -1 | grep -o '[0-9]*')
+printf '#include "mulibc.h"\nvoid _start(void){int rc=sys_setprop(vm_args->dobj,"_p3","x");puts(rc==0?"P3V:OK":"P3V:DENIED");_exit(0);}\n' \
+	| curl -sf -X POST --data-binary @- \
+	  "http://localhost:$PORT/prop?obj=$P3V&prop=src&sid=$SID3" >/dev/null
+curl -sf -X POST -d "p3set" \
+	"http://localhost:$PORT/prop?obj=$P3V&prop=verb&sid=$SID3" >/dev/null
+curl -sf -X POST -d "$SID3 @set #$P3V.args=<obj>" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 @program #$P3V" http://localhost:$PORT/cmd >/dev/null
+
+# Writing to an object TestPlayer3 does not own is refused.
+curl -sf -X POST -d "$SID3 p3set Rusty Sword" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'P3V:DENIED' "a player-owned verb cannot write a non-owned object"
+
+# Writing to an object TestPlayer3 owns is allowed.
+curl -sf -X POST -d "$SID3 @create #300" http://localhost:$PORT/cmd >/dev/null
+P3OBJ=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p3.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID3 @set #$P3OBJ.name=widget3" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 @set #$P3OBJ.location=#101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 p3set widget3" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'P3V:OK' "a player-owned verb can write its owner's object"
 
 # --- M19: sys_objfind ---
 

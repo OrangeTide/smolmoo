@@ -631,29 +631,37 @@ player_acct(int sid)
     return NULL;
 }
 
+/* Permission checks are keyed on an account object, so both a logged-in
+ * player (via player_acct) and a running verb (via its owner account) can be
+ * checked the same way. The int-sid wrappers below serve the direct-player
+ * paths; the VM syscalls check the verb owner's account instead. */
 static int
-obj_owner_match(struct obj *o, int sid)
+acct_is_wizard(struct obj *acct)
 {
-    struct obj *acct;
-
-    if (!o || o->owner == OBJ_NONE)
-        return 0;
-    acct = player_acct(sid);
-    return acct && acct->id == o->owner;
+    return acct && prop_str(acct, make_atom("admin")) != NULL;
 }
 
 static int
-obj_group_match(struct obj *o, int sid)
+acct_owner_match(struct obj *o, struct obj *acct)
 {
-    struct obj *acct, *grp;
+    return o && acct && o->owner != OBJ_NONE && o->owner == acct->id;
+}
+
+static int
+obj_owner_match(struct obj *o, int sid)
+{
+    return acct_owner_match(o, player_acct(sid));
+}
+
+static int
+acct_group_match(struct obj *o, struct obj *acct)
+{
+    struct obj *grp;
     const char *members;
     char needle[16];
     int nlen;
 
-    if (!o || o->group == OBJ_NONE)
-        return 0;
-    acct = player_acct(sid);
-    if (!acct)
+    if (!o || o->group == OBJ_NONE || !acct)
         return 0;
     grp = obj_find(o->group);
     if (!grp || grp->parent != GROUP_PARENT)
@@ -675,27 +683,45 @@ obj_group_match(struct obj *o, int sid)
 }
 
 static int
-perm_can_read(int sid, struct obj *o, struct prop *p)
+obj_group_match(struct obj *o, int sid)
 {
-    if (is_wizard(sid))
+    return acct_group_match(o, player_acct(sid));
+}
+
+static int
+acct_can_read(struct obj *acct, struct obj *o, struct prop *p)
+{
+    if (acct_is_wizard(acct))
         return 1;
-    if (obj_owner_match(o, sid))
+    if (acct_owner_match(o, acct))
         return (p->flags & PERM_OR) != 0;
-    if (obj_group_match(o, sid))
+    if (acct_group_match(o, acct))
         return (p->flags & PERM_GR) != 0;
     return (p->flags & PERM_WR) != 0;
 }
 
 static int
-perm_can_write(int sid, struct obj *o, struct prop *p)
+perm_can_read(int sid, struct obj *o, struct prop *p)
 {
-    if (is_wizard(sid))
+    return acct_can_read(player_acct(sid), o, p);
+}
+
+static int
+acct_can_write(struct obj *acct, struct obj *o, struct prop *p)
+{
+    if (acct_is_wizard(acct))
         return 1;
-    if (obj_owner_match(o, sid))
+    if (acct_owner_match(o, acct))
         return (p->flags & PERM_OW) != 0;
-    if (obj_group_match(o, sid))
+    if (acct_group_match(o, acct))
         return (p->flags & PERM_GW) != 0;
     return (p->flags & PERM_WW) != 0;
+}
+
+static int
+perm_can_write(int sid, struct obj *o, struct prop *p)
+{
+    return acct_can_write(player_acct(sid), o, p);
 }
 
 static int
@@ -2060,6 +2086,8 @@ struct vm {
     rv_cpu cpu;
     uint8_t mem[VM_MEMSZ];
     int sid;
+    int verb_obj;   /* the verb object this task runs; its owner is the
+                       authority the verb acts with (LambdaMOO-style) */
     char out[BUFSIZE];
     int outlen;
     struct vm_fd fds[VM_MAX_FD];
@@ -2242,6 +2270,19 @@ vm_read_str(struct vm *vm, uint32_t addr, char *buf, int bufsz)
  * value in a0. ARG(n) reads the nth argument register (a0 = x10), RET() sets
  * the return register. A 64-bit argument occupies an aligned register pair,
  * which is why sys_wait's timeout lands in a4/a5. */
+/* The account a running verb acts as. A verb owned by the System Object (#0)
+ * is a trusted system verb and carries wizard authority; *sys is set for it.
+ * Any other verb acts as its owner account (which may be NULL, e.g. an unowned
+ * verb, in which case only world-permission bits apply). */
+static struct obj *
+vm_authority(struct vm *vm, int *sys)
+{
+    struct obj *vobj = obj_find(vm->verb_obj);
+
+    *sys = vobj && vobj->owner == 0;
+    return (vobj && !*sys) ? obj_find(vobj->owner) : NULL;
+}
+
 static int
 vm_ecall(struct rv_cpu *cpu, void *ctx)
 {
@@ -2430,11 +2471,28 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
             RET(-E_INVARG);
             return 0;
         }
+        /* owner and group are struct fields, set via @chown/@chgrp, not
+           writable as ordinary properties (matches @set). */
+        if (prop_is_reserved(name)) {
+            RET(-E_PERM);
+            return 0;
+        }
+        int sysverb;
+        struct obj *va = vm_authority(vm, &sysverb);
         const char *atom = make_atom(name);
         struct prop *p = NULL;
         for (int i = 0; i < o->nprops; i++)
             if (o->props[i].name == atom) { p = &o->props[i]; break; }
-        if (p && !perm_can_write(vm->sid, o, p)) {
+        /* A verb writes with its owner's authority. Existing properties honor
+           the per-property write bits; creating a new property requires owning
+           the object. System verbs (owned by #0) carry wizard authority. */
+        if (p) {
+            if (!sysverb && !acct_can_write(va, o, p)) {
+                RET(-E_PERM);
+                return 0;
+            }
+        } else if (!sysverb && !acct_is_wizard(va) &&
+                   !acct_owner_match(o, va)) {
             RET(-E_PERM);
             return 0;
         }
@@ -2471,6 +2529,10 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
             RET(-1);
             return 0;
         }
+        /* A spawned task inherits the spawner's authority, so a system verb's
+           background work stays privileged and a player's verb cannot escalate
+           by spawning. */
+        tasks[ti].vm.verb_obj = vm->verb_obj;
 
         if (delay > 0) {
             tasks[ti].state = TASK_SLEEPING;
@@ -2594,7 +2656,11 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
             RET(-E_INVARG);
             return 0;
         }
-        if (!is_wizard(vm->sid) && !obj_owner_match(o, vm->sid)) {
+        /* Recycle with the verb owner's authority: wizard (system verb or an
+           admin-owned verb) or the owner of the object being recycled. */
+        int sysverb;
+        struct obj *va = vm_authority(vm, &sysverb);
+        if (!sysverb && !acct_is_wizard(va) && !acct_owner_match(o, va)) {
             RET(-E_PERM);
             return 0;
         }
@@ -2814,6 +2880,12 @@ task_setup(int ti, const char *hash, int player, int room_id,
     struct vm *vm = &tasks[ti].vm;
     struct cas_file cf;
     uint32_t entry, str_off = 0;
+
+    /* Record the verb object so syscalls can check the verb owner's authority.
+       A verb reached through a match carries that verb; a task spawned from a
+       bare hash (sys_spawn, m == NULL) inherits the spawner's authority, which
+       sys_spawn sets after this returns. */
+    vm->verb_obj = m ? m->verb_obj : OBJ_NONE;
 
     if (cas_open(cas_store, &cf, hash) != CAS_OK) return ERR;
 
@@ -6376,6 +6448,10 @@ cmd_install(const char *conf_path, const char *sdk)
             continue;
         }
         o->parent = parent;
+        /* Verbs installed from verbs.conf are trusted system verbs: owned by
+           the System Object (#0), they carry wizard authority when they run,
+           so combat and other shared-state verbs work for any player. */
+        o->owner = 0;
         prop_set(o, make_atom("verb"), val_str(verb_name));
 
         char elf_val[128];

@@ -54,20 +54,40 @@ cannot shadow `@create` or `@set`. The smoke suite covers both paths.
 Decision made: keep the `@` prefix for builder commands. It reads as "builder
 or admin command" and is the MUD convention.
 
-### P2: Tighten `sys_setprop`, and add a clone primitive
+### P2: Verb-owner authority (shipped)
 
-`sys_setprop` only permission-checks a property that already exists. Setting a
-new property on an object is not gated by ownership. Once builder tools run as
-verbs this matters more, since a verb could add properties to an object it
-does not own. Add an ownership check for the new-property case.
+The original plan was to tighten `sys_setprop` so a verb could not add a
+property to an object its caller does not own. Testing with a non-admin player
+showed the premise was backwards. `sys_setprop` checked the caller's ownership,
+which blocked ordinary players from the property writes that combat and other
+installed verbs make to shared objects (rooms, NPC sheets). It only appeared to
+work because every test account is an admin, which bypasses the checks.
 
-Separately, a generic `@clone` (copy an arbitrary object's properties) cannot
-be written purely in the VM, because `getprop` is by-name and `sys_next` walks
-containment, not property keys. A type-aware clone that copies a known
+The fix follows LambdaMOO: a verb runs with its owner's authority, not the
+caller's. Each task records the verb object it runs (`vm.verb_obj`), and
+`sys_setprop` and `sys_recycle` check the verb owner's account. A verb owned by
+the System Object (#0) is a trusted system verb with wizard authority. Verbs
+installed from `verbs.conf` are now stamped owner #0, so combat and the rest
+work for any player. A verb written in-game with `@program` is owned by its
+programmer, so it carries only that player's authority and cannot escalate. A
+spawned task (`sys_spawn`) inherits the spawner's authority. Execute permission
+still gates who may run a verb, and the direct-player `@set` path keeps its own
+checks. `owner` and `group` remain unsettable as ordinary properties through
+`sys_setprop`, matching `@set`. The smoke suite proves a system verb writes for
+a non-admin caller, and a player-owned verb can write its owner's objects but
+not others'.
+
+Note: `sys_move` does not yet carry an authority check. A builder-move guard
+belongs with OLC-1's `@move` / `@teleport`, so it is folded into that
+milestone rather than P2.
+
+Still deferred: a generic `@clone` (copy an arbitrary object's properties)
+cannot be written purely in the VM, because `getprop` is by-name and `sys_next`
+walks containment, not property keys. A type-aware clone that copies a known
 property list is fully VM-doable today and covers the common cases (clone an
 item, clone a mob). A truly generic clone needs one new host primitive, either
-`sys_nextprop(obj, idx) -> name` to enumerate keys or `sys_clone(src) -> id`.
-Add this only if a generic clone is wanted; the type-aware form needs nothing.
+`sys_nextprop(obj, idx) -> name` or `sys_clone(src) -> id`. Add this only if a
+generic clone is wanted; the type-aware form needs nothing.
 
 ## Milestones
 
