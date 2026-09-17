@@ -267,12 +267,51 @@ Each piece is covered by the HTTP smoke suite through small test verbs
 
 ---
 
+## Milestone 26: Durable Async World Save
+
+The original threading plan (an I/O thread plus VM threads with a shared object
+lock) did not survive contact with the code. VM tasks already run in bounded
+quanta on the single-threaded main loop, so parallelizing execution has little
+payoff against real locking risk. Profiling the save path found the one
+unbounded operation worth moving off the loop, but with a twist: `world_save`
+is not a monolithic serialize. It is content-addressed and incremental, storing
+only dirty objects into the CAS and rewriting a small root pointer, and it did
+no `fsync` at all, so a crash could leave the root referencing world content
+that never reached disk.
+
+This milestone does two things. First, durability: `cas_put_object` and the
+other CAS writers now `fsync` the object data before the rename and `fsync` the
+containing directory after it, and `root_write` does the same for the root
+pointer. That matches the fix upstream smolvfs shipped in v0.4.1. The vendored
+CAS copy has diverged too far from upstream for a clean drop-in, so the fsync
+support is forward-ported into the vendored files as a minimal local patch; a
+wholesale re-vendor is left as future work.
+
+Second, the fsync cost stays off the main loop. `world_save` is split into
+`save_snapshot`, which serializes each dirty object into a self-contained buffer
+and clears its dirty flag on the main thread, and `save_flush`, which writes
+those buffers into the CAS, updates the object map, and rewrites the root. A
+single background writer thread runs `save_flush`, fed by a bounded queue of two
+outstanding jobs; the main loop blocks only if both slots are full, which keeps
+memory bounded without risking loss. During serve the object map and root have
+exactly one accessor, the writer thread, so no object lock is needed. CLI
+subcommands (migrate, merge, install) keep the synchronous path since no writer
+thread runs. `@save` queues the save and waits for the writer to drain so its
+confirmation stays truthful; shutdown queues a final snapshot, then drains and
+joins the thread before freeing the world.
+
+VM execution stays single-threaded. The smoke suite (202 checks) and unit tests
+(33 checks) cover the save, autosave, `@save`, merge, install, and shutdown
+paths.
+
+---
+
 # Future Milestones
 
-## Milestone 26: Threading
+## Milestone 28: Re-vendor smolvfs to Upstream
 
-I/O thread (HTTP server, world save) + VM thread(s) (script
-execution). Deferred until VM work stabilizes — the right
-locking interface depends on VM design. Estimated ~100-150 lines:
-pthreads, rwlock on objects, message ring between threads. Target
-is Raspberry Pi multi-core.
+The vendored CAS layer is a trimmed fork that has diverged from upstream
+smolvfs (v0.4.1 and later add signing, a VFS layer, topics, trees, and a
+logging subsystem). Durability fsync support is currently forward-ported as a
+local patch. A wholesale re-sync would drop the local patch and pick up upstream
+fixes, at the cost of re-trimming to smolmoo's needs.

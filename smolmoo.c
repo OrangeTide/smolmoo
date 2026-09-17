@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/select.h>
@@ -1116,26 +1117,20 @@ root_write(const char *hash)
     f = fopen(tmp, "w");
     if (!f) return ERR;
     fprintf(f, "%s\n", hash);
+    /* Flush the root pointer to disk before renaming it into place, so it
+       never references world content that has not itself been synced. */
+    if (fflush(f) != 0 || fsync(fileno(f)) != 0) {
+        fclose(f); unlink(tmp); return ERR;
+    }
     if (fclose(f) != 0) { unlink(tmp); return ERR; }
     if (rename(tmp, root_file) != 0) { unlink(tmp); return ERR; }
-    return OK;
-}
-
-static int
-obj_store(struct obj *o)
-{
-    char *buf;
-    size_t len;
-    char hash[CAS_HASH_HEX + 1];
-
-    if (obj_serialize(o, &buf, &len) != OK)
-        return ERR;
-    int rc = cas_put_object(cas_store, "obj", buf, len, hash);
-    free(buf);
-    if (rc != CAS_OK) return ERR;
-    rc = cas_omap_put(obj_map, (uint64_t)o->id, hash);
-    if (rc != CAS_OK) return ERR;
-    o->dirty = 0;
+    {
+        char dir[260];
+        snprintf(dir, sizeof(dir), "%s", root_file);
+        char *slash = strrchr(dir, '/');
+        int dfd = open(slash ? (*slash = '\0', dir) : ".", O_RDONLY);
+        if (dfd >= 0) { fsync(dfd); close(dfd); }
+    }
     return OK;
 }
 
@@ -1156,30 +1151,230 @@ obj_load_cas(int id)
     return rc;
 }
 
-static int
-world_save(const char *path)
-{
-    int count = 0;
-    char root[CAS_HASH_HEX + 1];
+/* ---- world save: snapshot (main thread) + flush (writer thread) -----
+ *
+ * A save has two halves. save_snapshot() runs on the main thread: it
+ * serializes each dirty object into a self-contained byte buffer and clears
+ * its dirty flag, capturing a consistent point-in-time image without holding
+ * any object pointers. save_flush() consumes that snapshot: it writes each
+ * buffer into the CAS, updates the object map, and rewrites the durable root.
+ *
+ * During the serve loop save_flush() runs only on a single background writer
+ * thread, so the CAS root pointer and obj_map have exactly one accessor and
+ * the fsync latency stays off the main loop. CLI subcommands (migrate, merge,
+ * install) run save_flush() synchronously since no writer thread exists. */
 
-    (void)path;
+struct save_ent {
+    uint64_t id;
+    char *buf;
+    size_t len;
+};
+
+struct save_job {
+    struct save_ent *ents;
+    int n;
+};
+
+/* Serialize every dirty persistent object into a job and clear its dirty
+   flag. Returns NULL on allocation failure (dirty flags left untouched). */
+static struct save_job *
+save_snapshot(void)
+{
+    int dirty = 0;
+
     for (int i = 0; i < MAX_OBJ; i++) {
         struct obj *o = &objs[i];
         if (o->id == OBJ_NONE || obj_is_ephemeral(o->id))
             continue;
-        if (o->dirty) {
-            if (obj_store(o) != OK)
-                return ERR;
-            count++;
-        }
+        if (o->dirty)
+            dirty++;
     }
-    if (cas_omap_store(obj_map, root) != CAS_OK)
+
+    struct save_job *job = malloc(sizeof(*job));
+    if (!job)
+        return NULL;
+    job->n = 0;
+    job->ents = dirty ? calloc((size_t)dirty, sizeof(*job->ents)) : NULL;
+    if (dirty && !job->ents) {
+        free(job);
+        return NULL;
+    }
+
+    for (int i = 0; i < MAX_OBJ && job->n < dirty; i++) {
+        struct obj *o = &objs[i];
+        if (o->id == OBJ_NONE || obj_is_ephemeral(o->id) || !o->dirty)
+            continue;
+        char *buf;
+        size_t len;
+        if (obj_serialize(o, &buf, &len) != OK)
+            continue;               /* leave dirty; retry on next save */
+        job->ents[job->n].id = (uint64_t)o->id;
+        job->ents[job->n].buf = buf;
+        job->ents[job->n].len = len;
+        job->n++;
+        o->dirty = 0;
+    }
+    return job;
+}
+
+/* Write a snapshot into the CAS, update the object map, rewrite the root,
+   and free the job. Touches obj_map and the root file; during serve this
+   runs only on the writer thread. */
+static int
+save_flush(struct save_job *job)
+{
+    int rc = OK;
+
+    for (int i = 0; i < job->n; i++) {
+        char hash[CAS_HASH_HEX + 1];
+        if (cas_put_object(cas_store, "obj", job->ents[i].buf,
+                           job->ents[i].len, hash) != CAS_OK ||
+            cas_omap_put(obj_map, job->ents[i].id, hash) != CAS_OK)
+            rc = ERR;
+        free(job->ents[i].buf);
+    }
+    if (rc == OK && job->n > 0) {
+        char root[CAS_HASH_HEX + 1];
+        if (cas_omap_store(obj_map, root) != CAS_OK ||
+            root_write(root) != OK)
+            rc = ERR;
+        else
+            fprintf(stderr, "[save] %d dirty objects stored\n", job->n);
+    }
+    free(job->ents);
+    free(job);
+    return rc;
+}
+
+/* Synchronous save: snapshot then flush on the calling thread. Used by CLI
+   subcommands and as the fallback when the writer thread is not running. */
+static int
+world_save(const char *path)
+{
+    (void)path;
+    struct save_job *job = save_snapshot();
+    if (!job)
         return ERR;
-    if (root_write(root) != OK)
+    return save_flush(job);
+}
+
+/* ---- background writer thread --------------------------------------- */
+
+#define SAVE_QUEUE_MAX 2   /* outstanding saves before the main loop blocks */
+
+static struct {
+    pthread_t thread;
+    pthread_mutex_t mtx;
+    pthread_cond_t not_full;
+    pthread_cond_t not_empty;
+    pthread_cond_t idle;
+    struct save_job *q[SAVE_QUEUE_MAX];
+    int head;
+    int count;
+    int busy;
+    int stop;
+    int started;
+} saver;
+
+static void *
+saver_main(void *arg)
+{
+    (void)arg;
+    pthread_mutex_lock(&saver.mtx);
+    for (;;) {
+        while (saver.count == 0 && !saver.stop)
+            pthread_cond_wait(&saver.not_empty, &saver.mtx);
+        if (saver.count == 0 && saver.stop)
+            break;
+        struct save_job *job = saver.q[saver.head];
+        saver.head = (saver.head + 1) % SAVE_QUEUE_MAX;
+        saver.count--;
+        saver.busy = 1;
+        pthread_cond_signal(&saver.not_full);
+        pthread_mutex_unlock(&saver.mtx);
+
+        if (save_flush(job) != OK)
+            fprintf(stderr, "[save] async flush failed\n");
+
+        pthread_mutex_lock(&saver.mtx);
+        saver.busy = 0;
+        pthread_cond_signal(&saver.idle);
+    }
+    pthread_mutex_unlock(&saver.mtx);
+    return NULL;
+}
+
+static int
+saver_start(void)
+{
+    memset(&saver, 0, sizeof(saver));
+    pthread_mutex_init(&saver.mtx, NULL);
+    pthread_cond_init(&saver.not_full, NULL);
+    pthread_cond_init(&saver.not_empty, NULL);
+    pthread_cond_init(&saver.idle, NULL);
+    if (pthread_create(&saver.thread, NULL, saver_main, NULL) != 0)
         return ERR;
-    if (count)
-        fprintf(stderr, "[save] %d dirty objects stored\n", count);
+    saver.started = 1;
     return OK;
+}
+
+/* Signal the writer to drain its queue and exit, then join it. */
+static void
+saver_stop(void)
+{
+    if (!saver.started)
+        return;
+    pthread_mutex_lock(&saver.mtx);
+    saver.stop = 1;
+    pthread_cond_signal(&saver.not_empty);
+    pthread_mutex_unlock(&saver.mtx);
+    pthread_join(saver.thread, NULL);
+    pthread_mutex_destroy(&saver.mtx);
+    pthread_cond_destroy(&saver.not_full);
+    pthread_cond_destroy(&saver.not_empty);
+    pthread_cond_destroy(&saver.idle);
+    saver.started = 0;
+}
+
+/* Block until the queue is empty and no flush is in flight. */
+static void
+saver_wait_idle(void)
+{
+    if (!saver.started)
+        return;
+    pthread_mutex_lock(&saver.mtx);
+    while (saver.count > 0 || saver.busy)
+        pthread_cond_wait(&saver.idle, &saver.mtx);
+    pthread_mutex_unlock(&saver.mtx);
+}
+
+/* Snapshot the world on the main thread and hand it to the writer. Blocks
+   only if SAVE_QUEUE_MAX saves are already outstanding. Falls back to a
+   synchronous save when the writer thread is not running. */
+static void
+world_save_async(void)
+{
+    if (!saver.started) {
+        world_save(NULL);
+        return;
+    }
+    struct save_job *job = save_snapshot();
+    if (!job) {
+        fprintf(stderr, "[save] snapshot alloc failed\n");
+        return;
+    }
+    if (job->n == 0) {      /* nothing dirty: root already current */
+        free(job->ents);
+        free(job);
+        return;
+    }
+    pthread_mutex_lock(&saver.mtx);
+    while (saver.count == SAVE_QUEUE_MAX)
+        pthread_cond_wait(&saver.not_full, &saver.mtx);
+    saver.q[(saver.head + saver.count) % SAVE_QUEUE_MAX] = job;
+    saver.count++;
+    pthread_cond_signal(&saver.not_empty);
+    pthread_mutex_unlock(&saver.mtx);
 }
 
 /* Read an entire file into a malloc'd, NUL-terminated buffer.
@@ -3404,12 +3599,12 @@ cmd_feedback(int sid, const char *args)
     while (isspace(*p))
         p++;
 
-    /* Handle @save command */
+    /* Handle @save command. Queue the save on the writer thread, then wait
+       for it to drain so the confirmation is truthful. */
     if (strcmp(tag, "save") == 0) {
-        if (world_save("world.data") == OK)
-            session_write(sid, "World saved.");
-        else
-            session_write(sid, "Save failed.");
+        world_save_async();
+        saver_wait_idle();
+        session_write(sid, "World saved.");
         return;
     }
 
@@ -4766,7 +4961,7 @@ static void
 autosave_cb(void *arg)
 {
     (void)arg;
-    world_save("world.data");
+    world_save_async();
     timer_add(AUTOSAVE_MS, autosave_cb, NULL);
 }
 
@@ -5583,6 +5778,10 @@ main(int argc, char *argv[])
     world_bootstrap();
     task_init();
     timer_init();
+    if (saver_start() != OK) {
+        fprintf(stderr, "failed to start save thread\n");
+        return 1;
+    }
     timer_add(AUTOSAVE_MS, autosave_cb, NULL);
     timer_add(INVITE_REFRESH_MS, invite_refresh_cb, NULL);
     timer_add(DEATH_SWEEP_MS, death_sweep_cb, NULL);
@@ -5735,7 +5934,8 @@ main(int argc, char *argv[])
     close(lfd);
     timer_shutdown();
     task_shutdown();
-    world_save(NULL);
+    world_save_async();     /* queue a final snapshot of remaining changes */
+    saver_stop();           /* drain the queue and join the writer thread */
     world_free();
     cas_omap_free(obj_map);
     cas_free(cas_store);

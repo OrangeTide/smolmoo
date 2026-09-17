@@ -657,6 +657,30 @@ cas_close(struct cas_file *cf)
     cf->_release = NULL;
 }
 
+/* Flush a just-written temp file to disk before it is renamed into place,
+   so a stored object's content is durable before anything can reference it.
+   Returns CAS_OK on success. On failure the caller unlinks the temp file. */
+static int
+cas_fsync_fd(int fd)
+{
+    if (fsync(fd) != 0)
+        return CAS_EIO;
+    return CAS_OK;
+}
+
+/* Flush a directory entry to disk so a completed rename survives a crash.
+   Best effort: a missing directory fd is not treated as fatal. */
+static void
+cas_fsync_dir(const char *dir)
+{
+    int dfd = open(dir, O_RDONLY);
+
+    if (dfd >= 0) {
+        fsync(dfd);
+        close(dfd);
+    }
+}
+
 int
 cas_put_object(struct cas *store, const char *type,
                const void *data, size_t len, char *hash_out)
@@ -731,6 +755,11 @@ cas_put_object(struct cas *store, const char *type,
         return rc;
     }
 
+    if (cas_fsync_fd(fd) != CAS_OK) {
+        close(fd);
+        unlink(tmp);
+        return CAS_EIO;
+    }
     close(fd);
 
     if (rename(tmp, path) != 0) {
@@ -738,6 +767,7 @@ cas_put_object(struct cas *store, const char *type,
         if (access(path, F_OK) != 0)
             return CAS_EIO;
     }
+    cas_fsync_dir(dir);
 
     memcpy(hash_out, hash, CAS_HASH_HEX + 1);
     return CAS_OK;
@@ -807,6 +837,11 @@ cas_put_object_at(struct cas *store, const char *type,
         return rc;
     }
 
+    if (cas_fsync_fd(fd) != CAS_OK) {
+        close(fd);
+        unlink(tmp);
+        return CAS_EIO;
+    }
     close(fd);
 
     if (rename(tmp, path) != 0) {
@@ -814,6 +849,7 @@ cas_put_object_at(struct cas *store, const char *type,
         if (access(path, F_OK) != 0)
             return CAS_EIO;
     }
+    cas_fsync_dir(dir);
 
     return CAS_OK;
 }
@@ -887,6 +923,11 @@ cas_put_precompressed(struct cas *store, const char *type, int codec,
         return rc;
     }
 
+    if (cas_fsync_fd(fd) != CAS_OK) {
+        close(fd);
+        unlink(tmp);
+        return CAS_EIO;
+    }
     close(fd);
 
     if (rename(tmp, path) != 0) {
@@ -894,6 +935,7 @@ cas_put_precompressed(struct cas *store, const char *type, int codec,
         if (access(path, F_OK) != 0)
             return CAS_EIO;
     }
+    cas_fsync_dir(dir);
 
     return CAS_OK;
 }

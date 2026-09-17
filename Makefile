@@ -15,12 +15,12 @@ all: $(B)/smolmoo
 SKJ_SKIP_M68K_RUNTIME := 1
 include sdk/skjegg.mk
 $(B)/smolmoo: $(OBJS) | $(B)
-	$(CC) -o $@ $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -lm
+	$(CC) -o $@ $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -lm -pthread
 	$(OBJCOPY) --only-keep-debug $@ $@.debug
 	$(STRIP) --strip-debug --strip-unneeded $@
 	$(OBJCOPY) --add-gnu-debuglink=$@.debug $@
 $(B)/smolmoo.o : smolmoo.c rv32.h monocypher.h smolvfs/cas-omap.h | $(B)
-	$(CC) -c -o $@ -MMD -MF $(@:.o=.dep) $(CFLAGS) $(CPPFLAGS) $<
+	$(CC) -c -o $@ -MMD -MF $(@:.o=.dep) $(CFLAGS) $(CPPFLAGS) -pthread $<
 $(B)/monocypher.o : monocypher.c monocypher.h | $(B)
 	$(CC) -c -o $@ -MMD -MF $(@:.o=.dep) $(CFLAGS) $(CPPFLAGS) $<
 $(B)/rv32.o : rv32.c rv32.h | $(B)
