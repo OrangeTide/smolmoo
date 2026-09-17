@@ -89,16 +89,19 @@ and `w`; the default is `rw,r,r`. See also the `editor`, `programming`, and
 
 ## programming
 
-Write a verb in MooScript without rebuilding the server.
+Write a verb in MooScript or C without rebuilding the server.
 
     @create #400             make a verb object under the Verb Prototype
     @set #N.verb=<word>      the command word players type
-    @edit #N.src             write the MooScript source in the web editor
-    @program #N              compile #N.src, storing the result on #N.elf
+    @edit #N.src             write the source in the web editor
+    @program #N [c|moo]      compile #N.src, storing the result on #N.elf
 
-A verb's entry is `verb main(player, room, this, dobj, iobj, arg)`; declare
-only the leading parameters it uses. Compiling requires the server to have the
-bundled SDK toolchain present. You can only program an object you own.
+A MooScript verb's entry is `verb main(player, room, this, dobj, iobj, arg)`;
+declare only the leading parameters it uses. A C verb defines its own `_start`
+and includes `mulibc.h`. `@program` picks the language from the source (C when
+it has an `#include`), or you can name it: `@program #N c` or `@program #N moo`.
+Compiling requires the server to have the bundled SDK toolchain present. You can
+only program an object you own.
 
 ## history
 

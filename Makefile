@@ -48,7 +48,12 @@ $(B)/smolvfs/cas-sign-monocypher.o : smolvfs/cas-sign-monocypher.c smolvfs/cas-s
 # backend, unlike the psABI C verbs above.
 MOO_RT_OBJS := $(BUILD)/moo_rt.o $(BUILD)/host_vm.o $(BUILD)/str.o \
 	$(BUILD)/list.o $(BUILD)/moo_syscall_rv.o
-sdk: skjegg $(BUILD)/verb_rt_rv.o $(MOO_RT_OBJS)
+sdk: skjegg $(BUILD)/verb_rt_rv.o $(MOO_RT_OBJS) $(BUILD)/mulibc.h
+
+# The C-verb header travels with the SDK so `@program` can compile a C verb
+# in a serve-only deployment, where the repo tree is not present.
+$(BUILD)/mulibc.h: mulibc.h | $(BUILD)
+	cp $< $@
 
 $(BUILD)/verb_rt_rv.o: sdk/runtime/verb_rt_rv.S | $(BUILD)
 	$(BUILD)/skj-as-rv -o $@ $<

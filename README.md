@@ -391,19 +391,22 @@ mode.
 
 ## Programming Verbs
 
-New verbs can be written in MooScript from inside the game, without
-rebuilding the server:
+New verbs can be written in MooScript or C from inside the game,
+without rebuilding the server:
 
     @create #400          make a verb object under the Verb Prototype
     @set #N.verb=greet    set the command word players will type
-    @edit #N.src          write the MooScript source in the web editor
-    @program #N           compile #N.src and attach it as the verb
+    @edit #N.src          write the source in the web editor
+    @program #N [c|moo]   compile #N.src and attach it as the verb
 
 `@program` reads the object's `src` property, compiles it with the
 bundled SDK toolchain, stores the resulting RISC-V ELF in the depot,
-and sets the object's `elf` property. The source stays on `src`, so
-you can re-edit and re-`@program` at any time. You may only program an
-object you own.
+and sets the object's `elf` property. The language is taken from the
+source (C when it has an `#include`, MooScript otherwise), or named
+explicitly as `@program #N c` or `@program #N moo`. A MooScript verb
+declares `verb main(...)`; a C verb defines its own `_start` and
+includes `mulibc.h`. The source stays on `src`, so you can re-edit and
+re-`@program` at any time. You may only program an object you own.
 
 The compile runs on the server, so a server that hosts in-game
 programming must ship the SDK (`_build/sdk`, from `make install`) and

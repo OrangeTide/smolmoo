@@ -284,6 +284,18 @@ check_log /tmp/smolmoo_p1.log 'Programmed.' "@program compiles source"
 curl -sf -X POST -d "$SID1 myprog" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'PROGRAMMED OK' "@program verb runs"
 
+# @program also compiles a C verb; the language is sniffed from #include.
+curl -sf -X POST -d "$SID1 @create #400" http://localhost:$PORT/cmd >/dev/null
+CPROG=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+printf '#include "mulibc.h"\nvoid _start(void) { puts("CPROG OK"); _exit(0); }\n' \
+	| curl -sf -X POST --data-binary @- \
+	  "http://localhost:$PORT/prop?obj=$CPROG&prop=src&sid=$SID1" >/dev/null
+curl -sf -X POST -d "cprog" \
+	"http://localhost:$PORT/prop?obj=$CPROG&prop=verb&sid=$SID1" >/dev/null
+curl -sf -X POST -d "$SID1 @program #$CPROG" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 cprog" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'CPROG OK' "@program compiles and runs a C verb"
+
 # --- M25a: sys_random hypercall ---
 curl -sf -X POST -d "$SID1 testrandom" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'RANDOM:OK' "sys_random in range"

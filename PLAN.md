@@ -253,9 +253,23 @@ deployment does not.
 
 Each piece is covered by the HTTP smoke suite through small test verbs
 (`verb_test_create.c`, `verb_test_call.c`, `verb_greet.c`, `verb_reflect.c`,
-`verb_testref.moo`) and the ported `look`. Deferred: object arguments beyond
-`dobj`/`iobj`, non-string scalar arguments to a verb call, and a C verb path for
-`@program` (MooScript only).
+`verb_testref.moo`) and the ported `look`.
+
+`@program` compiles either MooScript or C. The language is sniffed from the
+source (a C verb has `#include`, MooScript never does) or named explicitly as
+`@program #N c` / `@program #N moo`. The C path uses the register-psABI compiler
+and links the C verb runtime; MooScript uses the stack-convention pipeline and
+the MooScript runtime. The C-verb header travels with the SDK so a serve-only
+deployment can compile C verbs without the repo tree.
+
+Verb-to-verb calls convey up to two object arguments, routed to `dobj`/`iobj`,
+and one string, routed to `argstr`. Passing more objects, non-string scalars, or
+a second string would need a typed argument vector in `vm_args`, but the
+host-reserved region below the guest code base (`0x0`-`0x3FF`) has no room for
+one, so it would mean relocating the code base in the linker and rebuilding the
+toolchain. That is deferred as an intentional limitation: the payoff is modest
+against the project's size constraint, and `dobj`/`iobj`/`argstr` covers the
+common cases.
 
 ---
 
