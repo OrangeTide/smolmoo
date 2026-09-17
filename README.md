@@ -1,5 +1,38 @@
 # smolmoo : a smol (small) MOO (MUD (Multi User Dungeon) Object Oriented)
 
+smolmoo is a small, self-contained MUD/MOO game server written in C. It
+speaks HTTP and Server-Sent Events, so players connect with a browser
+instead of a telnet client, and the whole world runs from a single binary
+and a content-addressed store. It has no external dependencies and is
+built to run on a Raspberry Pi.
+
+The world is a prototype-based object system. Game logic lives in verbs
+that run on an in-process RISC-V RV32 virtual machine, written in either
+C or MooScript and compilable from inside the running game. The world is
+saved as a signed, content-addressed history that can be rewound and
+verified. A ChromeSix combat and social system (an OpenD6 variant) ships
+as verbs on top of the engine.
+
+The design inspiration is dm (deathmatch), a telnet MUD written in 16 KiB
+of source. Keeping the source small is a first-class constraint.
+
+## Goals
+
+- [x] Implement a small web-based (HTTP) game that feels like a MUD/MOO.
+- [x] Primitive text interface in the browser. Essentially a full-screen
+      monospaced terminal.
+- [x] Core server is small. Target: under 20 kLoC including vendored
+      libraries (smolvfs), excluding the MooScript compiler and test code.
+      The core server is about 18.5 kLoC (`smolmoo.c`, the RV32 VM, and the
+      vendored smolvfs and monocypher). `smolmoo.c` itself is about 6.7 kLoC.
+- [x] Dependency-free. The distribution comes with all the utilities and
+      libraries needed to build and run on a Raspberry Pi (Linux).
+
+## Non-Goals
+
+- Scalability is not designed in. There is no need to handle thousands of
+  connections.
+
 ## Building, Installing, and Running
 
 ### Prerequisites
@@ -78,7 +111,7 @@ To deploy smolmoo to another machine, copy these files:
     index.html          browser client
 
 The server runs from the directory containing `depot/`.
-No reverse proxy is needed; the built-in HTTP server handles everything.
+No reverse proxy is needed. The built-in HTTP server handles everything.
 
 Or use `make bundle` to build, install verbs, and package everything
 into `_build/smolmoo.tar.bz2`:
@@ -105,7 +138,9 @@ Static x86_64 binary with musl (single binary, no shared libraries):
     make test
 
 Runs `test.sh`, which starts the server on a temporary port and exercises
-login, chat, commands, verbs, and the web editor.
+login, chat, commands, verbs, and the web editor. `make test` does not
+build verbs. It runs against whatever is already in `depot/`, so run
+`make install` first after changing verbs, the VM, or the world.
 
 ## Command-Line Tools
 
@@ -155,32 +190,6 @@ depot.
 Use `export` followed by `merge` to copy a hand-built area from one
 world into another without id collisions.
 
-## Reference Project
-
-dm (deathmatch) MUD is our reference and the inspiration for this project.
-It was an attempt to write a Telnet-based MUD in 16 kilobytes of source code.
-Its sources are not bundled here. `dm-sm.c` is the minified version and
-`dm.c` is the commented version.
-
-## Goals
-
-- [ ] Implement a small web-based (HTTP) game that feels like a MUD/MOO.
-- [ ] Primitive text interface in the browser. Essentially a full-screen monospaced terminal.
-- [ ] Core server is small. Target: under 20 kLoC including vendored libraries (smolvfs), excluding MooScript compiler and test code.
-- [ ] Dependency-free: distribution comes with all the utilities and libraries you need to build and run on a Raspberry Pi (Linux)
-
-## Non-Goals
-
-- Scaleability is NOT designed in: we don't need to handle thousands of connections.
-
-## Design
-
-The engine internals (the event loop and threading model, the object and data
-model, the RISC-V RV32 verb VM and its syscalls, verb dispatch and argument
-matching, task scheduling, and the cached containment rollups) are documented
-in `smolmoo.md`. The ChromeSix game rules and how they map onto these primitives
-are in `chromesix.md` and `chromesix-smolmoo.md`.
-
 ## Accounts & Invite Codes
 
 Account creation is invite-only. Every new account requires a valid
@@ -199,9 +208,9 @@ via the browser login screen (click "need an account?").
 
 ### Invite Code Format
 
-Codes are `XXXX-XXXX-XXXX` — 12 characters from a 30-character
-alphabet (digits + unambiguous uppercase letters, no D/F/I/O/Q/U).
-~58.9 bits of entropy.
+Codes are `XXXX-XXXX-XXXX`, 12 characters from a 30-character
+alphabet (digits plus unambiguous uppercase letters, no D/F/I/O/Q/U).
+About 58.9 bits of entropy.
 
 ### How Invites Work
 
@@ -260,8 +269,8 @@ read-only).
 
 Every object has an `owner` field (object reference to an account)
 and an optional `group` field (object reference to a group object).
-Access checks: wizard (admin flag) overrides all, then owner bits,
-then group member bits, then world bits.
+Access checks run in order: wizard (admin flag) overrides all, then
+owner bits, then group member bits, then world bits.
 
 ### World Data Syntax
 
@@ -332,7 +341,7 @@ and marks the one currently live. `@rewind <seq>` restores the world to
 that version's root. The rewind is itself recorded as a new version, so
 the chain only moves forward and every rollback stays auditable.
 Rewinding reloads the live world and disconnects every session, since a
-player's in-world presence belongs to the state being replaced; players
+player's in-world presence belongs to the state being replaced. Players
 reconnect afterward.
 
 Because every save keeps its root forever, the depot grows over time.
@@ -356,7 +365,7 @@ at most two saves are ever outstanding.
 This signed, verifiable history is the local half of what the CAS and
 signing foundation makes possible. The networked half, federation across
 servers (publishing the world root as a signed topic, peering by hash,
-and off-site backup followers), is deferred by decision: it needs an
+and off-site backup followers), is deferred by decision. It needs an
 unvendored sync protocol and ref layers, and amounts to a new networked
 subsystem that a single-server world does not need. See FUTURE.md for
 that menu and the full rationale.
@@ -366,23 +375,23 @@ that menu and the full rationale.
 The client (`index.html`) is a full-screen monospace terminal driven
 by SSE push and HTTP POST input.
 
-- **ANSI color rendering** — full SGR support: 16 base colors,
+- **ANSI color rendering.** Full SGR support: 16 base colors,
   256-color palette (`38;5;N` / `48;5;N`), truecolor
-  (`38;2;R;G;B`), bold, italic, underline, wavy underline (`4:3`).
+  (`38;2;R;G;B`), bold, italic, underline, and wavy underline (`4:3`).
   All rendered as inline CSS styles.
-- **Status bar** — server pushes room name and fuel gauge after
+- **Status bar.** The server pushes room name and fuel gauge after
   every command and on fuel regen. Displayed in a fixed bar above
   the input line.
-- **Command history** — up/down arrow keys recall previous
-  commands. History kept in memory (not persisted).
-- **Scrollback cap** — output is capped at 2000 lines. Oldest
+- **Command history.** Up and down arrow keys recall previous
+  commands. History is kept in memory (not persisted).
+- **Scrollback cap.** Output is capped at 2000 lines. Oldest
   lines are removed as new ones arrive.
 
 ## Object Editor
 
 The web-based property editor lets you edit object properties in
 the browser. It opens in a new tab with live markdown syntax
-highlighting (transparent textarea over a highlighted `<pre>`).
+highlighting (a transparent textarea over a highlighted `<pre>`).
 
 ### Commands
 
@@ -391,7 +400,7 @@ highlighting (transparent textarea over a highlighted `<pre>`).
 
 The editor tab shows the property value in a text area with a Save
 button. Ctrl+S (or Cmd+S) saves without reaching for the mouse.
-Permission checks follow the owner/group/world model — you can
+Permission checks follow the owner/group/world model. You can
 only edit properties you have write access to.
 
 The viewer renders the property value with markdown highlighting
@@ -442,26 +451,45 @@ To set up the wiki, create an object and register it:
 Content uses a minimal markdown subset where syntax characters stay
 visible (they are styled in place, not stripped):
 
-- `# Heading` through `###### Heading` — green, scaled font size
-- `**bold**` — bold
-- `_italic_` — italic
-- `` `code` `` — orange highlight
-- `[text](url)` — external link (opens in new tab)
-- `[[page]]` — wiki link (opens in viewer)
+- `# Heading` through `###### Heading`: green, scaled font size
+- `**bold**`: bold
+- `_italic_`: italic
+- `` `code` ``: orange highlight
+- `[text](url)`: external link (opens in new tab)
+- `[[page]]`: wiki link (opens in viewer)
 
 Wiki links (`[[page]]`) resolve to the wiki object, so `[[rules]]`
 opens `/view?obj=<wiki>&prop=rules`. The editor fetches `#0.wiki`
 at load time to discover the wiki object ID. If `#0.wiki` is not
 set, wiki links fall back to `#0`.
 
+## Design
+
+The engine internals are documented in `smolmoo.md`: the event loop and
+threading model, the object and data model, the RISC-V RV32 verb VM and
+its syscalls, verb dispatch and argument matching, task scheduling, and
+the cached containment rollups. The ChromeSix game rules and how they map
+onto these primitives are in `chromesix.md` and `chromesix-smolmoo.md`.
+
+## Reference Project
+
+dm (deathmatch) MUD is the reference and inspiration for this project.
+It was an attempt to write a telnet-based MUD in 16 kilobytes of source
+code. Its sources are not bundled here. `dm-sm.c` is the minified version
+and `dm.c` is the commented version.
+
 ## See Also
 
-- `smolmoo.md` — the engine design: data model, the RV32 verb VM and syscalls,
+- `smolmoo.md`: the engine design. Data model, the RV32 verb VM and syscalls,
   verb dispatch, task scheduling, and the cached containment rollups.
-- `help.md` — the general player commands (chat, movement, building, feedback,
+- `help.md`: the general player commands (chat, movement, building, feedback,
   the web tools), one topic per entry. The same topics are seeded on the
   in-game `#0.help` object, so `help` lists them and `help <topic>` prints one.
-- `chromesix-smolmoo.md` — the ChromeSix game mechanics and its game-specific
+- `chromesix-smolmoo.md`: the ChromeSix game mechanics and its game-specific
   commands (combat, gear, skills).
+- `FUTURE.md`: the deferred feature menu (federation, packing, asset store)
+  and the rationale for each.
 - [Mini Six: Bare Knuckle Edition](http://www.antipaladingames.com/p/mini-six.html)
 - [Mini Six: Bare Bones Edition](https://www.drivethrurpg.com/en/product/144558/mini-six-bare-bones-edition)
+</content>
+</invoke>
