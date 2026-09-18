@@ -321,6 +321,22 @@ check_log /tmp/smolmoo_p1.log 'You go to #101' "@go teleports the builder"
 curl -sf -X POST -d "$SID3 @go #101" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'not authorized' "@go is refused to a non-wizard"
 
+# @recycle refuses to orphan: an object with children (a prototype) or contents.
+curl -sf -X POST -d "$SID1 @recycle #300" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'children or contents' "@recycle refuses to orphan a prototype"
+
+# @clone preserves per-property permission flags: a non-world-readable prop
+# stays hidden on the copy instead of reverting to the default rw,r,r.
+curl -sf -X POST -d "$SID1 @create #300" http://localhost:$PORT/cmd >/dev/null
+SEC=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SEC.stash:rw,r,=loot" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @clone #$SEC" http://localhost:$PORT/cmd >/dev/null
+SC=$(grep -oE 'as #[0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+' | head -1)
+# plain -s (not -f): a denied read returns 403, which -f would treat as an error.
+OTH=$(curl -s "http://localhost:$PORT/prop?obj=$SC&prop=stash&sid=$SID3")
+[ "$OTH" != "loot" ] && pass "@clone preserves a non-readable flag (non-owner denied)" \
+	|| fail "@clone preserves a non-readable flag"
+
 # --- OLC-2: reset rules repopulate a room (see OLC.md) ---
 # A fresh room plus a reset rule that keeps two raiders (children of #201) in it.
 curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null

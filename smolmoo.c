@@ -401,6 +401,25 @@ prop_objnum(struct obj *o, const char *name)
     return (v && v->type == VAL_OBJ) ? v->obj : OBJ_NONE;
 }
 
+/* True if any live object still names `id` as its parent or location, so
+   recycling `id` would orphan children (a prototype) or strand contents (a
+   room or container). Callers refuse the recycle in that case. */
+static int
+obj_has_dependents(int id)
+{
+    const char *a_loc = make_atom("location");
+
+    for (int i = 0; i < MAX_OBJ; i++) {
+        if (objs[i].id == OBJ_NONE || objs[i].id == id)
+            continue;
+        if (objs[i].parent == id)
+            return 1;
+        if (prop_objnum(&objs[i], a_loc) == id)
+            return 1;
+    }
+    return 0;
+}
+
 /* Read a string-valued integer property, or dflt when absent. */
 static int
 prop_int(struct obj *o, const char *name, int dflt)
@@ -2672,6 +2691,10 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
         struct obj *va = vm_authority(vm, &sysverb);
         if (!sysverb && !acct_is_wizard(va) && !acct_owner_match(o, va)) {
             RET(-E_PERM);
+            return 0;
+        }
+        if (obj_has_dependents(objid)) {   /* would orphan children/contents */
+            RET(-E_INVARG);
             return 0;
         }
         obj_free(o);
@@ -5100,6 +5123,11 @@ cmd_feedback(int sid, const char *args)
             session_write(sid, "You don't own that.");
             return;
         }
+        if (obj_has_dependents(id)) {
+            session_write(sid,
+                "That still has children or contents; empty it first.");
+            return;
+        }
         snprintf(b, sizeof(b), "Recycled %s.",
                  obj_fmt(id, i1, sizeof(i1)));
         obj_free(o);
@@ -5136,6 +5164,13 @@ cmd_feedback(int sid, const char *args)
                 continue;   /* not used on world objects */
             prop_set(o, src->props[i].name,
                      olc_val_copy(src->props[i].val));
+            /* preserve the source's permission flags, so a secret property
+               does not become world-readable on the copy. */
+            for (int k = 0; k < o->nprops; k++)
+                if (o->props[k].name == src->props[i].name) {
+                    o->props[k].flags = src->props[i].flags;
+                    break;
+                }
         }
         acct = acct_find(player_name(sid));
         if (acct)

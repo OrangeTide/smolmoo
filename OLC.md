@@ -141,11 +141,16 @@ Object arguments accept `#N`, `&N`, or a name near the caller (`olc_ref`).
 Documented in `help.md`; covered by the smoke suite, including the
 ownership gates via the non-admin player.
 
-Deferred within OLC-1: `@recycle` does not yet reparent or relocate an
-object's contents, so recycling a full room or container can orphan what it
-held (`@fsck` reports such dangling references). A `sys_move` authority check
-for the verb path is still open; the host `@move` is gated directly and does
-not need it.
+`@recycle` (and `sys_recycle`) refuse to destroy an object that any other
+object still names as its `parent` or `location`, so recycling a prototype or a
+non-empty room/container is rejected rather than orphaning children or
+stranding contents; empty it first. `@clone` preserves each source property's
+permission flags, so a non-world-readable property is not silently exposed on
+the copy.
+
+Deferred within OLC-1: a `sys_move` authority check for the verb path is still
+open (the host `@move` is gated directly and does not need it). `@clone` still
+skips list-valued properties, which world objects do not use.
 
 ### OLC-2: reset system (shipped, on-demand)
 
@@ -179,6 +184,20 @@ a driver is the open question for OLC-2..5 as a group, either a host timer (like
 autosave) or a reserved "system" session so a timer can invoke sim verbs. The
 Area object is only a grouping handle so far; shared-ownership and
 export-as-a-unit are not wired.
+
+Two further deferrals came out of the OLC-2 review:
+
+- **Reaping the dead.** The reconcile only adds live instances; it never
+  reclaims downed ones, so a room accumulates corpses as persistent objects and
+  repeated resets grow the world. This is bounded today (wizard-paced, no auto
+  trigger). Reaping belongs with the periodic driver, and it must respect the
+  M25i window where a downed body is still lootable, so a decay timer fits
+  better than reaping inside `@reset`.
+- **Clean spawn state.** A spawn clears only `downed`; it still inherits
+  `dead`, `hp`, and other combat state from its proto through the parent chain.
+  Pristine templates are fine; a proto that has itself been in combat yields a
+  broken instance. Revisit by clearing the full combat block on spawn, or by
+  requiring reset protos to be untouched templates.
 
 Depends on: OLC-1 (for building the rules in-game).
 
