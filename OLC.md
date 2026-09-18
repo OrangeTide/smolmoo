@@ -201,19 +201,39 @@ Two further deferrals came out of the OLC-2 review:
 
 Depends on: OLC-1 (for building the rules in-game).
 
-### OLC-3: Generic stores and vending machines
+### OLC-3: Generic stores and vending machines (shipped)
 
-The current store is hardwired in `verb_buy.c`: a single `vendor` property on
-the room and one product, the stim. Generalize it.
+The store was hardwired in `verb_buy.c`: a single `vendor` property on the room
+and one product, the stim. `verb_store.c` (bound to both `buy` and `list`)
+generalizes it, keeping the stim shop as a fallback.
 
-- A stock data model on the store or vendor object: a list of items for sale
-  with prices, quantities, and restock behavior, all settable by a builder
-  through `@set` and the web editor, with no C changes.
-- A generic `buy` / `list` / `sell` verb that reads that stock
-  (`sys_getprop`), applies the existing faction pricing, and completes the
-  sale (`sys_move`, `sys_setprop`).
-- A vending machine is the same model without an NPC: an object the player
-  `buy`s from or `use`s directly.
+- Stock is a data model that needs no schema: a store is any object that holds
+  priced item objects (`price > 0`) in its contents. A builder stocks it by
+  moving priced items in, all through existing `@` commands and the web editor,
+  with no C changes.
+- `list [from <store>]` shows the stock at the standing-adjusted price.
+  `buy <item> [from <store>]` sells one instance, moving the object to the
+  buyer (`sys_move`) and drawing its price off their creds. With no `from` the
+  store is the room's `vendor` NPC; a named `from` resolves an object in the
+  room, so a vending machine is the same model without an NPC.
+- Faction pricing (`cs_standing`) applies uniformly from the store's `faction`:
+  each step shifts the price ten percent and Hostile or worse refuses the sale.
+- Selling an object instance decrements stock; a reset rule (OLC-2) with the
+  store as its `room` restocks it.
+- The stim stays a sheet counter, not an object. A store sells it by setting a
+  `stim` base-price property; `buy stim` then dispenses a dose through the
+  fallback and `list` shows the line. Only a store that opts in this way sells
+  stims, so the ChromeSix economy is unchanged (the quartermaster carries
+  `stim=75`) and an ordinary vending machine does not dispense them.
+- `buy` and `list` are not setuid: they only write the buyer's own sheet and
+  `sys_move` (which takes no authority check), so they run at caller authority.
+  A non-admin purchase is covered in the tests, since admin status would
+  otherwise mask a permission regression.
+
+Deferred: a `sell` verb (players selling back to a store) and generalizing the
+stim's counter model into a reusable "consumable that credits a sheet counter"
+item type. Neither is needed for builder-run stores; add them if a world calls
+for it.
 
 Depends on: OLC-2 (restock is a reset rule).
 

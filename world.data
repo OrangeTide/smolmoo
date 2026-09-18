@@ -326,6 +326,7 @@ name=quartermaster
 description=A supply broker running a stall for the Combine.
 location=#101
 faction=combine
+stim=75
 
 #214 #200
 owner=#0
@@ -358,6 +359,8 @@ quit=quit
 building=@create #<parent>  @set #N.prop=value  @examine #N
     @edit #N.prop  @view #N.prop  @chmod #N.prop=rw,r,r  @chown #N=#M  @chgrp #N=#G
     Create and edit objects (wizard or owner gated). See the editor topic.
+store=buy <item> [from <store>]  |  list [from <store>]
+    Buy priced items from a vendor or a vending machine in the room.
 groups=@group create|add|remove|list
     Permission groups: share write access to an object across accounts.
 invite=@invite  |  @invite new

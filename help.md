@@ -116,6 +116,26 @@ until instances die or are removed, so it both stocks a fresh room and
 repopulates one that has been cleared. An optional `@set #N.area=#<area>` on a
 rule lets `@reset #<area>` reconcile just one area's rules.
 
+## store
+
+Sell goods from a store. A store is any object that holds priced item objects
+in its contents: a vendor NPC, a vending machine, a crate.
+
+    list [from <store>]        show what a store sells and the prices
+    buy <item> [from <store>]  buy one, into your hands, for creds
+
+With no `from`, the store is the room's `vendor` NPC. A named `from` picks an
+object in the room, so a vending machine is a store with no NPC. `buy` moves one
+instance of the item to you and draws its price off your creds; the stock goes
+down by one. Standing with the store's faction shifts the price, and a Hostile
+or worse faction refuses the sale.
+
+A builder stocks a store by putting priced items in it: set `price` on an item
+(`@set #N.price=5`) and `@move` it into the store, or keep it stocked with a
+reset rule (see the `reset` topic) whose room is the store. On the ChromeSix
+world a store that sets a `stim` base price (`@set #N.stim=75`) also sells the
+counter-based stim dose through `buy stim`.
+
 ## programming
 
 Write a verb in MooScript or C without rebuilding the server.

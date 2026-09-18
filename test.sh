@@ -870,6 +870,56 @@ check_log /tmp/smolmoo_p1.log 'combine Hostile  ncpd Known' "the sheet lists sta
 curl -sf -X POST -d "$SID3 @standing TestPlayer1 combine 3" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'not authorized' "@standing is refused to a non-admin"
 
+# --- OLC-3: generic stores and vending machines (see OLC.md) ---
+# A store is any object that holds priced item objects. A vending machine is
+# the model with no vendor NPC: an object in the room whose contents are the
+# stock. list shows it, buy moves one instance to the buyer and draws its
+# price, and a reset rule with the machine as its room restocks it. TestPlayer1
+# is in the lobby (#101) from the combat and social blocks above.
+curl -sf -X POST -d "$SID1 @create #300" http://localhost:$PORT/cmd >/dev/null
+MACH=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$MACH.name=dispenser" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$MACH.location=#101" http://localhost:$PORT/cmd >/dev/null
+# a cola prototype the reset rule clones into the machine as stock
+curl -sf -X POST -d "$SID1 @create #300" http://localhost:$PORT/cmd >/dev/null
+COLA=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$COLA.name=cola" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$COLA.price=5" http://localhost:$PORT/cmd >/dev/null
+# a reset rule keeps two colas stocked in the machine
+curl -sf -X POST -d "$SID1 @create #910" http://localhost:$PORT/cmd >/dev/null
+SRULE=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SRULE.room=#$MACH" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SRULE.proto=#$COLA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SRULE.count=2" http://localhost:$PORT/cmd >/dev/null
+# the raider rule from OLC-2 is still full, so this pass stocks only the colas
+curl -sf -X POST -d "$SID1 @reset" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '2 rule(s), 2 spawned' "@reset stocks a vending machine"
+# list shows the store and its priced stock (no faction, so full price)
+curl -sf -X POST -d "$SID1 list from dispenser" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'dispenser offers' "list names the store"
+check_log /tmp/smolmoo_p1.log 'cola -- 5 creds' "list shows priced stock"
+# buy moves one instance to the buyer and draws its price
+curl -sf -X POST -d "$SID1 buy cola from dispenser" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'You buy the cola for 5 creds' "buy sells a stock item"
+# an item the store does not carry is refused
+curl -sf -X POST -d "$SID1 buy widget from dispenser" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'no such thing for sale' "buy refuses an item not in stock"
+# the sold cola left the machine, so a reset pass restocks exactly one
+curl -sf -X POST -d "$SID1 @reset" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '2 rule(s), 1 spawned' "@reset restocks a sold item"
+# a non-admin can shop: buy is not setuid and writes only the buyer's own
+# (self-owned) sheet, so it runs at caller authority (admin masks perms, so
+# this must be proven as TestPlayer3). Fund the non-admin sheet first: read its
+# charid off the player object, then set money on the sheet as admin.
+curl -sf -X POST -d "$SID1 @contents #101" http://localhost:$PORT/cmd >/dev/null
+P3E=$(grep -oE '&[0-9]+  TestPlayer3' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
+curl -sf -X POST -d "$SID1 @examine &$P3E" http://localhost:$PORT/cmd >/dev/null
+P3SH=$(grep -oE 'charid[^"]*"[0-9]+"' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+' | tail -1)
+curl -sf -X POST -d "$SID1 @set #$P3SH.money=100" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 @go #101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 buy cola from dispenser" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'You buy the cola for 5 creds. Balance 95' "a non-admin completes a purchase (own-sheet write, no wizard)"
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.
