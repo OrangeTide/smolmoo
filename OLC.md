@@ -147,24 +147,40 @@ held (`@fsck` reports such dangling references). A `sys_move` authority check
 for the verb path is still open; the host `@move` is gated directly and does
 not need it.
 
-### OLC-2: Area and reset system
+### OLC-2: reset system (shipped, on-demand)
 
-The largest and most important subsystem. Nothing currently respawns a killed
-mob or restocks a room, so a world dies after one sweep. This adds a living
-world.
+Nothing used to respawn a killed mob or restock a room, so a world died after
+one sweep. This adds a living world through reset rules.
 
-- An Area object groups a set of rooms for shared ownership, reset rules, and
-  export as a unit. Today `export` and `merge` move id ranges, which is
-  area-like but not modeled.
-- Reset rules describe what a room should hold: for example, one raider in
-  room #R, repop five minutes after death; a crate holding two stims,
-  refilled on reset.
-- A reset runner is a persistent task verb that wakes on a timer
-  (`sys_spawn` with delay, or `sys_suspend`), checks each rule against the
-  current world (`sys_next`, `sys_getprop`), and creates or moves objects to
-  satisfy it (`sys_create`, `sys_move`).
+The model is idempotent reconcile rather than death-triggered repop, driven by
+data objects rather than a text mini-language:
 
-Depends on: OLC-1 (for building the areas and rules in-game).
+- A **reset rule** is an object under the Reset Prototype (`#910`, seeded in
+  world.data and registered as `#0.reset`) with properties `room`, `proto`,
+  `count`, and optional `area`. An **Area Prototype** (`#900`, `#0.area`) is
+  seeded for grouping rules, and `@reset #<area>` filters to rules whose `area`
+  matches.
+- `@reset` (wizard-only, host command) walks every rule, counts the live
+  (non-downed) direct children of `proto` already in `room`, and clones the
+  shortfall (`obj_create` a fresh child, set its location, clear `downed`,
+  owner inherited from the proto). It is idempotent, so it both stocks a fresh
+  room and repopulates a cleared one, and a second pass spawns nothing until an
+  instance dies. Restocking a container (OLC-3) is the same rule with a
+  container as the `room`.
+
+Builders create rules with the OLC-1 tools (`@create #910`, `@set`), so no new
+building command was needed. The reconcile is host code, reusing OLC-1's object
+iteration and creation; it stays a host command because a background driver
+would need a session context a verb does not have.
+
+Deferred by decision (chosen scope: on-demand only): there is no automatic or
+periodic trigger yet, so a live world is topped up by running `@reset`. Adding
+a driver is the open question for OLC-2..5 as a group, either a host timer (like
+autosave) or a reserved "system" session so a timer can invoke sim verbs. The
+Area object is only a grouping handle so far; shared-ownership and
+export-as-a-unit are not wired.
+
+Depends on: OLC-1 (for building the rules in-game).
 
 ### OLC-3: Generic stores and vending machines
 

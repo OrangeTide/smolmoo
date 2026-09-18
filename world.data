@@ -10,6 +10,8 @@ acct=#500
 invite=#600
 group=#700
 help=#800
+area=#900
+reset=#910
 
 #100 #0
 owner=#0
@@ -366,3 +368,13 @@ editor=@edit #N.prop  |  @view #N.prop
     The web property editor, live markdown highlighting, Ctrl+S to save.
 wiki=A wiki object (#0.wiki) holds pages as its properties.
     Set it up with @set #0.wiki=#<id>; edit pages in the web editor.
+
+#900 #0
+owner=#0
+name=Area Prototype
+description=Parent of all area objects. An area groups rooms for shared ownership and reset.
+
+#910 #0
+owner=#0
+name=Reset Prototype
+description=Parent of all reset-rule objects. A rule names a room, a proto to clone, and a count.

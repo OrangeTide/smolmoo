@@ -41,6 +41,8 @@
 #define ACCT_PARENT     500
 #define INVITE_PARENT   600
 #define GROUP_PARENT    700
+#define AREA_PARENT     900
+#define RESET_PARENT    910
 #define MAX_TASK     1024
 #define TASK_QUANTUM 10000
 
@@ -5325,6 +5327,75 @@ cmd_feedback(int sid, const char *args)
         snprintf(b, sizeof(b), "Dug %s to %s (exit '%s', return 'back').",
                  obj_fmt(fwd, i1, sizeof(i1)),
                  obj_fmt(roomid, i2, sizeof(i2)), ename);
+        session_write(sid, b);
+        return;
+    }
+
+    /* @reset [#area] : reconcile reset rules (parent #910). Each rule names a
+       room, a proto to clone, and a count; the pass tops each room up to that
+       many live (non-downed) children of the proto, cloning the shortfall. It
+       is idempotent, so running it again spawns nothing until instances die.
+       Wizard-only, since it populates rooms across the world. */
+    if (strcmp(tag, "reset") == 0) {
+        const char *a_room = make_atom("room");
+        const char *a_proto = make_atom("proto");
+        const char *a_area = make_atom("area");
+        const char *a_loc = make_atom("location");
+        const char *a_downed = make_atom("downed");
+        int filter = OBJ_NONE, rules = 0, spawned = 0;
+        char b[96];
+
+        if (!is_wizard(sid)) {
+            session_write(sid, "You are not authorized to do that.");
+            return;
+        }
+        if (*p == '#')
+            filter = (int)strtol(p + 1, NULL, 10);
+
+        for (int i = 0; i < MAX_OBJ; i++) {
+            int rroom, rproto, rcount, live;
+
+            if (objs[i].id == OBJ_NONE || objs[i].parent != RESET_PARENT)
+                continue;
+            if (filter != OBJ_NONE &&
+                prop_objnum(&objs[i], a_area) != filter)
+                continue;
+            rroom = prop_objnum(&objs[i], a_room);
+            rproto = prop_objnum(&objs[i], a_proto);
+            rcount = prop_int(&objs[i], "count", 0);
+            if (rroom == OBJ_NONE || rproto == OBJ_NONE || rcount <= 0)
+                continue;
+            rules++;
+
+            /* count live (non-downed) children of rproto already in rroom */
+            live = 0;
+            for (int j = 0; j < MAX_OBJ; j++) {
+                if (objs[j].id == OBJ_NONE || objs[j].parent != rproto)
+                    continue;
+                if (prop_objnum(&objs[j], a_loc) != rroom)
+                    continue;
+                if (prop_int(&objs[j], "downed", 0))
+                    continue;
+                live++;
+            }
+            for (; live < rcount; live++) {
+                int nid = obj_next_id();
+                struct obj *nc, *pr;
+
+                if (nid == OBJ_NONE)
+                    break;
+                nc = obj_create(nid, rproto);
+                if (!nc)
+                    break;
+                pr = obj_find(rproto);
+                nc->owner = pr ? pr->owner : OBJ_NONE;
+                prop_set(nc, a_loc, val_obj(rroom));
+                prop_set(nc, a_downed, val_str("0"));
+                spawned++;
+            }
+        }
+        snprintf(b, sizeof(b), "Reset: %d rule(s), %d spawned.",
+                 rules, spawned);
         session_write(sid, b);
         return;
     }

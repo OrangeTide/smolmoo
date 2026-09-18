@@ -321,6 +321,29 @@ check_log /tmp/smolmoo_p1.log 'You go to #101' "@go teleports the builder"
 curl -sf -X POST -d "$SID3 @go #101" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'not authorized' "@go is refused to a non-wizard"
 
+# --- OLC-2: reset rules repopulate a room (see OLC.md) ---
+# A fresh room plus a reset rule that keeps two raiders (children of #201) in it.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+RM=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$RM.name=Pit" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #910" http://localhost:$PORT/cmd >/dev/null
+RULE=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$RULE.room=#$RM" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$RULE.proto=#201" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$RULE.count=2" http://localhost:$PORT/cmd >/dev/null
+# first reconcile spawns the two missing raiders
+curl -sf -X POST -d "$SID1 @reset" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '2 spawned' "@reset spawns missing instances"
+# idempotent: a second pass adds nothing while the room is full
+curl -sf -X POST -d "$SID1 @reset" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '0 spawned' "@reset is idempotent while the room is full"
+# down one instance; the next pass replaces exactly that one
+curl -sf -X POST -d "$SID1 @contents #$RM" http://localhost:$PORT/cmd >/dev/null
+CH=$(grep -oE '#[0-9]+  raider' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+' | head -1)
+curl -sf -X POST -d "$SID1 @set #$CH.downed=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @reset" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '1 spawned' "@reset replaces a downed instance"
+
 # --- M19: sys_objfind ---
 
 # resolve existing object by name

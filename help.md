@@ -98,6 +98,24 @@ Permission flags are three comma-separated owner/group/world triplets of `r`
 and `w`; the default is `rw,r,r`. See also the `editor`, `programming`, and
 `groups` topics.
 
+## reset
+
+Keep rooms populated with a living world. A reset rule is an object under the
+Reset Prototype (`#910`) that names a room, a prototype to clone, and how many
+to keep.
+
+    @create #910             make a reset-rule object
+    @set #N.room=#<room>     where to spawn
+    @set #N.proto=#<proto>   what to clone (e.g. an NPC prototype)
+    @set #N.count=<n>        how many live instances to maintain
+    @reset [#area]           reconcile the rules now (wizard only)
+
+`@reset` tops each room up to `count` live (non-downed) children of `proto`,
+cloning only the shortfall. It is idempotent: running it again spawns nothing
+until instances die or are removed, so it both stocks a fresh room and
+repopulates one that has been cleared. An optional `@set #N.area=#<area>` on a
+rule lets `@reset #<area>` reconcile just one area's rules.
+
 ## programming
 
 Write a verb in MooScript or C without rebuilding the server.
