@@ -150,8 +150,9 @@ reactions.
 Reactions fire only while a player is present, so an empty room stays quiet and
 costs nothing. `aggro` starts a normal fight, so the mob needs combat stats; the
 simplest source is to parent it to an NPC prototype that already has them. A
-mob with no `behavior` property does nothing. Autonomous movement (wander,
-patrol) is not yet available; it needs a server-side timer.
+mob with no `behavior` property does nothing. Walking into a fight that is
+already running does not pull you in; `attack` to join it. Autonomous movement
+(wander, patrol) is not yet available; it needs a server-side timer.
 
 ## programming
 

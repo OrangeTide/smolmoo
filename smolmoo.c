@@ -2345,6 +2345,8 @@ mob_enter(int intruder, int room, int sid)
             continue;
         if (!prop_str(&objs[i], a_beh))
             continue;
+        if (sid_of_player_obj(mob) >= 0)   /* a player is not a mob */
+            continue;
         if (verb_resolve_on(mob, "on_enter", sid, &m) != OK)
             continue;
         m.dobj = intruder;
@@ -5286,6 +5288,7 @@ cmd_feedback(int sid, const char *args)
                  obj_fmt(did, i1, sizeof(i1)));
         session_write(sid, b);
         status_update(sid);
+        mob_enter(cc[sid].obj, did, sid);   /* wake the room's reactive NPCs */
         return;
     }
 
@@ -5842,6 +5845,7 @@ cmd_connect(int sid, const char *args)
     snprintf(msg, sizeof(msg),
         "Welcome back, %s. Type 'help' for commands.", name);
     session_write(sid, msg);
+    mob_enter(pid, 101, sid);   /* wake the lobby's reactive NPCs on login */
 }
 
 static int

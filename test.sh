@@ -1132,8 +1132,28 @@ curl -sf -X POST -d "$SID1 @set #$BRUTE.location=#$AMB" http://localhost:$PORT/c
 curl -sf -X POST -d "$SID1 go ambush" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'The warden looks you over' "greet fires on room entry"
 check_log /tmp/smolmoo_p1.log 'brute turns on' "aggro opens a fight on room entry"
-# end the ambush fight so it does not linger past the test
+# end the ambush fight cleanly: flee on our turn so __combat runs its teardown,
+# with a cb_active reset as a fallback if a turn never comes up in time
+_i=0
+while [ $_i -lt 15 ]; do
+	curl -sf -X POST -d "$SID1 flee back" http://localhost:$PORT/cmd >/dev/null
+	grep -q 'slip away from the fight' /tmp/smolmoo_p1.log 2>/dev/null && break
+	sleep 0.4
+	_i=$((_i + 1))
+done
 curl -sf -X POST -d "$SID1 @set #$AMB.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+# the entry hook also covers the @go teleport path, not just walking an exit
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+VLT=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$VLT.name=Sentinel Post" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+SENT=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SENT.name=sentinel" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SENT.behavior=greet" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SENT.greeting=The sentinel challenges you." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SENT.location=#$VLT" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$VLT" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'The sentinel challenges you' "@go teleport also triggers the entry hook"
 
 # --- OLC P2 migration check: a non-admin runs the setuid combat verbs ---
 # Placed after all admin combat so it cannot disturb those fights. Test accounts

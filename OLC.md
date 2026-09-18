@@ -260,6 +260,12 @@ Shipped (reactive, player-triggered):
   room and both sheets elevate the same way the combat verbs do (proven for a
   non-admin by the P2 migration test).
 
+The hook fires on every way a player enters a room: the `go`/`flee` verbs
+(through `sys_move`) and the host `@go` and login paths. A player who walks into
+a fight already in progress is not drawn in, since `__combat` tracks one player;
+they `attack` to join. Reactions never fire for a non-player entrant, so future
+wandering NPCs will not set each other off.
+
 Deferred (proactive, needs an autonomous driver):
 
 - Wander, patrol, and idle chatter all require a tick with no player present.
