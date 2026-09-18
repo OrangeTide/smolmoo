@@ -2309,6 +2309,54 @@ vm_authority(struct vm *vm, int *sys)
     return (who > 0) ? obj_find(who) : NULL;
 }
 
+/* The connected player whose object is `objid`, or -1. Used to spot a player
+   walking into a room, which wakes the room's reactive NPCs (OLC-4). */
+static int
+sid_of_player_obj(int objid)
+{
+    if (objid == OBJ_NONE)
+        return -1;
+    for (int i = 0; i < MAX_CONN; i++)
+        if (cc[i].state == CONN_SSE && cc[i].obj == objid)
+            return i;
+    return -1;
+}
+
+/* OLC-4 reactive mob behavior: when a player enters `room`, run each resident
+   NPC's `on_enter` verb as its own fire-and-forget task, bound with this = the
+   NPC and player/dobj = the entering player. Only objects that carry a
+   `behavior` property (their own or inherited from a prototype) are woken, so
+   ordinary items and players in the room are skipped. The behavior verb runs at
+   the entering player's authority and elevates through its own setuid bit; a
+   task spawned from it (an aggro NPC starting a fight) inherits this room, so
+   the fight opens in the right place. */
+static void
+mob_enter(int intruder, int room, int sid)
+{
+    const char *a_beh = make_atom("behavior");
+
+    for (int i = 0; i < MAX_OBJ; i++) {
+        struct verb_match m;
+        int mob = objs[i].id, ti;
+
+        if (mob == OBJ_NONE || mob == intruder)
+            continue;
+        if (prop_objnum(&objs[i], make_atom("location")) != room)
+            continue;
+        if (!prop_str(&objs[i], a_beh))
+            continue;
+        if (verb_resolve_on(mob, "on_enter", sid, &m) != OK)
+            continue;
+        m.dobj = intruder;
+        m.iobj = OBJ_NONE;
+        ti = task_alloc(sid);
+        if (ti < 0)
+            break;
+        if (task_setup(ti, m.hash, intruder, room, "", &m) != OK)
+            task_free(ti);
+    }
+}
+
 static int
 vm_ecall(struct rv_cpu *cpu, void *ctx)
 {
@@ -2618,6 +2666,13 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
             return 0;
         }
         prop_set(o, make_atom("location"), val_obj(dest));
+        /* a player walking into a room wakes its reactive NPCs (OLC-4) */
+        {
+            int esid = sid_of_player_obj(objid);
+
+            if (esid >= 0)
+                mob_enter(objid, dest, esid);
+        }
         RET(0);
         return 0;
     }

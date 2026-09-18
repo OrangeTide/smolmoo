@@ -1109,6 +1109,32 @@ curl -sf -X POST -d "$SID2 revive TestPlayer1" http://localhost:$PORT/cmd >/dev/
 check_log /tmp/smolmoo_p2.log 'patches TestPlayer1 back to life' "an ally revives the body in place"
 check_log /tmp/smolmoo_p1.log 'back from the brink' "the casualty is alive again"
 
+# --- OLC-4: reactive mob behavior (see OLC.md) ---
+# Walking into a room runs each resident NPC's on_enter verb, driven by the
+# mob's `behavior` prop: greet says a line, aggro opens a fight. Dig an ambush
+# room off the lobby, stock it with a greeter and an aggressor, and walk in.
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @dig ambush to Ambush Nook" http://localhost:$PORT/cmd >/dev/null
+AMB=$(grep -oE 'Dug #[0-9]+ to #[0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '#[0-9]+' | tail -1 | tr -d '#')
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+WARDEN=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$WARDEN.name=warden" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$WARDEN.behavior=greet" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$WARDEN.greeting=The warden looks you over." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$WARDEN.location=#$AMB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+BRUTE=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$BRUTE.name=brute" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BRUTE.behavior=aggro" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BRUTE.location=#$AMB" http://localhost:$PORT/cmd >/dev/null
+# walk through the exit; the host wakes both mobs in the destination
+curl -sf -X POST -d "$SID1 go ambush" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'The warden looks you over' "greet fires on room entry"
+check_log /tmp/smolmoo_p1.log 'brute turns on' "aggro opens a fight on room entry"
+# end the ambush fight so it does not linger past the test
+curl -sf -X POST -d "$SID1 @set #$AMB.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+
 # --- OLC P2 migration check: a non-admin runs the setuid combat verbs ---
 # Placed after all admin combat so it cannot disturb those fights. Test accounts
 # are admin, which masks permission checks, so prove the real path: the non-admin

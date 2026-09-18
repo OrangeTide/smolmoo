@@ -136,6 +136,23 @@ reset rule (see the `reset` topic) whose room is the store. On the ChromeSix
 world a store that sets a `stim` base price (`@set #N.stim=75`) also sells the
 counter-based stim dose through `buy stim`.
 
+## behavior
+
+Make an NPC react when a player walks into its room. Set a `behavior` property
+on the mob (or on a prototype it inherits from) to a comma-separated list of
+reactions.
+
+    @set #N.behavior=greet          say a line to the room on entry
+    @set #N.behavior=aggro          open a fight on the newcomer
+    @set #N.behavior=greet,aggro    both
+    @set #N.greeting=<text>         the line `greet` says (optional)
+
+Reactions fire only while a player is present, so an empty room stays quiet and
+costs nothing. `aggro` starts a normal fight, so the mob needs combat stats; the
+simplest source is to parent it to an NPC prototype that already has them. A
+mob with no `behavior` property does nothing. Autonomous movement (wander,
+patrol) is not yet available; it needs a server-side timer.
+
 ## programming
 
 Write a verb in MooScript or C without rebuilding the server.

@@ -237,16 +237,37 @@ for it.
 
 Depends on: OLC-2 (restock is a reset rule).
 
-### OLC-4: Mob behavior
+### OLC-4: Mob behavior (reactive slice shipped)
 
-Templates fight but do not act on their own. Add behavior verbs.
+Templates fight but do not act on their own. Behavior is data-driven by a
+`behavior` property on the mob (its own or inherited from a prototype), a
+comma-separated list of reactions dispatched to the `on_enter` verb
+(`verb_mob.c`).
 
-- Wander: move between adjacent rooms on a timer (`sys_move`, `sys_next`,
-  `sys_random`, `sys_spawn`).
-- Aggro: attack an eligible target on sight (`sys_call` into the existing
-  combat verb).
-- Patrol: follow a fixed route.
-- Greet and idle chatter, building on the existing `verb_greet` demo.
+Shipped (reactive, player-triggered):
+
+- A room-entry hook. When a player enters a room, the host (`mob_enter`, fired
+  from `sys_move`) runs `on_enter` on each resident object that carries a
+  `behavior` prop, bound with `this` = the NPC and `player` = the newcomer. No
+  host timer and no system session: a reaction is a task under the entering
+  player's session, so it lives exactly as long as a player is present. This is
+  the on-demand analogue of OLC-2's `@reset`.
+- `greet`: the NPC says a line to the room (its `greeting` prop, or a default).
+- `aggro`: the NPC opens a fight on the newcomer, seeding the `cb_*` state the
+  way `verb_attack` does and spawning the `__combat` turn task, which then
+  drives the NPC's turns. A second aggressor in a running fight falls in via the
+  roster instead of reopening it. `on_enter` is setuid, so aggro's writes to the
+  room and both sheets elevate the same way the combat verbs do (proven for a
+  non-admin by the P2 migration test).
+
+Deferred (proactive, needs an autonomous driver):
+
+- Wander, patrol, and idle chatter all require a tick with no player present.
+  That needs a system session (a reserved connection slot the task loop never
+  frees) plus a heartbeat timer that spawns behavior tasks. This is the
+  host-timer driver deferred since OLC-2; add it when proactive NPCs are worth
+  that change. `sys_move`, `sys_next`, `sys_random`, and `sys_spawn` are the
+  primitives a wander/patrol verb would use once the driver exists.
 
 Depends on: OLC-2 (spawned mobs need somewhere to come from and return to).
 
