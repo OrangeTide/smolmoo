@@ -2905,7 +2905,10 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
     }
     case 21: { /* sys_getmsg(buf, len) → event type, or WAIT_TIMEOUT if the
                 * mailbox is empty. Non-blocking: an agent blocks with
-                * sys_suspend and pops here on wake (OLC-5). */
+                * sys_suspend and pops here on wake (OLC-5). Event strings are
+                * marshalled into the VM string area (VM_STR_ADDR), the same
+                * region as the boot args, so an agent must not rely on
+                * vm_args string pointers after its first getmsg. */
         uint32_t buf = ARG(0);
         int len = (int)ARG(1);
         int ti = task_current;
@@ -5479,6 +5482,13 @@ cmd_feedback(int sid, const char *args)
             session_write(sid, "Failed to start agent.");
             return;
         }
+        /* Register the object on the task now, before the agent runs its own
+           sys_listen on the first step. Without this a rapid second @wake would
+           not see it as awake and would start a duplicate orphan task. The
+           agent's later sys_listen re-sets the same values, and task_free clears
+           them via handler_obj. */
+        mo->task_id = tasks[ti].id;
+        tasks[ti].handler_obj = mid;
         snprintf(b, sizeof(b), "Woke %s.", obj_fmt(mid, i1, sizeof(i1)));
         session_write(sid, b);
         return;
@@ -7067,12 +7077,11 @@ cmd_install(const char *conf_path, const char *sdk)
                 ok = (system(cmd) == 0);
             } else if (ext && strcmp(ext, ".c") == 0 && sdk) {
                 /* C verbs. skj-cc-rv-psabi emits the standard RISC-V ILP32
-                 * psABI, matching the ecall stubs in verb_rt_rv.o. Each verb
-                 * is self-contained (its own _start, mulibc.h) and links only
-                 * against verb_rt_rv.o. -I. finds mulibc.h / chromesix_verb.h
-                 * at the repo root. */
-                /* an agent_*.c program links -lverbmain (the generic
-                   event-loop main); a plain verb supplies its own main. */
+                 * psABI, matching the ecall stubs in verb_rt_rv.o, which also
+                 * supplies the CRT _start that calls the verb's main(). A plain
+                 * verb links only verb_rt_rv.o; an agent_*.c program also links
+                 * verbmain.o for the generic event-loop main(). -I. finds
+                 * mulibc.h / chromesix_verb.h at the repo root. */
                 const char *base = strrchr(elf_src, '/');
                 char aobj[160];
 

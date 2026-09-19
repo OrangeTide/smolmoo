@@ -183,7 +183,7 @@ event-loop runtime and keeps running, handling events as they arrive. An agent
 defines two functions in place of `main`:
 
     void on_event(const struct verb_event *m);  handle one event
-    int  verb_dwell(void);   tick period in ms (negative to block, no ticks)
+    int  verb_dwell(void);   tick period in ms (<= 0 to block, no ticks)
 
 `on_event` receives an `EV_TIMER` each time the dwell elapses with no other
 event, `EV_ENTER` when a player walks into the agent's room, and `EV_USER` for

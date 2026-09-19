@@ -341,7 +341,7 @@ Depends on: the `pq` timer (already present) and the OLC-4 entry hook.
 The deferred half of OLC-4. Mobs act on their own, as agents consuming
 `EV_TIMER`/`EV_ENTER`.
 
-- Wander: move between adjacent rooms on a `sys_wake` cadence.
+- Wander: move between adjacent rooms on the agent's `EV_TIMER` cadence.
 - Patrol: follow a fixed route.
 - Aggro/greet on sight already work reactively; idle chatter joins them.
 
@@ -359,7 +359,8 @@ directly, so a vehicle simply is the room its riders are in.
 - A route data model: the ordered stop room ids and, for a timed vehicle, a
   dwell.
 - An agent (OLC-5) that advances the vehicle along its route: on `EV_TIMER` for
-  a train (self-paced with `sys_wake`), on `EV_USER` for an on-command elevator.
+  a train (self-paced by its `verb_dwell`), on `EV_USER` for an on-command
+  elevator.
   It relocates the vehicle and announces arrivals (`sys_move`, `sys_broadcast`).
 
 Depends on: OLC-5 (the agent/tick), OLC-1 (build the vehicle and its stops),

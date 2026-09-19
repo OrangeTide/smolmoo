@@ -4,7 +4,7 @@
  * program provides:
  *
  *     void on_event(const struct verb_event *m);  handle one event
- *     int  verb_dwell(void);   tick period in ms, or < 0 to block with no ticks
+ *     int  verb_dwell(void);   tick period in ms, or <= 0 to block with no ticks
  *
  * The loop registers the agent as the handler for its own object, then blocks
  * for events. A real event (EV_ENTER, EV_USER, ...) is delivered from the
@@ -28,6 +28,11 @@ main(void)
     struct verb_event m;
     int dwell = verb_dwell();
 
+    /* A dwell of 0 would busy-spin (sys_suspend(0) yields but stays runnable),
+       so treat "no positive period" as block-until-event, the same as a
+       negative return. */
+    if (dwell == 0)
+        dwell = -1;
     sys_listen(vm_args->this_obj);      /* receive this object's events */
     for (;;) {
         if (sys_getmsg(&m, sizeof(m)) >= 0) {
