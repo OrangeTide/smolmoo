@@ -51,7 +51,16 @@ struct vm_args {
 
 #define WAIT_TIMEOUT ((int)-2)
 
+/* Host-to-VM event kinds. EV_USER carries a player command (the verb/dobj/args
+ * fields apply); the rest are engine signals with an int tag for disambiguation
+ * and no strings. Kept in sync with the host. */
+#define EV_USER   0
+#define EV_TIMER  1
+#define EV_ENTER  2
+
 struct verb_event {
+    int type;
+    int tag;
     int player;
     int room;
     int this_obj;
@@ -90,6 +99,8 @@ extern int sys_call(int target, const char *verb, const char *argstr,
                     int dobj, int iobj);
 extern int sys_hasverb(int target, const char *verb);
 extern int sys_setpriv(int on);
+extern int sys_getmsg(void *buf, int len);   /* pop a mailbox event, or -2 */
+extern int sys_listen(int objid);            /* route objid's events here */
 
 /* Privilege bracketing (see OLC.md). A verb runs with its caller's authority by
  * default. grant_accept() elevates to the verb owner's authority, but only if
@@ -134,6 +145,10 @@ strlen(const char *s)
  * aggregate initialization and struct copies. Those implicit calls bind to
  * the external symbol, so these are given external linkage and left
  * out-of-line rather than being static. */
+/* An agent links two C objects (its own and libverbmain); define these
+   external-linkage helpers in only one of them. libverbmain sets
+   MULIBC_NO_IMPL so the agent's object provides the single copy. */
+#ifndef MULIBC_NO_IMPL
 void *
 memset(void *dst, int c, size_t n)
 {
@@ -180,5 +195,6 @@ memcmp(const void *a, const void *b, size_t n)
     }
     return 0;
 }
+#endif /* MULIBC_NO_IMPL */
 
 #endif

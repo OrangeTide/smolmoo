@@ -46,7 +46,16 @@
 #define MAX_TASK     1024
 #define TASK_QUANTUM 10000
 
-enum { CONN_FREE, CONN_PENDING, CONN_SSE, CONN_STALLED };
+enum { CONN_FREE, CONN_PENDING, CONN_SSE, CONN_STALLED, CONN_SYS };
+
+/* The reserved system session (slot 0): a connection the task loop never reaps
+   and the accept path never hands out, so autonomous agents (OLC-5) keep
+   running with no player present. */
+#define SYS_SID 0
+
+/* Host-to-VM event kinds, matching mulibc.h. EV_USER is a player command (its
+   verb/dobj/arg fields apply); the rest are engine signals with an int tag. */
+enum { EV_USER, EV_TIMER, EV_ENTER };
 
 struct conn {
     int fd;
@@ -2091,6 +2100,8 @@ struct vm_fd {
 };
 
 struct vm_event {
+    int type;
+    int tag;
     int player;
     int room;
     int this_obj;
@@ -2101,6 +2112,16 @@ struct vm_event {
     uint32_t iobjstr;
     uint32_t prepstr;
     uint32_t verb;
+};
+
+/* A queued event, held host-side (strings included) until the handler reads it,
+   so a second event cannot clobber the first's data in VM memory. The mailbox
+   is a small per-task ring; overflow drops the oldest and counts it. */
+#define MBOX_MAX 4
+struct host_event {
+    int type, tag;
+    int player, room, this_obj, dobj, iobj;
+    char argstr[160], verb[32];
 };
 
 struct vm {
@@ -2128,6 +2149,9 @@ struct vm_task {
     int id;
     int timer_id;
     int suspended;
+    int handler_obj;               /* object whose events route here, or 0 */
+    struct host_event mbox[MBOX_MAX];
+    int mbox_head, mbox_count, mbox_drops;
     struct vm vm;
 };
 
@@ -2149,6 +2173,8 @@ struct verb_match {
 static int  task_alloc(int sid);
 static void task_free(int ti);
 static void task_wake(void *arg);
+static int  task_find_by_id(int id);
+static uint32_t vm_put_str(struct vm *vm, uint32_t *off, const char *s);
 static int  task_setup(int ti, const char *hash, int player, int room_id,
                        const char *argstr, const struct verb_match *m);
 static int  verb_resolve_on(int target, const char *verb, int sid,
@@ -2322,6 +2348,46 @@ sid_of_player_obj(int objid)
     return -1;
 }
 
+/* Enqueue an event on task ti's mailbox (OLC-5) and wake it if it is waiting.
+   A full mailbox drops the oldest and counts it, so a slow agent degrades
+   rather than blocking a producer. */
+static void
+mbox_push(int ti, const struct host_event *e)
+{
+    struct vm_task *t = &tasks[ti];
+    int slot;
+
+    if (t->mbox_count >= MBOX_MAX) {
+        t->mbox_head = (t->mbox_head + 1) % MBOX_MAX;
+        t->mbox_count--;
+        t->mbox_drops++;
+    }
+    slot = (t->mbox_head + t->mbox_count) % MBOX_MAX;
+    t->mbox[slot] = *e;
+    t->mbox_count++;
+    if (t->state == TASK_SLEEPING) {
+        if (t->timer_id >= 0) { timer_remove(t->timer_id); t->timer_id = -1; }
+        t->state = TASK_READY;
+    }
+}
+
+/* The live agent task listening on object `obj` (via sys_listen), or -1. */
+static int
+handler_task_of(int obj)
+{
+    struct obj *o = obj_find(obj);
+    int ti;
+
+    if (!o || o->task_id < 0)
+        return -1;
+    ti = task_find_by_id(o->task_id);
+    if (ti < 0) {
+        o->task_id = -1;
+        return -1;
+    }
+    return ti;
+}
+
 /* OLC-4 reactive mob behavior: when a player enters `room`, run each resident
    NPC's `on_enter` verb as its own fire-and-forget task, bound with this = the
    NPC and player/dobj = the entering player. Only objects that carry a
@@ -2347,6 +2413,21 @@ mob_enter(int intruder, int room, int sid)
             continue;
         if (sid_of_player_obj(mob) >= 0)   /* a player is not a mob */
             continue;
+        /* a live agent listening on this mob gets an EV_ENTER event (OLC-5);
+           otherwise fall back to spawning its on_enter verb (OLC-4). */
+        ti = handler_task_of(mob);
+        if (ti >= 0) {
+            struct host_event e;
+
+            memset(&e, 0, sizeof(e));
+            e.type = EV_ENTER;
+            e.player = intruder;
+            e.room = room;
+            e.this_obj = mob;
+            e.dobj = intruder;
+            mbox_push(ti, &e);
+            continue;
+        }
         if (verb_resolve_on(mob, "on_enter", sid, &m) != OK)
             continue;
         m.dobj = intruder;
@@ -2822,6 +2903,57 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
         RET(0);
         return 0;
     }
+    case 21: { /* sys_getmsg(buf, len) → event type, or WAIT_TIMEOUT if the
+                * mailbox is empty. Non-blocking: an agent blocks with
+                * sys_suspend and pops here on wake (OLC-5). */
+        uint32_t buf = ARG(0);
+        int len = (int)ARG(1);
+        int ti = task_current;
+        struct vm_task *t;
+        struct host_event *he;
+        struct vm_event ev;
+        uint32_t str_off = 0;
+
+        if (ti < 0) { RET(-1); return 0; }
+        t = &tasks[ti];
+        if (t->mbox_count <= 0) { RET(-2); return 0; }   /* WAIT_TIMEOUT */
+        he = &t->mbox[t->mbox_head];
+        t->mbox_head = (t->mbox_head + 1) % MBOX_MAX;
+        t->mbox_count--;
+
+        memset(&ev, 0, sizeof(ev));
+        ev.type = he->type;
+        ev.tag = he->tag;
+        ev.player = he->player;
+        ev.room = he->room;
+        ev.this_obj = he->this_obj;
+        ev.dobj = he->dobj;
+        ev.iobj = he->iobj;
+        ev.argstr = vm_put_str(vm, &str_off, he->argstr);
+        ev.verb = vm_put_str(vm, &str_off, he->verb);
+        {
+            int sz = (int)sizeof(ev);
+            const uint8_t *src = (const uint8_t *)&ev;
+
+            if (len < sz) sz = len;
+            for (int i = 0; i < sz; i++)
+                if (buf + (uint32_t)i < VM_MEMSZ)
+                    vm->mem[buf + i] = src[i];
+        }
+        RET(he->type);
+        return 0;
+    }
+    case 22: { /* sys_listen(objid): route objid's events to this task (OLC-5) */
+        int objid = (int)ARG(0);
+        struct obj *o = obj_find(objid);
+        int ti = task_current;
+
+        if (!o || ti < 0) { RET(-1); return 0; }
+        o->task_id = tasks[ti].id;
+        tasks[ti].handler_obj = objid;
+        RET(0);
+        return 0;
+    }
     }
     return -1;
 
@@ -2905,6 +3037,12 @@ task_free(int ti)
             if (o && o->task_id == id)
                 o->task_id = -1;
         }
+    }
+    /* clear an agent's sys_listen registration (OLC-5) */
+    if (tasks[ti].handler_obj) {
+        struct obj *o = obj_find(tasks[ti].handler_obj);
+        if (o && o->task_id == id)
+            o->task_id = -1;
     }
     if (tasks[ti].timer_id >= 0)
         timer_remove(tasks[ti].timer_id);
@@ -5292,6 +5430,60 @@ cmd_feedback(int sid, const char *args)
         return;
     }
 
+    /* @wake #N : start object #N as an autonomous agent (OLC-5). #N.brain names
+       the agent verb (a compiled program that links -lverbmain); the agent runs
+       under the system session with this = #N, so it keeps ticking with no
+       player present. */
+    if (strcmp(tag, "wake") == 0) {
+        int mid, brain, mode, ti, roomid;
+        struct obj *mo, *bo;
+        const char *elf;
+        char hash[65], b[64], i1[16];
+        struct verb_match m;
+
+        if (!is_wizard(sid)) {
+            session_write(sid, "You are not authorized to do that.");
+            return;
+        }
+        mid = olc_ref(sid, p);
+        mo = obj_find(mid);
+        if (!mo) { session_write(sid, "Wake what?"); return; }
+        if (handler_task_of(mid) >= 0) {
+            session_write(sid, "It is already awake.");
+            return;
+        }
+        brain = prop_objnum(mo, make_atom("brain"));
+        bo = obj_find(brain);
+        if (!bo) {
+            session_write(sid,
+                "That has no brain (set #N.brain=#<agent verb>).");
+            return;
+        }
+        elf = prop_str(bo, make_atom("elf"));
+        if (!elf || elf_parse(elf, &mode, hash, sizeof(hash)) != OK) {
+            session_write(sid, "Its brain has no compiled program.");
+            return;
+        }
+        roomid = prop_objnum(mo, make_atom("location"));
+        ti = task_alloc(SYS_SID);
+        if (ti < 0) { session_write(sid, "No task slots."); return; }
+        memset(&m, 0, sizeof(m));
+        m.verb = "boot";
+        m.this_obj = mid;
+        m.verb_obj = brain;
+        m.dobj = OBJ_NONE;
+        m.iobj = OBJ_NONE;
+        memcpy(m.hash, hash, sizeof(m.hash));
+        if (task_setup(ti, hash, mid, roomid, "", &m) != OK) {
+            task_free(ti);
+            session_write(sid, "Failed to start agent.");
+            return;
+        }
+        snprintf(b, sizeof(b), "Woke %s.", obj_fmt(mid, i1, sizeof(i1)));
+        session_write(sid, b);
+        return;
+    }
+
     /* @find <name> : list objects whose name matches (case-insensitive). */
     if (strcmp(tag, "find") == 0) {
         const char *a_name = make_atom("name");
@@ -6879,19 +7071,29 @@ cmd_install(const char *conf_path, const char *sdk)
                  * is self-contained (its own _start, mulibc.h) and links only
                  * against verb_rt_rv.o. -I. finds mulibc.h / chromesix_verb.h
                  * at the repo root. */
+                /* an agent_*.c program links -lverbmain (the generic
+                   event-loop main); a plain verb supplies its own main. */
+                const char *base = strrchr(elf_src, '/');
+                char aobj[160];
+
+                base = base ? base + 1 : elf_src;
+                if (strncmp(base, "agent_", 6) == 0)
+                    snprintf(aobj, sizeof(aobj), " %s/verbmain.o", sdk);
+                else
+                    aobj[0] = '\0';
                 snprintf(cmd, sizeof(cmd),
                     "%s/skj-cc-rv-psabi -I. -I sdk/runtime "
                     "-o %s/_verb.s %s && "
                     "%s/skj-as-rv -o %s/_verb.o "
                     "%s/_verb.s && "
                     "%s/skj-ld-rv -T vm_rv.ld -o %s "
-                    "%s/_verb.o %s/verb_rt_rv.o",
+                    "%s/_verb.o %s/verb_rt_rv.o%s",
                     sdk,
                     sdk, elf_src,
                     sdk, sdk,
                     sdk,
                     sdk, elf_path,
-                    sdk, sdk);
+                    sdk, sdk, aobj);
                 fprintf(stderr, "[build:skj] %s\n", elf_src);
                 ok = (system(cmd) == 0);
             }
@@ -7062,6 +7264,11 @@ main(int argc, char *argv[])
     world_bootstrap();
     task_init();
     timer_init();
+    /* reserve the system session (slot 0): agent tasks run under it, so the
+       task loop never reaps them and the accept path never hands the slot to a
+       client (OLC-5). */
+    cc[SYS_SID].state = CONN_SYS;
+    cc[SYS_SID].obj = OBJ_NONE;
     history_init();
     if (saver_start() != OK) {
         fprintf(stderr, "failed to start save thread\n");

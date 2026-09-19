@@ -1176,6 +1176,46 @@ curl -sf -X POST -d "$SID3 attack goon" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'combat begins' "non-admin attack starts a fight (setuid attack writes the room)"
 check_log /tmp/smolmoo_p3.log 'your turn' "non-admin turn task renders (setuid __combat elevates)"
 
+# --- OLC-5: event system and runtime message loop (see OLC.md) ---
+# An agent is a verb that links -lverbmain (the agent_ prefix), giving it a
+# generic event loop instead of a one-shot main(). @wake #N starts object #N as
+# an agent under the system session, with #N.brain naming the agent verb. The
+# demo agent (__ticker, #452) increments a `ticks` prop each dwell and announces
+# a newcomer on EV_ENTER. Two things are proven: the loop runs with no player
+# present (ticks climb between two reads that issue no agent command), and a
+# room entry is delivered to the live agent's mailbox (EV_ENTER).
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+BROOM=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$BROOM.name=Beacon Bay" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #300" http://localhost:$PORT/cmd >/dev/null
+BEACON=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$BEACON.name=beacon" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BEACON.location=#$BROOM" http://localhost:$PORT/cmd >/dev/null
+# behavior makes mob_enter consider it; brain names the agent verb for @wake.
+curl -sf -X POST -d "$SID1 @set #$BEACON.behavior=watch" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BEACON.brain=#452" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @wake #$BEACON" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log "Woke #$BEACON" "@wake starts the agent"
+
+# read ticks helper: examine the beacon, return its latest ticks value.
+beacon_ticks() {
+	curl -sf -X POST -d "$SID1 @examine #$BEACON" http://localhost:$PORT/cmd >/dev/null
+	waitgrep /tmp/smolmoo_p1.log 'ticks = "[0-9]' || true
+	grep -o 'ticks = "[0-9]*"' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*' || true
+}
+# no agent command runs between these two reads, so any increase is autonomous.
+T1=$(beacon_ticks)
+sleep 0.8
+T2=$(beacon_ticks)
+[ "${T2:-0}" -gt "${T1:-0}" ] \
+	&& pass "agent ticks climb with no player (EV_TIMER autonomy)" \
+	|| fail "agent ticks climb with no player (EV_TIMER autonomy)"
+
+# walk into the beacon's room: mob_enter routes an EV_ENTER to the live agent.
+curl -sf -X POST -d "$SID1 @go #$BROOM" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'The beacon registers a visitor' \
+	"room entry is delivered to the agent (EV_ENTER)"
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.

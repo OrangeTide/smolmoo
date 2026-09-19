@@ -36,6 +36,8 @@
     .globl sys_call
     .globl sys_hasverb
     .globl sys_setpriv
+    .globl sys_getmsg
+    .globl sys_listen
     .globl _start
 
     /* CRT entry: the ELF entry point for every C verb. The host has seeded sp;
@@ -153,6 +155,16 @@ sys_hasverb:                            /* a0=target, a1=verb -> a0=0/1 */
 
 sys_setpriv:                            /* a0=on -> a0=0 ok, negative denied */
     li      a7, 20
+    ecall
+    ret
+
+sys_getmsg:                             /* a0=buf, a1=len -> a0=event type/-2 */
+    li      a7, 21
+    ecall
+    ret
+
+sys_listen:                             /* a0=objid -> a0=0 ok */
+    li      a7, 22
     ecall
     ret
 

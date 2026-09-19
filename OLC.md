@@ -277,7 +277,7 @@ Deferred (proactive, needs an autonomous driver):
 
 Depends on: OLC-2 (spawned mobs need somewhere to come from and return to).
 
-### OLC-5: Event system and runtime message loop
+### OLC-5: Event system and runtime message loop (shipped)
 
 The dependency the rest of the arc was waiting on. OLC-4's reactive mobs are
 player-triggered because a VM task is bound to a session and reaped when it
@@ -297,11 +297,13 @@ Locked design:
 - The runtime owns the loop. The CRT provides `_start`, always the ELF entry,
   and always calls `main()`. A simple verb defines its own `main()`, runs, and
   returns (fire-and-forget, today's model). An agent does not define `main()`;
-  it links `-lverbmain`, whose `main()` is the generic
-  `listen(this); while (get_message(&m) > 0) on_event(&m);` loop, and supplies
-  `on_event`. Opt-in is a link choice, so an executable is exactly one kind.
-  (Stage 5a, done: CRT owns `_start`, C verbs migrated `_start` -> `int
-  main(void)`, no behavior change.)
+  it links `-lverbmain`, whose `main()` registers as its object's handler
+  (`sys_listen`) and then blocks for events, draining the mailbox with
+  `sys_getmsg` and calling `on_event` on each. When the dwell elapses with an
+  empty mailbox the loop synthesizes an `EV_TIMER`, so the agent supplies just
+  `on_event` and `verb_dwell` (the tick period). Opt-in is a link choice, so an
+  executable is exactly one kind. (Stage 5a, done: CRT owns `_start`, C verbs
+  migrated `_start` -> `int main(void)`, no behavior change.)
 - Events are typed. `vm_event` gains an int `type` (`EV_USER`, `EV_TIMER`,
   `EV_ENTER`, ...) kept in sync host/VM like the syscall numbers, plus an int
   `tag` cookie. `EV_USER` is the string-verb path: `verb`/`dobj`/`iobj`/`argstr`
@@ -312,16 +314,25 @@ Locked design:
   timer stays the `pq` heap; the mailbox is a per-task ring.
 - Autonomous agents run under a reserved system session the reaper never frees;
   player-scoped handlers still live with their session.
-- `sys_wake(delay_ms, tag)` schedules an `EV_TIMER` to the caller's object;
-  `timer_add` is the backing. The entry hook (OLC-4) delivers `EV_ENTER` to a
-  live handler instead of spawning a fresh `on_enter` task.
-- Build plumbing: a `verbs.conf` `agent` flag and an `@program ... agent` token
-  tell `program_compile` to link `verbmain.o`. Repo convention: `verb_*.c` for
-  one-shot verbs, `agent_*.c` for event-loop agents.
+- Two syscalls back the mailbox: `sys_listen` (22) routes an object's events to
+  the calling task, and `sys_getmsg` (21) pops one event (or reports the box is
+  empty). The periodic tick reuses the existing `sys_suspend`; the runtime turns
+  an elapsed dwell into an `EV_TIMER` rather than the host scheduling one. The
+  entry hook (OLC-4) delivers `EV_ENTER` to a live handler's mailbox instead of
+  spawning a fresh `on_enter` task.
+- Build plumbing: the `agent_` source prefix tells the installer (and
+  `program_compile`) to link `verbmain.o`. Repo convention: `verb_*.c` for
+  one-shot verbs, `agent_*.c` for event-loop agents. An `@program ... agent`
+  token for in-game agent authoring is a follow-up.
+- Launch: `@wake #N` (wizard only) starts object `#N` as an agent under the
+  reserved system session; `#N.brain` names the agent verb. A boot-time scan
+  that auto-starts agents is a follow-up.
 
-Proof: land the bus with a tiny demo agent that wakes on a timer with no player
-present. `__combat` (currently a 250 ms poll loop) converts to an agent in a
-follow-up, as the first real consumer.
+Shipped: the event bus, the `@wake` launcher, and a demo agent (`__ticker`,
+`#452`) that ticks with no player present and announces a newcomer on
+`EV_ENTER`. Follow-ups: `@program ... agent`, boot-scan auto-start, and
+converting `__combat` (currently a 250 ms poll loop) to an agent as the first
+real consumer.
 
 Depends on: the `pq` timer (already present) and the OLC-4 entry hook.
 

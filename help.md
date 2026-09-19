@@ -89,10 +89,17 @@ Create and edit objects. Most building commands are wizard or owner gated.
     @chown #N=#M             transfer ownership (wizard only)
     @chgrp #N=#G             set an object's group
     @program #N              compile the object's src into a verb
+    @wake #N                 start #N as an autonomous agent (wizard only)
 
 `@dig <exit> to <name>` creates a new room and links it, or `@dig <exit> to
 #N` links an existing room; both add a return exit named `back`. Object
 arguments are `#N`, `&N`, or a name near you.
+
+`@wake #N` starts object `#N` as an agent: a program that keeps running with
+no player present. `#N.brain` must name the agent verb (a program that links
+the event-loop runtime; see the `programming` topic). The agent runs under the
+system session, so its timer keeps firing in an empty room. It stops when the
+server restarts; wake it again to restart it.
 
 Permission flags are three comma-separated owner/group/world triplets of `r`
 and `w`; the default is `rw,r,r`. See also the `editor`, `programming`, and
@@ -170,6 +177,17 @@ with its return value. `@program` picks the language from the source (C when
 it has an `#include`), or you can name it: `@program #N c` or `@program #N moo`.
 Compiling requires the server to have the bundled SDK toolchain present. You can
 only program an object you own.
+
+A one-shot verb runs to the end of `main` and stops. An agent instead links the
+event-loop runtime and keeps running, handling events as they arrive. An agent
+defines two functions in place of `main`:
+
+    void on_event(const struct verb_event *m);  handle one event
+    int  verb_dwell(void);   tick period in ms (negative to block, no ticks)
+
+`on_event` receives an `EV_TIMER` each time the dwell elapses with no other
+event, `EV_ENTER` when a player walks into the agent's room, and `EV_USER` for
+a typed command. Start an agent with `@wake #N` (see the `building` topic).
 
 ## history
 
