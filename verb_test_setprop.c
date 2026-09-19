@@ -3,8 +3,8 @@
 
 #include "mulibc.h"
 
-void
-_start(void)
+int
+main(void)
 {
     int rc = sys_setprop(vm_args->dobj, "_test", "hello");
 

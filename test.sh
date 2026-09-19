@@ -261,7 +261,7 @@ check_log /tmp/smolmoo_p3.log 'DROP:DENIED' "grant_release drops back to caller 
 # non-admin cannot escalate by calling grant_accept in a verb they own.
 curl -sf -X POST -d "$SID3 @create #400" http://localhost:$PORT/cmd >/dev/null
 P3V=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p3.log | tail -1 | grep -o '[0-9]*')
-printf '#include "mulibc.h"\nvoid _start(void){grant_accept();int rc=sys_setprop(vm_args->dobj,"_p3","x");puts(rc==0?"P3V:OK":"P3V:DENIED");_exit(0);}\n' \
+printf '#include "mulibc.h"\nint main(void){grant_accept();int rc=sys_setprop(vm_args->dobj,"_p3","x");puts(rc==0?"P3V:OK":"P3V:DENIED");_exit(0);}\n' \
 	| curl -sf -X POST --data-binary @- \
 	  "http://localhost:$PORT/prop?obj=$P3V&prop=src&sid=$SID3" >/dev/null
 curl -sf -X POST -d "p3set" \
@@ -420,7 +420,7 @@ check_log /tmp/smolmoo_p1.log 'your feedback has been noted' "unmatched @tag sti
 # @program also compiles a C verb; the language is sniffed from #include.
 curl -sf -X POST -d "$SID1 @create #400" http://localhost:$PORT/cmd >/dev/null
 CPROG=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
-printf '#include "mulibc.h"\nvoid _start(void) { puts("CPROG OK"); _exit(0); }\n' \
+printf '#include "mulibc.h"\nint main(void) { puts("CPROG OK"); _exit(0); }\n' \
 	| curl -sf -X POST --data-binary @- \
 	  "http://localhost:$PORT/prop?obj=$CPROG&prop=src&sid=$SID1" >/dev/null
 curl -sf -X POST -d "cprog" \

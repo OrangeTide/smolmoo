@@ -18,8 +18,8 @@
 #define WILD_LO  50        /* 100 expected each, loose band */
 #define WILD_HI  150
 
-void
-_start(void)
+int
+main(void)
 {
     struct cs_out o;
     int hist[6] = { 0, 0, 0, 0, 0, 0 };

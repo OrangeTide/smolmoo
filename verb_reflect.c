@@ -4,8 +4,8 @@
 
 #include "mulibc.h"
 
-void
-_start(void)
+int
+main(void)
 {
     if (vm_args->dobj == vm_args->this_obj)
         puts("REFLECT:MATCH");

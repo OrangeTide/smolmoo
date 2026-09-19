@@ -3,8 +3,8 @@
 
 #include "mulibc.h"
 
-void
-_start(void)
+int
+main(void)
 {
     /* invoke the `greet` verb on the current room, passing a string argument */
     int rc = sys_call(vm_args->room, "greet", "world", -1, -1);

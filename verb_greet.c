@@ -3,8 +3,8 @@
 
 #include "mulibc.h"
 
-void
-_start(void)
+int
+main(void)
 {
     write(1, "GREETED:", 8);
     if (vm_args->arglen > 0)

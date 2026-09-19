@@ -66,8 +66,8 @@ priced_at(int base, int step)
     return cs_divmod(base * (10 - step), 10, &r);
 }
 
-void
-_start(void)
+int
+main(void)
 {
     struct cs_out o;
     int self = vm_args->player;

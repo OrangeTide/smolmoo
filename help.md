@@ -164,8 +164,9 @@ Write a verb in MooScript or C without rebuilding the server.
     @program #N [c|moo]      compile #N.src, storing the result on #N.elf
 
 A MooScript verb's entry is `verb main(player, room, this, dobj, iobj, arg)`;
-declare only the leading parameters it uses. A C verb defines its own `_start`
-and includes `mulibc.h`. `@program` picks the language from the source (C when
+declare only the leading parameters it uses. A C verb defines `main` and
+includes `mulibc.h`; the runtime supplies `_start`, which calls `main` and exits
+with its return value. `@program` picks the language from the source (C when
 it has an `#include`), or you can name it: `@program #N c` or `@program #N moo`.
 Compiling requires the server to have the bundled SDK toolchain present. You can
 only program an object you own.

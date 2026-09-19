@@ -37,8 +37,8 @@ on_roster(int room, int who)
     return 0;
 }
 
-void
-_start(void)
+int
+main(void)
 {
     struct cs_out o;
     int self = vm_args->player;

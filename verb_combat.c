@@ -280,8 +280,8 @@ npc_social_turn(int me, int player, int room)
     sys_broadcast(room, cs_cstr(&o));
 }
 
-void
-_start(void)
+int
+main(void)
 {
     int room = vm_args->room;
     int player = vm_args->player;

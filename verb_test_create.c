@@ -3,8 +3,8 @@
 
 #include "mulibc.h"
 
-void
-_start(void)
+int
+main(void)
 {
     int id = sys_create(100);   /* new child of the Room Prototype (#100) */
 

@@ -53,8 +53,8 @@ roster_add(int room, int id)
     }
 }
 
-void
-_start(void)
+int
+main(void)
 {
     struct cs_out o;
     int mob = vm_args->this_obj;

@@ -11,8 +11,8 @@
 /* object id of the __combat task verb (verbs.conf) */
 #define COMBAT_VERB 420
 
-void
-_start(void)
+int
+main(void)
 {
     struct cs_out o;
     int self = vm_args->player;

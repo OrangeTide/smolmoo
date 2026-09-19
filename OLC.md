@@ -277,24 +277,82 @@ Deferred (proactive, needs an autonomous driver):
 
 Depends on: OLC-2 (spawned mobs need somewhere to come from and return to).
 
-### OLC-5: Vehicles
+### OLC-5: Event system and runtime message loop
 
-Carriages, trains, and elevators are moving rooms: an enterable object that
-relocates between rooms on a schedule or on command, carrying its occupants.
-The primitives exist; this defines the pattern.
+The dependency the rest of the arc was waiting on. OLC-4's reactive mobs are
+player-triggered because a VM task is bound to a session and reaped when it
+ends, so nothing runs with no player present. Timed vehicles (old OLC-5) and
+proactive mobs (wander, patrol) both need an autonomous tick. Rather than a
+one-off timer, build a holistic host-to-VM event channel so a timer is just one
+kind of event.
 
-- Board and disembark: enter and leave a room-like container (`sys_move` the
-  player into or out of the vehicle object).
-- A route data model: the ordered stops and, for a train or elevator, a
-  timetable.
-- A scheduler verb that advances the vehicle along its route on a timer,
-  relocating the vehicle (and thus its occupants) and announcing arrivals
-  (`sys_spawn` / `sys_suspend`, `sys_move`, `sys_broadcast`). An elevator is
-  the on-command variant; a train is the timed variant; a carriage can be
-  either.
+Locked design:
 
-Depends on: OLC-1 (build the vehicle and its stops), OLC-2 (a vehicle can be a
-reset-managed object).
+- Events are delivered cooperatively, never as an interrupt. The VM observes an
+  event only at a yield point (`sys_wait`), so there is no signal re-entrancy;
+  events queue in the host while a verb runs and are handed over on the next
+  wait. This seam already exists in embryo (`sys_open` `O_VERB` +
+  `obj.task_id`, `sys_wait`, `sys_read`, `verb_deliver` for player commands);
+  OLC-5 generalizes it.
+- The runtime owns the loop. The CRT provides `_start`, always the ELF entry,
+  and always calls `main()`. A simple verb defines its own `main()`, runs, and
+  returns (fire-and-forget, today's model). An agent does not define `main()`;
+  it links `-lverbmain`, whose `main()` is the generic
+  `listen(this); while (get_message(&m) > 0) on_event(&m);` loop, and supplies
+  `on_event`. Opt-in is a link choice, so an executable is exactly one kind.
+  (Stage 5a, done: CRT owns `_start`, C verbs migrated `_start` -> `int
+  main(void)`, no behavior change.)
+- Events are typed. `vm_event` gains an int `type` (`EV_USER`, `EV_TIMER`,
+  `EV_ENTER`, ...) kept in sync host/VM like the syscall numbers, plus an int
+  `tag` cookie. `EV_USER` is the string-verb path: `verb`/`dobj`/`iobj`/`argstr`
+  stay meaningful only for it, so a new player command is still just a new verb
+  string with no C change, while the engine's own events cost no `strcmp`.
+- Each handler task gets a small bounded FIFO mailbox (a ring, drop-oldest with
+  a count on overflow) so a second event cannot clobber an unread one. The host
+  timer stays the `pq` heap; the mailbox is a per-task ring.
+- Autonomous agents run under a reserved system session the reaper never frees;
+  player-scoped handlers still live with their session.
+- `sys_wake(delay_ms, tag)` schedules an `EV_TIMER` to the caller's object;
+  `timer_add` is the backing. The entry hook (OLC-4) delivers `EV_ENTER` to a
+  live handler instead of spawning a fresh `on_enter` task.
+- Build plumbing: a `verbs.conf` `agent` flag and an `@program ... agent` token
+  tell `program_compile` to link `verbmain.o`. Repo convention: `verb_*.c` for
+  one-shot verbs, `agent_*.c` for event-loop agents.
+
+Proof: land the bus with a tiny demo agent that wakes on a timer with no player
+present. `__combat` (currently a 250 ms poll loop) converts to an agent in a
+follow-up, as the first real consumer.
+
+Depends on: the `pq` timer (already present) and the OLC-4 entry hook.
+
+### OLC-6: Proactive mob behavior
+
+The deferred half of OLC-4. Mobs act on their own, as agents consuming
+`EV_TIMER`/`EV_ENTER`.
+
+- Wander: move between adjacent rooms on a `sys_wake` cadence.
+- Patrol: follow a fixed route.
+- Aggro/greet on sight already work reactively; idle chatter joins them.
+
+Depends on: OLC-5 (the tick), OLC-2 (spawned mobs need somewhere to return to).
+
+### OLC-7: Vehicles
+
+Carriages, trains, and elevators are moving rooms: a room object (child of #100)
+whose occupants have `location` = the vehicle, so relocating the vehicle (moving
+its own `location`) carries them with it. `player_room` returns the location
+directly, so a vehicle simply is the room its riders are in.
+
+- Board and disembark: `sys_move` the player into the vehicle (only at its
+  current stop) or out to the vehicle's current stop (only when stopped).
+- A route data model: the ordered stop room ids and, for a timed vehicle, a
+  dwell.
+- An agent (OLC-5) that advances the vehicle along its route: on `EV_TIMER` for
+  a train (self-paced with `sys_wake`), on `EV_USER` for an on-command elevator.
+  It relocates the vehicle and announces arrivals (`sys_move`, `sys_broadcast`).
+
+Depends on: OLC-5 (the agent/tick), OLC-1 (build the vehicle and its stops),
+OLC-2 (a vehicle can be a reset-managed object).
 
 ## Cross-cutting notes
 

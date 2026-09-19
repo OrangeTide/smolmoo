@@ -95,8 +95,8 @@ tell(const char *lead, const char *name, const char *tail)
     puts(cs_cstr(&o));
 }
 
-void
-_start(void)
+int
+main(void)
 {
     int self = vm_args->player;
     int room = vm_args->room;

@@ -3,8 +3,8 @@
 
 #include "mulibc.h"
 
-void
-_start(void)
+int
+main(void)
 {
     char *name = (char *)vm_args->dobjstr;
     int obj = sys_objfind(name);

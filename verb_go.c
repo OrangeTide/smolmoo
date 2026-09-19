@@ -23,8 +23,8 @@ show_room(int room)
     cs_flush(&o);
 }
 
-void
-_start(void)
+int
+main(void)
 {
     struct cs_out o;
     int self = vm_args->player;

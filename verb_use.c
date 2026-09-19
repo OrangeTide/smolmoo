@@ -24,8 +24,8 @@ turn_ok(int room, int self, int *infight)
     return 1;
 }
 
-void
-_start(void)
+int
+main(void)
 {
     struct cs_out o;
     int self = vm_args->player;

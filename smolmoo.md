@@ -99,8 +99,9 @@ stock CPU emulator for equivalent isolation).
 
 Each verb links against a small runtime, `sdk/runtime/verb_rt_rv.S` (the ecall
 syscall stubs plus the 64-bit integer helpers the RV32 backend calls). A verb is
-a self-contained program: it defines its own `_start`, includes `mulibc.h`, and
-terminates with `_exit`. `skj-run` runs the same emulator standalone for
+a self-contained program: it defines `main` and includes `mulibc.h`. The runtime
+supplies `_start`, which calls `main` and exits with its return value (a verb may
+also `_exit` directly). `skj-run` runs the same emulator standalone for
 testing.
 
 ### Verbs as a service

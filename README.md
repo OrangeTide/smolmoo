@@ -429,8 +429,8 @@ bundled SDK toolchain, stores the resulting RISC-V ELF in the depot,
 and sets the object's `elf` property. The language is taken from the
 source (C when it has an `#include`, MooScript otherwise), or named
 explicitly as `@program #N c` or `@program #N moo`. A MooScript verb
-declares `verb main(...)`; a C verb defines its own `_start` and
-includes `mulibc.h`. The source stays on `src`, so you can re-edit and
+declares `verb main(...)`; a C verb defines `main` and includes
+`mulibc.h` (the runtime supplies `_start`). The source stays on `src`, so you can re-edit and
 re-`@program` at any time. You may only program an object you own.
 
 The compile runs on the server, so a server that hosts in-game

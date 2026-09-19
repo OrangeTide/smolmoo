@@ -5,8 +5,8 @@
 
 #include "mulibc.h"
 
-void
-_start(void)
+int
+main(void)
 {
     int d = vm_args->dobj;
 

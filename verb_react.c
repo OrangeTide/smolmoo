@@ -7,8 +7,8 @@
 
 #include "chromesix_verb.h"
 
-void
-_start(void)
+int
+main(void)
 {
     int self = vm_args->player;
     int room = vm_args->room;

@@ -7,8 +7,8 @@
 
 #include "chromesix_verb.h"
 
-void
-_start(void)
+int
+main(void)
 {
     struct cs_out o;
     int room = vm_args->room;

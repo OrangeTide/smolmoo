@@ -29,8 +29,8 @@ next_tag(const char *an, int *pi, char *tag, int sz)
     return j;
 }
 
-void
-_start(void)
+int
+main(void)
 {
     struct cs_out o;
     int me = vm_args->player;

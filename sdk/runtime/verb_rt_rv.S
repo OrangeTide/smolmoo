@@ -36,6 +36,18 @@
     .globl sys_call
     .globl sys_hasverb
     .globl sys_setpriv
+    .globl _start
+
+    /* CRT entry: the ELF entry point for every C verb. The host has seeded sp;
+     * run the program's main(), then exit with its return value. A simple verb
+     * supplies its own main(); an agent links -lverbmain for a main() that runs
+     * the event loop. */
+    .section .text.entry, "ax"
+_start:
+    call    main
+    call    _exit                       /* a0 holds main()'s return value */
+
+    .text
 
 _exit:                                  /* void _exit(int status)  a0=status */
     li      a7, 0
