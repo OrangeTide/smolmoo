@@ -2,26 +2,21 @@
  * Copyright (c) 2026 Jon Mayo
  * SPDX-License-Identifier: 0BSD OR CC0-1.0
  *
- * Verbs are self-contained: each defines its own _start and includes
- * mulibc.h, which declares these syscall wrappers extern. This object
- * supplies them as ecall stubs, plus the 64-bit integer helpers the RV32
- * backend calls (their arguments arrive on the stack even under the psABI).
+ * This object supplies the CRT _start (the ELF entry for every C verb) and the
+ * syscall wrappers mulibc.h declares extern, as ecall stubs, plus the 64-bit
+ * integer helpers the RV32 backend calls (their arguments arrive on the stack
+ * even under the psABI).
  *
  * Built with skj-as-rv for the standard RISC-V ILP32 psABI. The C caller has
  * placed the arguments in a0-a5, so each stub adds only the syscall number in
  * a7. The host reads the number from a7, the arguments from a0-a5, and
- * returns the result in a0. A 64-bit argument occupies an aligned register
- * pair, so sys_wait's timeout lands in a4 (low) and a5 (high).
+ * returns the result in a0.
  */
 
     .text
     .globl _exit
-    .globl open
-    .globl close
-    .globl read
     .globl write
     .globl sys_broadcast
-    .globl sys_wait
     .globl sys_getprop
     .globl sys_setprop
     .globl sys_objfind
@@ -56,29 +51,8 @@ _exit:                                  /* void _exit(int status)  a0=status */
     ecall
 1:  j       1b
 
-open:                                   /* a0=name, a1=flags -> a0=fd */
-    li      a7, 1
-    ecall
-    ret
-
-close:                                  /* a0=fd -> a0=result */
-    li      a7, 2
-    ecall
-    ret
-
-read:                                   /* a0=fd, a1=buf, a2=len -> a0=bytes */
-    li      a7, 3
-    ecall
-    ret
-
 write:                                  /* a0=fd, a1=buf, a2=len -> a0=bytes */
     li      a7, 4
-    ecall
-    ret
-
-sys_wait:                               /* a0=nevents, a1=events, a2=event_out,
-                                         * a4=timeout_lo, a5=timeout_hi */
-    li      a7, 5
     ecall
     ret
 

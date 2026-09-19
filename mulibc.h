@@ -47,8 +47,6 @@ struct vm_args {
 
 #define vm_args ((volatile struct vm_args *)0x380)
 
-#define O_VERB 0x100
-
 #define WAIT_TIMEOUT ((int)-2)
 
 /* Host-to-VM event kinds. EV_USER carries a player command (the verb/dobj/args
@@ -77,13 +75,8 @@ struct verb_event {
  * the RISC-V psABI the compiler passes the arguments in a0-a5 and the stub
  * only supplies the number in a7. */
 extern void _exit(int status);
-extern int open(const char *name, int flags);
-extern int close(int fd);
-extern ssize_t read(int fd, void *buf, size_t len);
 extern ssize_t write(int fd, const void *buf, size_t len);
 extern int sys_broadcast(int room, const char *msg);
-extern int sys_wait(unsigned nevents, short *events, void *event_out,
-                    long long timeout_usec);
 extern int sys_getprop(int obj, const char *name, char *buf, int bufsz);
 extern int sys_setprop(int obj, const char *name, const char *val);
 extern int sys_objfind(const char *name);

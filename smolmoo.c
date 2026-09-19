@@ -2089,15 +2089,6 @@ room_broadcast(int from, int room, const char *msg)
 #define VM_STR_ADDR    0x3B0
 #define VM_STR_MAX     208
 #define VM_MAX_INSN    100000
-#define VM_MAX_FD      8
-
-enum { VFD_FREE, VFD_VERB };
-
-struct vm_fd {
-    int type;
-    int obj_id;
-    int pending;
-};
 
 struct vm_event {
     int type;
@@ -2137,9 +2128,6 @@ struct vm {
     int elevated;      /* currently running as verb_owner */
     char out[BUFSIZE];
     int outlen;
-    struct vm_fd fds[VM_MAX_FD];
-    struct vm_event evt;
-    int evt_fd;
 };
 
 enum { TASK_FREE, TASK_READY, TASK_SLEEPING, TASK_DEAD };
@@ -2320,8 +2308,7 @@ vm_read_str(struct vm *vm, uint32_t addr, char *buf, int bufsz)
 /* ECALL handler. The syscall number is in a7 and the arguments follow the
  * standard RISC-V ILP32 psABI: integer/pointer args in a0-a5, the return
  * value in a0. ARG(n) reads the nth argument register (a0 = x10), RET() sets
- * the return register. A 64-bit argument occupies an aligned register pair,
- * which is why sys_wait's timeout lands in a4/a5. */
+ * the return register. A 64-bit argument occupies an aligned register pair. */
 /* The account a running verb currently acts as: the caller by default, or the
  * verb owner while elevated (grant_accept). Authority #0 is the System Object,
  * which carries wizard power; *sys is set for it. A non-#0 authority resolves
@@ -2453,75 +2440,6 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
     case 0: /* sys_exit */
         cpu->halted = 1;
         return 0;
-    case 1: { /* sys_open(name, flags) → fd */
-        char name[64];
-        int fd = -1;
-
-        vm_read_str(vm, ARG(0), name, sizeof(name));
-        for (int i = 0; i < VM_MAX_FD; i++) {
-            if (vm->fds[i].type == VFD_FREE) { fd = i; break; }
-        }
-        if (fd < 0) {
-            RET(-1);
-            return 0;
-        }
-        /* find verb object by name in scope */
-        const char *a_verb = make_atom("verb");
-        for (int i = 0; i < MAX_OBJ; i++) {
-            if (objs[i].id == OBJ_NONE) continue;
-            const char *v = prop_str(&objs[i], a_verb);
-            if (v && strcmp(v, name) == 0) {
-                vm->fds[fd].type = VFD_VERB;
-                vm->fds[fd].obj_id = objs[i].id;
-                vm->fds[fd].pending = 0;
-                objs[i].task_id = tasks[task_current].id;
-                RET(fd);
-                return 0;
-            }
-        }
-        RET(-1);
-        return 0;
-    }
-    case 2: { /* sys_close(fd) */
-        int fd = (int)ARG(0);
-
-        if (fd < 0 || fd >= VM_MAX_FD || vm->fds[fd].type == VFD_FREE) {
-            RET(-1);
-            return 0;
-        }
-        if (vm->fds[fd].type == VFD_VERB) {
-            struct obj *o = obj_find(vm->fds[fd].obj_id);
-            if (o && o->task_id == tasks[task_current].id)
-                o->task_id = -1;
-        }
-        vm->fds[fd].type = VFD_FREE;
-        RET(0);
-        return 0;
-    }
-    case 3: { /* sys_read(fd, buf, len) → bytes_read */
-        int fd = (int)ARG(0);
-        uint32_t buf_addr = ARG(1);
-        int len = (int)ARG(2);
-
-        if (fd < 0 || fd >= VM_MAX_FD || vm->fds[fd].type == VFD_FREE) {
-            RET(-1);
-            return 0;
-        }
-        if (vm->fds[fd].type == VFD_VERB && vm->evt_fd == fd) {
-            int sz = (int)sizeof(struct vm_event);
-            if (len < sz) sz = len;
-            const uint8_t *src = (const uint8_t *)&vm->evt;
-            for (int i = 0; i < sz; i++)
-                if (buf_addr + (uint32_t)i < VM_MEMSZ)
-                    vm->mem[buf_addr + i] = src[i];
-            vm->fds[fd].pending = 0;
-            vm->evt_fd = -1;
-            RET(sz);
-            return 0;
-        }
-        RET(0);
-        return 0;
-    }
     case 4: { /* sys_write(fd, buf, len) */
         uint32_t addr = ARG(1);
         int len = (int)ARG(2);
@@ -2532,52 +2450,6 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
             if (addr + (uint32_t)i < VM_MEMSZ)
                 vm->out[vm->outlen++] = vm->mem[addr + i];
         RET(len);
-        return 0;
-    }
-    case 5: { /* sys_wait(nevents, events, event_out, timeout_usec) */
-        int nevents = (int)ARG(0);
-        uint32_t ev_addr = ARG(1);
-        int ti = task_current;
-
-        if (ti < 0) {
-            RET(-1);
-            return 0;
-        }
-
-        /* check if any watched fd already has data */
-        for (int i = 0; i < nevents; i++) {
-            uint32_t a = ev_addr + (uint32_t)i * 2;
-            if (a + 1 >= VM_MEMSZ) break;
-            int16_t fd = (int16_t)(vm->mem[a] | (vm->mem[a + 1] << 8));
-            if (fd >= 0 && fd < VM_MAX_FD &&
-                vm->fds[fd].type != VFD_FREE && vm->fds[fd].pending) {
-                RET(i);
-                return 0;
-            }
-        }
-
-        /* timeout 0 with no events = yield / init-complete signal.
-         * The 64-bit timeout is passed in the a4/a5 register pair. */
-        int32_t timeout_lo = (int32_t)ARG(4);
-        int32_t timeout_hi = (int32_t)ARG(5);
-        int64_t timeout_usec = ((int64_t)timeout_hi << 32) | (uint32_t)timeout_lo;
-
-        if (nevents == 0 && timeout_usec == 0) {
-            RET(-2); /* WAIT_TIMEOUT */
-            return 0;
-        }
-
-        /* block: suspend the task */
-        tasks[ti].suspended = 1;
-        tasks[ti].state = TASK_SLEEPING;
-        if (timeout_usec > 0) {
-            int ms = (int)(timeout_usec / 1000);
-            if (ms < 1) ms = 1;
-            tasks[ti].timer_id = timer_add(ms, task_wake,
-                                           (void *)(intptr_t)ti);
-        }
-        cpu->halted = 1;
-        RET(-2); /* WAIT_TIMEOUT (overwritten on wake) */
         return 0;
     }
     case 6: { /* sys_broadcast(room, msg) → count */
@@ -2743,9 +2615,20 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
         int objid = (int)ARG(0);
         int dest = (int)ARG(1);
         struct obj *o = obj_find(objid);
+        int sysverb;
+        struct obj *va;
 
         if (!o || !obj_find(dest)) {
             RET(-E_INVARG);
+            return 0;
+        }
+        /* Moving an object is a write to its location, gated like creating a
+           property on it: the effective account must own it (or be a wizard, or
+           a #0-owned system verb). A verb that moves objects it does not own
+           (buy, get/put, combat) is setuid and elevates first. */
+        va = vm_authority(vm, &sysverb);
+        if (!sysverb && !acct_is_wizard(va) && !acct_owner_match(o, va)) {
+            RET(-E_PERM);
             return 0;
         }
         prop_set(o, make_atom("location"), val_obj(dest));
@@ -3021,7 +2904,6 @@ task_alloc(int sid)
             tasks[i].id = task_next_id++;
             tasks[i].timer_id = -1;
             tasks[i].vm.sid = sid;
-            tasks[i].vm.evt_fd = -1;
             return i;
         }
     }
@@ -3033,14 +2915,6 @@ task_free(int ti)
 {
     int id = tasks[ti].id;
 
-    /* clear verb object linkage */
-    for (int f = 0; f < VM_MAX_FD; f++) {
-        if (tasks[ti].vm.fds[f].type == VFD_VERB) {
-            struct obj *o = obj_find(tasks[ti].vm.fds[f].obj_id);
-            if (o && o->task_id == id)
-                o->task_id = -1;
-        }
-    }
     /* clear an agent's sys_listen registration (OLC-5) */
     if (tasks[ti].handler_obj) {
         struct obj *o = obj_find(tasks[ti].handler_obj);
@@ -3723,69 +3597,12 @@ task_find_by_id(int id)
 }
 
 static int
-verb_deliver(int ti, int sid, const struct verb_match *m, const char *args)
-{
-    struct vm *vm = &tasks[ti].vm;
-    uint32_t str_off = 0;
-
-    /* find which fd this verb object is on */
-    int fd = -1;
-    struct obj *vobj = obj_find(m->verb_obj);
-    if (!vobj) return ERR;
-    for (int i = 0; i < VM_MAX_FD; i++) {
-        if (vm->fds[i].type == VFD_VERB && vm->fds[i].obj_id == m->verb_obj) {
-            fd = i;
-            break;
-        }
-    }
-    if (fd < 0) return ERR;
-
-    /* populate event with pre-parsed args */
-    vm->evt.player = cc[sid].obj;
-    vm->evt.room = player_room(sid);
-    vm->evt.this_obj = m->this_obj;
-    vm->evt.dobj = m->dobj;
-    vm->evt.iobj = m->iobj;
-    vm->evt.argstr = vm_put_str(vm, &str_off, args);
-    vm->evt.dobjstr = vm_put_str(vm, &str_off, m->dobjstr);
-    vm->evt.iobjstr = vm_put_str(vm, &str_off, m->iobjstr);
-    vm->evt.prepstr = vm_put_str(vm, &str_off, m->prepstr);
-    vm->evt.verb = vm_put_str(vm, &str_off, m->verb);
-    vm->evt_fd = fd;
-    vm->fds[fd].pending = 1;
-
-    /* route output to the invoking player */
-    vm->sid = sid;
-
-    /* wake the task */
-    if (tasks[ti].state == TASK_SLEEPING) {
-        if (tasks[ti].timer_id >= 0) {
-            timer_remove(tasks[ti].timer_id);
-            tasks[ti].timer_id = -1;
-        }
-        tasks[ti].state = TASK_READY;
-        rv_set_x(&vm->cpu, 10, (uint32_t)fd);   /* sys_wait returns in a0 */
-    }
-
-    return OK;
-}
-
-static int
 verb_dispatch(int sid, const char *verb, const char *args)
 {
     struct verb_match m;
 
     if (verb_resolve(sid, verb, args, &m) != OK)
         return ERR;
-
-    /* check for persistent handler */
-    struct obj *vobj = obj_find(m.verb_obj);
-    if (vobj && vobj->task_id >= 0) {
-        int ti = task_find_by_id(vobj->task_id);
-        if (ti >= 0 && tasks[ti].state != TASK_FREE)
-            return verb_deliver(ti, sid, &m, args);
-        vobj->task_id = -1;
-    }
 
     return vm_exec(sid, m.hash, cc[sid].obj, player_room(sid), args, &m);
 }

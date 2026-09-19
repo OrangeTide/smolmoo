@@ -191,8 +191,13 @@ main(void)
             cs_flush(&o);
             _exit(0);
         }
-        /* move the goods first; charge only once the item is in hand */
-        if (sys_move(good, self) < 0) {
+        /* move the goods first; charge only once the item is in hand. The
+           stock is store-owned, so elevate just for the transfer (buy is
+           setuid); the buyer's own sheet is written at caller authority. */
+        grant_accept();
+        j = sys_move(good, self);
+        grant_release();
+        if (j < 0) {
             puts("You can't carry that away.");
             _exit(0);
         }

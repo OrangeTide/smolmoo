@@ -21,9 +21,10 @@ The verb syscall surface already covers what OLC needs:
 - `sys_setprop` (8), `sys_getprop` (7): property read and write
 - `sys_move` (13), `sys_next` (14): containment move and iteration
 - `sys_objfind` (9): find an object by name
-- `sys_spawn` (10), `sys_suspend` (11), `sys_wait` (5): timed and event-driven tasks
+- `sys_spawn` (10), `sys_suspend` (11): timed and background tasks
 - `sys_call` (18), `sys_hasverb` (19): verb-to-verb dispatch
 - `sys_random` (12), `sys_rollup` (15), `sys_broadcast` (6)
+- `sys_listen` (22), `sys_getmsg` (21): the OLC-5 event mailbox
 
 Permissions are enforced host-side inside these calls, so a builder verb
 cannot escalate. `sys_recycle` checks `is_wizard || obj_owner_match` before
@@ -97,9 +98,11 @@ it, and is refused again after `grant_release`, `grant_accept` cannot elevate a
 player's own non-setuid verb, and a non-admin fights an NPC end to end through
 the setuid combat verbs.
 
-Note: `sys_move` does not yet carry an authority check. A builder-move guard
-belongs with OLC-1's `@move` / `@teleport`, so it is folded into that
-milestone rather than P2.
+`sys_move` carries the same authority check as `sys_setprop`: the effective
+account must own the object (or be a wizard, or a `#0`-owned system verb). A
+verb that relocates objects it does not own (buy, get/put, combat, movement) is
+setuid and elevates for the move; a player's own `0755` verb can move only what
+they own.
 
 Still deferred: a generic `@clone` (copy an arbitrary object's properties)
 cannot be written purely in the VM, because `getprop` is by-name and `sys_next`
@@ -148,9 +151,8 @@ stranding contents; empty it first. `@clone` preserves each source property's
 permission flags, so a non-world-readable property is not silently exposed on
 the copy.
 
-Deferred within OLC-1: a `sys_move` authority check for the verb path is still
-open (the host `@move` is gated directly and does not need it). `@clone` still
-skips list-valued properties, which world objects do not use.
+Deferred within OLC-1: `@clone` still skips list-valued properties, which world
+objects do not use.
 
 ### OLC-2: reset system (shipped, on-demand)
 
@@ -225,10 +227,11 @@ generalizes it, keeping the stim shop as a fallback.
   fallback and `list` shows the line. Only a store that opts in this way sells
   stims, so the ChromeSix economy is unchanged (the quartermaster carries
   `stim=75`) and an ordinary vending machine does not dispense them.
-- `buy` and `list` are not setuid: they only write the buyer's own sheet and
-  `sys_move` (which takes no authority check), so they run at caller authority.
-  A non-admin purchase is covered in the tests, since admin status would
-  otherwise mask a permission regression.
+- `list` is not setuid, and `buy` writes the buyer's own sheet at caller
+  authority. Because the stock is store-owned, `buy` is setuid and elevates only
+  for the `sys_move` transfer (a narrow `grant_accept`/`grant_release` bracket),
+  then charges the buyer's own creds unelevated. A non-admin purchase is covered
+  in the tests, since admin status would otherwise mask a permission regression.
 
 Deferred: a `sell` verb (players selling back to a store) and generalizing the
 stim's counter model into a reusable "consumable that credits a sheet counter"
@@ -289,11 +292,11 @@ kind of event.
 Locked design:
 
 - Events are delivered cooperatively, never as an interrupt. The VM observes an
-  event only at a yield point (`sys_wait`), so there is no signal re-entrancy;
-  events queue in the host while a verb runs and are handed over on the next
-  wait. This seam already exists in embryo (`sys_open` `O_VERB` +
-  `obj.task_id`, `sys_wait`, `sys_read`, `verb_deliver` for player commands);
-  OLC-5 generalizes it.
+  event only at a yield point (`sys_suspend`), so there is no signal
+  re-entrancy; events queue in the host while a verb runs and are handed over on
+  the next block. An earlier embryonic seam (`sys_open` `O_VERB`, `sys_wait`,
+  `sys_read`, `verb_deliver`) explored this for player commands; it was
+  superseded by the mailbox path below and removed.
 - The runtime owns the loop. The CRT provides `_start`, always the ELF entry,
   and always calls `main()`. A simple verb defines its own `main()`, runs, and
   returns (fire-and-forget, today's model). An agent does not define `main()`;

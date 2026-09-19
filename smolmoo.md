@@ -110,8 +110,10 @@ Verb programs are RISC-V RV32 ELFs stored in a content-addressable store (CAS).
 `world.data` references them by BLAKE2b hash (`elf=b2:<hash>`). The CAS stores
 files under `depot/<2-char prefix>/<hash>`, memory-mapped read-only at load time.
 
-Verb programs run to completion. The host starts a fresh VM instance for each
-invocation, with no long-lived processes and no restart protocol.
+Most verb programs run to completion: the host starts a fresh VM instance for
+each invocation, with no restart protocol. Agents are the exception. They link
+the event-loop runtime and stay resident under the system session, handling
+events until the server restarts (see `OLC.md`).
 
 ### Task scheduling
 
@@ -131,54 +133,43 @@ spawned task inherits the parent's session and player/room context. If
 duration, `0` yields (re-queued immediately), `< 0` sleeps indefinitely (woken by
 an external event). Returns 0.
 
-### Process states
+### Task states
 
-    PROC_INIT      _start entered, C runtime not ready for verbs
-    PROC_READY     runnable, on scheduler queue
-    PROC_BUSY      currently executing
-    PROC_SLEEPING  blocked on read/wait/usleep
-    PROC_DEAD      terminated, awaiting reap
+    TASK_FREE      slot is unused
+    TASK_READY     runnable, stepped on the next scheduler pass
+    TASK_SLEEPING  suspended, woken by a timer or a mailbox event
+    TASK_DEAD      allocated but not yet set up
 
-A VM leaves `PROC_INIT` on its first `sys_wait` call. At that point the host
-inspects open verb fds to learn what verbs the VM handles. No open verb fds
-means the program is a utility (a text editor, compiler, or alternate shell),
-not a verb handler. Dead processes are reaped by their parent or adopted by the
-system (like Unix init).
+A task is bound to a session and reaped when that session closes, except for
+agents, which run under a reserved system session the reaper never frees (see
+`OLC.md`). Login, character creation, `@program`, and the editors are host C
+driven by HTTP requests and session state, not VM programs.
 
 ### Mini libc
 
-Verb programs and utilities link against a tiny C library. There is no ISO C or
-POSIX conformance; the goal is familiar interfaces at minimal cost.
+Verb programs link against a tiny C library. There is no ISO C or POSIX
+conformance; the goal is familiar interfaces at minimal cost.
 
 - `FILE*` is opaque: cast the fd integer directly (`(FILE*)1` is stdout), with
   no struct allocation.
 - I/O is unbuffered: `fprintf` formats to a stack buffer and calls
-  `write(fd, buf, len)`.
-- `read(0, ...)` blocks until the player sends a line, so login, character
-  creation, `@program`, and multi-line editors are sequential programs, not
-  state machines in the core server.
+  `write(fd, buf, len)`. Verb output goes to the player's session; there is no
+  `read` from a VM program.
 
-Two runtime patterns:
+Two runtime patterns (the CRT in `verb_rt_rv.S` supplies `_start`, which calls
+`main`):
 
 ```c
-/* verb handler — event loop */
-void _start(void) {
-    int vfd = open("look", O_VERB);
-    struct verb_event ev;
-    short fds[] = { vfd };
-    sys_wait(1, fds, NULL, -1);
-    for (;;) {
-        read(vfd, &ev, sizeof(ev));
-        verb_look(&ev);
-        sys_wait(1, fds, NULL, -1);
-    }
+/* one-shot verb — runs to completion */
+int main(void) {
+    /* act on vm_args, print, return */
+    return 0;
 }
 
-/* utility — run to completion */
-void _start(void) {
-    sys_wait(0, NULL, NULL, 0);
-    main();
-    _exit(0);
+/* agent — link -lverbmain, which supplies an event-loop main() */
+int  verb_dwell(void) { return 200; }         /* tick period in ms */
+void on_event(const struct verb_event *m) {
+    /* handle EV_TIMER / EV_ENTER / ... */
 }
 ```
 
@@ -187,14 +178,10 @@ reserved in the linker-script memory map for them if needed later.
 
 ## Syscalls
 
-Everything is a file descriptor. The syscall table is small:
+The syscall table is small:
 
     0  sys_exit       terminate VM
-    1  sys_open       open an fd (O_VERB, O_DIRECTORY, paths)
-    2  sys_close      close an fd
-    3  sys_read       read from fd (blocks on stdin, verb fds)
     4  sys_write      write to fd (stdout/stderr -> player session)
-    5  sys_wait       unified event multiplexer
     6  sys_broadcast  send message to all in room
     7  sys_getprop    read object property into buffer
     8  sys_setprop    write object property (permission checked)
@@ -202,27 +189,26 @@ Everything is a file descriptor. The syscall table is small:
    10  sys_spawn      create new task from ELF hash
    11  sys_suspend    suspend current task
    12  sys_random     uniform random int in [0, max)
-   13  sys_move       move an object to a destination
+   13  sys_move       move an object to a destination (permission checked)
    14  sys_next       next object in a container (contents walk)
    15  sys_rollup     cached sum of a field over a containment subtree
    16  sys_create     create a persistent object under a parent
    17  sys_recycle    destroy an object the caller owns
    18  sys_call       resolve and run a verb on a target object
    19  sys_hasverb    test whether a target responds to a verb
+   20  sys_setpriv    raise to / drop from the verb owner's authority
+   21  sys_getmsg     pop one event from the task mailbox
+   22  sys_listen     route an object's events to this task
+
+Numbers 1-3 and 5 are unused: an earlier file-descriptor event model (open,
+close, read, and a `sys_wait` multiplexer) was removed once the OLC-5 mailbox
+(`sys_listen`/`sys_getmsg`) replaced it.
 
 Syscalls use the RISC-V `ecall` instruction. Arguments follow the standard
 ILP32 psABI: up to seven in `a0`-`a6`, the syscall number in `a7`, the return
 value in `a0` (0 = OK, negative = errno). A 64-bit argument occupies an aligned
 register pair. Each has an inline wrapper in `mulibc.h`, with the stub in
 `verb_rt_rv.S`.
-
-`sys_wait(nevents, events, event_out, timeout_usec)` is a unified multiplexer
-replacing select, sigwait, and sleep. The events array mixes file descriptors
-(>= 0) and signals (< 0, encoded as `-(short)SIGxxx`). Entries can be in any
-order; the expected removal pattern is swap-with-last, which shuffles the array.
-Returns `WAIT_EVENT_0 + index` for the event that fired, or `WAIT_TIMEOUT`.
-`event_out` receives event-specific data (for example the exit status for
-SIGCHLD).
 
 `sys_random(max)` returns a uniform integer in `[0, max)`, backed by the host's
 `rand_bytes` (which reads `/dev/urandom`, the same source used for password
