@@ -3576,6 +3576,33 @@ verb_dispatch(int sid, const char *verb, const char *args)
     return vm_exec(sid, m.hash, cc[sid].obj, player_room(sid), args, &m);
 }
 
+/* OLC-7: deliver an unrecognized command to the live agent listening on the
+   player's current room, as an EV_USER event. When a player rides a vehicle,
+   their room IS the vehicle, so the vehicle agent handles its own commands
+   (an elevator's floor request). A normal room has no listening agent, so this
+   returns ERR and the caller reports the command as unknown. */
+static int
+agent_deliver_user(int sid, const char *verb, const char *args)
+{
+    int room = player_room(sid);
+    int ti = handler_task_of(room);
+    struct host_event e;
+
+    if (ti < 0)
+        return ERR;
+    memset(&e, 0, sizeof(e));
+    e.type = EV_USER;
+    e.player = cc[sid].obj;
+    e.room = room;
+    e.this_obj = room;
+    e.dobj = OBJ_NONE;
+    e.iobj = OBJ_NONE;
+    snprintf(e.verb, sizeof(e.verb), "%s", verb ? verb : "");
+    snprintf(e.argstr, sizeof(e.argstr), "%s", args ? args : "");
+    mbox_push(ti, &e);
+    return OK;
+}
+
 /* General command help lives on the #0.help object, one topic per property, so
  * it is editable in-game and viewable through the wiki/editor (see help.md).
  * `help` lists the topics; `help <topic>` prints one. A static summary covers
@@ -6341,10 +6368,10 @@ dispatch(int sid, char *line)
             return;
         }
     }
-    if (verb_dispatch(sid, cmdbuf, args) != OK)
-        session_write(sid, "Unknown command. Type 'help' for a list.");
-    else
+    if (verb_dispatch(sid, cmdbuf, args) == OK)
         status_update(sid);
+    else if (agent_deliver_user(sid, cmdbuf, args) != OK)
+        session_write(sid, "Unknown command. Type 'help' for a list.");
 }
 
 /****************************************************************

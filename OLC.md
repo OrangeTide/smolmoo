@@ -373,24 +373,42 @@ fight teardown. Revisit if that proves to leak.
 Depends on: OLC-5 (the tick and the event mailbox), OLC-2 (spawned mobs need
 somewhere to come from and return to).
 
-### OLC-7: Vehicles
+### OLC-7: Vehicles (shipped)
 
 Carriages, trains, and elevators are moving rooms: a room object (child of #100)
-whose occupants have `location` = the vehicle, so relocating the vehicle (moving
-its own `location`) carries them with it. `player_room` returns the location
-directly, so a vehicle simply is the room its riders are in.
+marked `vehicle`=1, whose own `location` is its current stop and whose riders
+have `location` = the vehicle, so relocating the vehicle carries them with it.
+`player_room` returns the location directly, so a vehicle simply is the room its
+riders are in.
 
-- Board and disembark: `sys_move` the player into the vehicle (only at its
-  current stop) or out to the vehicle's current stop (only when stopped).
-- A route data model: the ordered stop room ids and, for a timed vehicle, a
-  dwell.
-- An agent (OLC-5) that advances the vehicle along its route: on `EV_TIMER` for
-  a train (self-paced by its `verb_dwell`), on `EV_USER` for an on-command
-  elevator.
-  It relocates the vehicle and announces arrivals (`sys_move`, `sys_broadcast`).
+- `board <vehicle>` / `disembark` (`verb_vehicle.c`, `#454`/`#455`, setuid like
+  `go`): board moves the player into a vehicle present at their stop; disembark
+  moves them out to the vehicle's current stop.
+- Route data model: `route` is a comma-separated list of stop room ids (the same
+  shape patrol uses); `stop_idx` tracks the current stop; `dwell` is the tick
+  period in ms for a timed vehicle.
+- The vehicle agent (`agent_vehicle.c`, `__transit` `#456`, named by the
+  vehicle's `brain` and started with `@wake`) advances the vehicle and announces
+  each move to the riders and both platforms. A train is self-paced: `dwell` > 0
+  makes each `EV_TIMER` advance one stop. An elevator is on-command: with no
+  `dwell` it never ticks and moves only on an `EV_USER` "floor <n>".
 
-Depends on: OLC-5 (the agent/tick), OLC-1 (build the vehicle and its stops),
-OLC-2 (a vehicle can be a reset-managed object).
+New host path: `EV_USER` delivery. A command a player types that matches no verb
+is delivered to the live agent listening on the player's current room, as an
+`EV_USER` event carrying the verb and args (`agent_deliver_user`, hooked at the
+unknown-command fallback). Because a rider's room is the vehicle, the vehicle
+agent receives its own control commands; a normal room has no listening agent,
+so the command falls through to "unknown command" as before. Known verbs still
+dispatch normally (the fallback runs only after `verb_dispatch` fails), so `look`
+and the rest work aboard.
+
+Deferred: a "call the vehicle to this platform" command (routing `EV_USER` from
+a platform, not just from aboard) and mid-transit state (the model hops stop to
+stop with no in-between). Neither is needed for working trains and lifts.
+
+Depends on: OLC-5 (the agent/tick and the event mailbox), OLC-6 (`sys_getobj`,
+which the agent uses to read its own position), OLC-1 (build the vehicle and its
+stops), OLC-2 (a vehicle can be a reset-managed object).
 
 ## Cross-cutting notes
 

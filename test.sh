@@ -1273,6 +1273,64 @@ curl -sf -X POST -d "$SID1 @go #$RB" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'The guard salutes' \
 	"a woken mob still greets on entry (EV_ENTER via the agent)"
 
+# --- OLC-7: vehicles (see OLC.md) ---
+# A vehicle is a room object (vehicle=1) whose location is its current stop and
+# whose riders have location = the vehicle, so moving it carries them. A timed
+# train advances on EV_TIMER; an on-command elevator moves on a rider's command
+# routed as EV_USER. Build a hub with two more stops, then a train and a lift.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+HUB=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$HUB.name=Depot" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$HUB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @dig a to Level Two" http://localhost:$PORT/cmd >/dev/null
+L2=$(grep -oE 'Dug #[0-9]+ to #[0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '#[0-9]+' | tail -1 | tr -d '#')
+curl -sf -X POST -d "$SID1 @go #$HUB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @dig b to Level Three" http://localhost:$PORT/cmd >/dev/null
+L3=$(grep -oE 'Dug #[0-9]+ to #[0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '#[0-9]+' | tail -1 | tr -d '#')
+curl -sf -X POST -d "$SID1 @go #$HUB" http://localhost:$PORT/cmd >/dev/null
+
+# timed train: board, ride, and disembark. Its arrivals reach the rider inside.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+TRAIN=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$TRAIN.name=carriage" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$TRAIN.description=A wooden carriage." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$TRAIN.vehicle=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$TRAIN.location=#$HUB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$TRAIN.route=$HUB,$L2,$L3" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$TRAIN.dwell=250" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$TRAIN.brain=#456" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @wake #$TRAIN" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 board carriage" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'climbs aboard' "board puts the player aboard the vehicle"
+# the train moves on its own; a rider inside sees the scheduled arrival
+check_log /tmp/smolmoo_p1.log 'carriage arrives at' \
+	"a woken vehicle advances on its own and carries its rider (EV_TIMER)"
+curl -sf -X POST -d "$SID1 disembark" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'steps off the carriage' "disembark drops the rider at the current stop"
+# quiet the train so its later hops do not broadcast into the shared assertions
+curl -sf -X POST -d "$SID1 @set #$TRAIN.route=" http://localhost:$PORT/cmd >/dev/null
+
+# on-command elevator: no dwell, so it only moves on an EV_USER floor request.
+curl -sf -X POST -d "$SID1 @go #$HUB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+LIFT=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$LIFT.name=elevator" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$LIFT.description=A cramped lift." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$LIFT.vehicle=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$LIFT.location=#$HUB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$LIFT.route=$HUB,$L2,$L3" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$LIFT.brain=#456" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @wake #$LIFT" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 board elevator" http://localhost:$PORT/cmd >/dev/null
+# "floor 3" is not a global verb, so it routes to the elevator agent as EV_USER
+curl -sf -X POST -d "$SID1 floor 3" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'elevator arrives at Level Three' \
+	"a floor request routes to the vehicle agent (EV_USER) and moves it"
+# disembarking the lift lands the rider at the floor it stopped on
+curl -sf -X POST -d "$SID1 disembark" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'steps off the elevator' \
+	"disembark leaves the lift at the requested floor"
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.

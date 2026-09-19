@@ -174,6 +174,30 @@ wanders and greets. `patrol` takes precedence over `wander`. It holds position
 while downed, dead, or in a fight. See also the `programming` topic for writing
 your own agent.
 
+## vehicles
+
+A vehicle is a moving room: a room that carries its riders from stop to stop.
+Riders board it, ride it, and step off wherever it currently is.
+
+    @create #100                    a vehicle is a room object
+    @set #N.vehicle=1               mark it as boardable
+    @set #N.name=carriage           what riders board by name
+    @set #N.description=<text>      what riders see inside
+    @set #N.location=#<stop>        its current stop (where it starts)
+    @set #N.route=#A,#B,#C          the stops it travels, in order
+    @set #N.brain=#456              the vehicle agent (__transit)
+    @set #N.dwell=8000              tick period in ms for a timed vehicle
+    @wake #N                        start it (wizard only)
+
+With a positive `dwell` the vehicle is a train: it advances one stop each tick,
+on its own, wrapping at the end of the route. With no `dwell` it is an elevator:
+it never moves until a rider aboard names a stop with `floor <n>` (n counts from
+1 along the route). Players use it with:
+
+    board <vehicle>                 climb aboard, when it is at your stop
+    floor <n>                       (aboard an elevator) go to the nth stop
+    disembark                       step off at the vehicle's current stop
+
 ## programming
 
 Write a verb in MooScript or C without rebuilding the server.
