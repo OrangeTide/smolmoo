@@ -1210,23 +1210,6 @@ root_write(const char *hash)
     return ptr_write(root_file, hash);
 }
 
-static int
-obj_load_cas(int id)
-{
-    char hash[CAS_HASH_HEX + 1];
-    struct cas_file cf;
-    char type[CAS_TYPE_MAX];
-
-    if (cas_omap_get(obj_map, (uint64_t)id, hash) != CAS_OK)
-        return ERR;
-    if (cas_open_object(cas_store, &cf, hash, type,
-                        sizeof(type)) != CAS_OK)
-        return ERR;
-    int rc = obj_deserialize((const char *)cf.data, cf.len);
-    cas_close(&cf);
-    return rc;
-}
-
 /* ---- world save: snapshot (main thread) + flush (writer thread) -----
  *
  * A save has two halves. save_snapshot() runs on the main thread: it
