@@ -53,7 +53,7 @@ main(void)
             cs_s(&o, nm);
             cs_s(&o, " strains under the load, half a step.");
             sys_broadcast(room, cs_cstr(&o));
-            cs_seti(room, "cb_acted", 1);
+            cs_end_turn(room);
             _exit(0);
         }
         cs_seti(sh, "move_bank", 0);    /* the second Move completes the band */
@@ -119,6 +119,6 @@ main(void)
     }
 
     sys_broadcast(room, cs_cstr(&o));
-    cs_seti(room, "cb_acted", 1);
+    cs_end_turn(room);
     _exit(0);
 }

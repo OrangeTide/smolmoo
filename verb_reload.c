@@ -42,6 +42,6 @@ main(void)
     cs_s(&o, nm);
     cs_s(&o, ".\n");
     cs_flush(&o);
-    if (fighting) cs_seti(room, "cb_acted", 1);
+    if (fighting) cs_end_turn(room);
     _exit(0);
 }

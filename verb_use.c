@@ -58,7 +58,7 @@ main(void)
             cs_s(&o, " jabs a stim -- Grit surges back.");
             if (crashed) cs_s(&o, " The overload bites: Crash worsens.");
             sys_broadcast(room, cs_cstr(&o));
-            cs_seti(room, "cb_acted", 1);
+            cs_end_turn(room);
         } else {
             cs_s(&o, "You jab a stim. Grit surges back (+2).");
             if (crashed)
@@ -91,7 +91,7 @@ main(void)
         cs_s(&o, nm);
         cs_s(&o, " paints a target through the smartlink and takes aim.");
         sys_broadcast(room, cs_cstr(&o));
-        cs_seti(room, "cb_acted", 1);
+        cs_end_turn(room);
         _exit(0);
     }
 

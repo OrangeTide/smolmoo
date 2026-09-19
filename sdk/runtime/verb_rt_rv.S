@@ -34,6 +34,7 @@
     .globl sys_getmsg
     .globl sys_listen
     .globl sys_getobj
+    .globl sys_post
     .globl _start
 
     /* CRT entry: the ELF entry point for every C verb. The host has seeded sp;
@@ -145,6 +146,11 @@ sys_listen:                             /* a0=objid -> a0=0 ok */
 
 sys_getobj:                             /* a0=obj, a1=name -> a0=objref/-1 */
     li      a7, 23
+    ecall
+    ret
+
+sys_post:                               /* a0=obj -> a0=0 ok / -1 */
+    li      a7, 24
     ecall
     ret
 

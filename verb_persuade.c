@@ -123,6 +123,6 @@ main(void)
     cs_push_resolve(src, tsh, skill, -cs_crash_penalty(src), &o, &yield);
     cs_s(&o, "\n");
     sys_broadcast(room, cs_cstr(&o));
-    cs_seti(room, "cb_acted", 1);
+    cs_end_turn(room);
     _exit(0);
 }

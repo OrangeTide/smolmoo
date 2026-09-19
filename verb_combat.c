@@ -8,7 +8,6 @@
 #include "chromesix_verb.h"
 
 #define MAX_CB      8
-#define POLL_MS     250
 #define TIMEOUT_MS  30000
 #define NPC_PACE_MS 400
 
@@ -316,6 +315,10 @@ main(void)
     }
     write_roster(room, ids, n);
 
+    /* listen on the room so a combatant's action can wake this task at once
+     * (cs_end_turn -> sys_post), instead of the turn loop polling cb_acted */
+    sys_listen(room);
+
     /* everyone holds a reaction from the opening of combat (elite: two); an
      * ambushed combatant is caught flat-footed and holds none this round */
     for (i = 0; i < n; i++) {
@@ -363,14 +366,23 @@ main(void)
 
             if (me == player) {
                 int waited = 0, acted = 0;
+                struct verb_event ev;
 
                 if (cs_scene_social(room)) print_social_prompt(round, player, ids, n);
                 else print_prompt(round, player, ids, n);
+                /* Block for the whole turn timeout; the player's action verb
+                 * (cs_end_turn) posts an EV_WAKE that resumes us immediately.
+                 * A timeout wake carries no event, so it advances the clock; an
+                 * event wake (the action, or a stray command routed to the room)
+                 * does not, so a stray command cannot burn the turn. */
                 while (waited < TIMEOUT_MS) {
-                    sys_suspend(POLL_MS);
-                    waited += POLL_MS;
+                    int chunk = TIMEOUT_MS - waited, woke = 0;
+
+                    sys_suspend(chunk);
+                    while (sys_getmsg(&ev, sizeof(ev)) >= 0) woke = 1;
                     if (cs_geti(room, "cb_active", 0) != 1) _exit(0);
                     if (cs_geti(room, "cb_acted", 0) == 1) { acted = 1; break; }
+                    if (!woke) waited += chunk;
                 }
                 if (!acted) puts("You hesitate; the moment passes.");
             } else {

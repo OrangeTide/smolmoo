@@ -20,6 +20,7 @@ The verb syscall surface already covers what OLC needs:
 - `sys_create` (16), `sys_recycle` (17): object lifecycle
 - `sys_setprop` (8), `sys_getprop` (7): property read and write
 - `sys_getobj` (23): read an objref property's value (location, dest, ...)
+- `sys_post` (24): wake the agent listening on an object (resume a blocked task)
 - `sys_move` (13), `sys_next` (14): containment move and iteration
 - `sys_objfind` (9): find an object by name
 - `sys_spawn` (10), `sys_suspend` (11): timed and background tasks
@@ -334,9 +335,16 @@ Locked design:
 
 Shipped: the event bus, the `@wake` launcher, and a demo agent (`__ticker`,
 `#452`) that ticks with no player present and announces a newcomer on
-`EV_ENTER`. Follow-ups: `@program ... agent`, boot-scan auto-start, and
-converting `__combat` (currently a 250 ms poll loop) to an agent as the first
-real consumer.
+`EV_ENTER`. Follow-ups: `@program ... agent` and boot-scan auto-start.
+
+`__combat` was not converted into a `verbmain` agent: it is a sequential,
+self-terminating, per-fight task (bound to the player's session for reaping),
+which the persistent `for(;;)` agent model fits poorly. Instead it became an
+event-bus consumer the right way: it `sys_listen`s on its room and blocks the
+player's turn on one `sys_suspend`, and a combatant's action verb wakes it at
+once with `sys_post` (via `cs_end_turn`) instead of the loop polling `cb_acted`.
+`sys_post(obj)` (syscall 24) delivers a bare `EV_WAKE` to the agent listening on
+an object; it is the generic "resume a blocked task" primitive.
 
 Depends on: the `pq` timer (already present) and the OLC-4 entry hook.
 

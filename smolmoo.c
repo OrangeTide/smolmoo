@@ -55,7 +55,7 @@ enum { CONN_FREE, CONN_PENDING, CONN_SSE, CONN_STALLED, CONN_SYS };
 
 /* Host-to-VM event kinds, matching mulibc.h. EV_USER is a player command (its
    verb/dobj/arg fields apply); the rest are engine signals with an int tag. */
-enum { EV_USER, EV_TIMER, EV_ENTER };
+enum { EV_USER, EV_TIMER, EV_ENTER, EV_WAKE };
 
 struct conn {
     int fd;
@@ -2807,6 +2807,21 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
         if (!o) { RET(-E_INVARG); return 0; }
         vm_read_str(vm, ARG(1), name, sizeof(name));
         RET(prop_objnum(o, make_atom(name)));   /* objnum, or OBJ_NONE (-1) */
+        return 0;
+    }
+    case 24: { /* sys_post(obj): wake the agent listening on obj with a bare
+                * EV_WAKE, so a verb can resume a blocked task (a combatant's
+                * action resuming the turn loop) without it polling. */
+        int objid = (int)ARG(0);
+        int ti = handler_task_of(objid);
+        struct host_event e;
+
+        if (ti < 0) { RET(-1); return 0; }
+        memset(&e, 0, sizeof(e));
+        e.type = EV_WAKE;
+        e.this_obj = objid;
+        mbox_push(ti, &e);
+        RET(0);
         return 0;
     }
     }

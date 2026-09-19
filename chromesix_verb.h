@@ -985,6 +985,16 @@ cs_scene_social(int room)
     return cs_streq(m, "social");
 }
 
+/* End the actor's turn: mark it acted and wake the turn loop at once. The
+ * __combat task blocks on the player's turn and is resumed by this sys_post
+ * instead of polling cb_acted, so an action resolves the moment it is taken. */
+static void
+cs_end_turn(int room)
+{
+    cs_seti(room, "cb_acted", 1);
+    sys_post(room);
+}
+
 /* Refuse to act in the wrong kind of scene. `want_social` is what the caller
  * runs. When a scene of the other kind is live it prints a line and returns 1;
  * the caller then exits. No active scene, or a matching one, returns 0. */

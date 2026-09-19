@@ -73,6 +73,16 @@ sys_broadcast(int room, const char *msg)
     return 0;
 }
 
+/* records the last object a helper posted to, so cs_end_turn can be checked */
+static int g_posted;
+
+static int
+sys_post(int obj)
+{
+    g_posted = obj;
+    return 0;
+}
+
 /* Contents iteration over the flat prop store: the next object whose
  * `location` names `container`, taking ids strictly greater than `after`. */
 static int
@@ -765,6 +775,17 @@ t_standing(Test *t)
     TAP_CHECK(t, has(cs_standing_word(-3), "Hunted"));
 }
 
+/* cs_end_turn marks the actor done and posts to wake the turn loop. */
+static void
+t_end_turn(Test *t)
+{
+    props_clear();
+    g_posted = -1;
+    cs_end_turn(ROOM);
+    TAP_CHECK(t, cs_geti(ROOM, "cb_acted", 0) == 1);
+    TAP_CHECKF(t, g_posted == ROOM, "posted=%d", g_posted);
+}
+
 /* M25g: anatomy, slot roles, occupancy, and free-slot search. */
 static void
 t_slots(Test *t)
@@ -930,6 +951,7 @@ const Case tap_cases[] = {
     { "social_derived", t_social_derived },
     { "push_resolve", t_push_resolve },
     { "wrong_mode", t_wrong_mode },
+    { "end_turn", t_end_turn },
     { "standing", t_standing },
     { "slots", t_slots },
     { "ammo", t_ammo },

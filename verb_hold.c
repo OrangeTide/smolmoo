@@ -33,6 +33,6 @@ main(void)
     cs_s(&o, nm);
     cs_s(&o, " holds, watching.");
     sys_broadcast(room, cs_cstr(&o));
-    cs_seti(room, "cb_acted", 1);
+    cs_end_turn(room);
     _exit(0);
 }

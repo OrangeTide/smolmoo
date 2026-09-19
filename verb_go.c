@@ -80,7 +80,7 @@ main(void)
                     cs_free_strike(foes[i], sh, room);
             }
         }
-        cs_seti(room, "cb_acted", 1);
+        cs_end_turn(room);
 
         /* cut down while breaking off: stay put, the task runs the dying track */
         if (cs_geti(sh, "downed", 0)) _exit(0);

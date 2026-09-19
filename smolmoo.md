@@ -200,6 +200,7 @@ The syscall table is small:
    21  sys_getmsg     pop one event from the task mailbox
    22  sys_listen     route an object's events to this task
    23  sys_getobj     read an objref property's value as an int
+   24  sys_post       wake the agent listening on an object (bare EV_WAKE)
 
 Numbers 1-3 and 5 are unused: an earlier file-descriptor event model (open,
 close, read, and a `sys_wait` multiplexer) was removed once the OLC-5 mailbox
