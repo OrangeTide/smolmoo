@@ -177,32 +177,6 @@ val_obj(int id)
     return (struct value){ VAL_OBJ, { .obj = id } };
 }
 
-static struct value
-val_err(int e)
-{
-    return (struct value){ VAL_ERR, { .err = e } };
-}
-
-static const char *err_names[] = {
-    "E_NONE",
-    "E_TYPE",
-    "E_INVARG",
-    "E_PROPNF",
-    "E_VERBNF",
-    "E_PERM",
-    "E_RANGE",
-    "E_MAXREC",
-    "E_QUOTA",
-};
-
-static const char *
-err_name(int e)
-{
-    if (e >= 0 && e < (int)(sizeof(err_names) / sizeof(err_names[0])))
-        return err_names[e];
-    return "E_UNKNOWN";
-}
-
 static void
 val_free(struct value *v)
 {
