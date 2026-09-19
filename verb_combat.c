@@ -315,9 +315,11 @@ main(void)
     }
     write_roster(room, ids, n);
 
-    /* listen on the room so a combatant's action can wake this task at once
-     * (cs_end_turn -> sys_post), instead of the turn loop polling cb_acted */
-    sys_listen(room);
+    /* publish our task id so a combatant's action can wake us at once
+     * (cs_end_turn -> sys_post by id), instead of the turn loop polling
+     * cb_acted. We do not listen on the room, so combat never intercepts other
+     * commands typed in the fight. */
+    cs_seti(room, "cb_task", sys_taskid());
 
     /* everyone holds a reaction from the opening of combat (elite: two); an
      * ambushed combatant is caught flat-footed and holds none this round */
@@ -372,9 +374,9 @@ main(void)
                 else print_prompt(round, player, ids, n);
                 /* Block for the whole turn timeout; the player's action verb
                  * (cs_end_turn) posts an EV_WAKE that resumes us immediately.
-                 * A timeout wake carries no event, so it advances the clock; an
-                 * event wake (the action, or a stray command routed to the room)
-                 * does not, so a stray command cannot burn the turn. */
+                 * A timeout wake carries no event and advances the clock; the
+                 * action's wake carries one and does not, so a double-fired
+                 * wake cannot burn the turn. */
                 while (waited < TIMEOUT_MS) {
                     int chunk = TIMEOUT_MS - waited, woke = 0;
 
@@ -453,5 +455,6 @@ done:
     sys_setprop(room, "cb_acted", "0");
     sys_setprop(room, "cb_fled", "0");
     sys_setprop(room, "cb_mode", "fight");
+    sys_setprop(room, "cb_task", "-1");     /* no live turn task between fights */
     _exit(0);
 }

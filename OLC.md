@@ -20,7 +20,8 @@ The verb syscall surface already covers what OLC needs:
 - `sys_create` (16), `sys_recycle` (17): object lifecycle
 - `sys_setprop` (8), `sys_getprop` (7): property read and write
 - `sys_getobj` (23): read an objref property's value (location, dest, ...)
-- `sys_post` (24): wake the agent listening on an object (resume a blocked task)
+- `sys_post` (24), `sys_taskid` (25): wake a task by id / read the current id
+  (resume a blocked task, such as the combat turn loop)
 - `sys_move` (13), `sys_next` (14): containment move and iteration
 - `sys_objfind` (9): find an object by name
 - `sys_spawn` (10), `sys_suspend` (11): timed and background tasks
@@ -340,11 +341,14 @@ Shipped: the event bus, the `@wake` launcher, and a demo agent (`__ticker`,
 `__combat` was not converted into a `verbmain` agent: it is a sequential,
 self-terminating, per-fight task (bound to the player's session for reaping),
 which the persistent `for(;;)` agent model fits poorly. Instead it became an
-event-bus consumer the right way: it `sys_listen`s on its room and blocks the
-player's turn on one `sys_suspend`, and a combatant's action verb wakes it at
-once with `sys_post` (via `cs_end_turn`) instead of the loop polling `cb_acted`.
-`sys_post(obj)` (syscall 24) delivers a bare `EV_WAKE` to the agent listening on
-an object; it is the generic "resume a blocked task" primitive.
+event-bus consumer the right way: it blocks the player's turn on one
+`sys_suspend` (no polling of `cb_acted`), and a combatant's action verb wakes it
+at once through `cs_end_turn`. The turn task publishes its own id in the room's
+`cb_task` prop (`sys_taskid`, syscall 25) and the action verb wakes it by that
+id (`sys_post(task_id)`, syscall 24, a bare `EV_WAKE`). It deliberately does not
+`sys_listen` on the room, so combat never intercepts other commands: an
+unrecognized command typed mid-fight still reports as unknown. Combat commands
+stay ordinary verbs that route their result to the engine.
 
 Depends on: the `pq` timer (already present) and the OLC-4 entry hook.
 

@@ -775,15 +775,17 @@ t_standing(Test *t)
     TAP_CHECK(t, has(cs_standing_word(-3), "Hunted"));
 }
 
-/* cs_end_turn marks the actor done and posts to wake the turn loop. */
+/* cs_end_turn marks the actor done and posts the room's cb_task (the turn
+ * loop's task id) to wake it, rather than listening on the room. */
 static void
 t_end_turn(Test *t)
 {
     props_clear();
+    seti(ROOM, "cb_task", 42);
     g_posted = -1;
     cs_end_turn(ROOM);
     TAP_CHECK(t, cs_geti(ROOM, "cb_acted", 0) == 1);
-    TAP_CHECKF(t, g_posted == ROOM, "posted=%d", g_posted);
+    TAP_CHECKF(t, g_posted == 42, "posted=%d", g_posted);
 }
 
 /* M25g: anatomy, slot roles, occupancy, and free-slot search. */

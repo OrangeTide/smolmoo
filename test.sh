@@ -1175,6 +1175,11 @@ curl -sf -X POST -d "$SID1 @set #$GOON.downed=0" http://localhost:$PORT/cmd >/de
 curl -sf -X POST -d "$SID3 attack goon" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'combat begins' "non-admin attack starts a fight (setuid attack writes the room)"
 check_log /tmp/smolmoo_p3.log 'your turn' "non-admin turn task renders (setuid __combat elevates)"
+# The turn task does not intercept commands: an unknown command typed during a
+# fight still reports as unknown, rather than being swallowed by the engine.
+curl -sf -X POST -d "$SID3 floooble" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'Unknown command' \
+	"combat does not hijack commands (unknown stays unknown mid-fight)"
 
 # --- OLC-5: event system and runtime message loop (see OLC.md) ---
 # An agent is a verb that links -lverbmain (the agent_ prefix), giving it a

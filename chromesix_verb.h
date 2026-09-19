@@ -986,13 +986,14 @@ cs_scene_social(int room)
 }
 
 /* End the actor's turn: mark it acted and wake the turn loop at once. The
- * __combat task blocks on the player's turn and is resumed by this sys_post
- * instead of polling cb_acted, so an action resolves the moment it is taken. */
+ * __combat task records its own id in the room's cb_task prop; waking it by id
+ * (rather than listening on the room) means combat never intercepts other
+ * commands. An action resolves the moment it is taken, with no polling. */
 static void
 cs_end_turn(int room)
 {
     cs_seti(room, "cb_acted", 1);
-    sys_post(room);
+    sys_post(cs_geti(room, "cb_task", -1));
 }
 
 /* Refuse to act in the wrong kind of scene. `want_social` is what the caller
