@@ -6818,6 +6818,50 @@ cmd_migrate(void)
     return 0;
 }
 
+/* Newest mtime among a verb's source and the local headers it #includes, walked
+ * transitively. The .elf-vs-source check alone misses header edits: a change to
+ * chromesix_verb.h (or any shared header) touches no verb's own .c mtime, so a
+ * stale .elf would silently ship. Local headers resolve against the repo root,
+ * matching the compiler's -I. ; a header only reachable through another -I path
+ * is skipped, which can only cause an unneeded rebuild, never a stale one. */
+static time_t
+src_dep_mtime(const char *src)
+{
+    char work[16][160], seen[32][160];
+    int ntop = 0, nseen = 0;
+    time_t newest = 0;
+
+    snprintf(work[ntop++], sizeof(work[0]), "%s", src);
+    while (ntop > 0) {
+        char cur[160], line[256];
+        struct stat st;
+        FILE *hf;
+        int dup = 0;
+
+        snprintf(cur, sizeof(cur), "%s", work[--ntop]);
+        for (int i = 0; i < nseen; i++)
+            if (strcmp(seen[i], cur) == 0) { dup = 1; break; }
+        if (dup)
+            continue;
+        if (nseen < (int)(sizeof(seen) / sizeof(seen[0])))
+            snprintf(seen[nseen++], sizeof(seen[0]), "%s", cur);
+
+        if (stat(cur, &st) == 0 && st.st_mtime > newest)
+            newest = st.st_mtime;
+        hf = fopen(cur, "r");
+        if (!hf)
+            continue;
+        while (fgets(line, sizeof(line), hf)) {
+            char h[160];
+            if (sscanf(line, " #include \"%159[^\"]\"", h) == 1 &&
+                ntop < (int)(sizeof(work) / sizeof(work[0])))
+                snprintf(work[ntop++], sizeof(work[0]), "%s", h);
+        }
+        fclose(hf);
+    }
+    return newest;
+}
+
 static int
 cmd_install(const char *conf_path, const char *sdk)
 {
@@ -6883,7 +6927,7 @@ cmd_install(const char *conf_path, const char *sdk)
             continue;
         }
         int need_compile = (stat(elf_path, &se) != 0 ||
-                            ss.st_mtime > se.st_mtime);
+                            src_dep_mtime(elf_src) > se.st_mtime);
         if (need_compile) {
             char cmd[2048];
             const char *ext = strrchr(elf_src, '.');
