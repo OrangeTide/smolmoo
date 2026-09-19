@@ -19,6 +19,7 @@ The verb syscall surface already covers what OLC needs:
 
 - `sys_create` (16), `sys_recycle` (17): object lifecycle
 - `sys_setprop` (8), `sys_getprop` (7): property read and write
+- `sys_getobj` (23): read an objref property's value (location, dest, ...)
 - `sys_move` (13), `sys_next` (14): containment move and iteration
 - `sys_objfind` (9): find an object by name
 - `sys_spawn` (10), `sys_suspend` (11): timed and background tasks
@@ -339,16 +340,38 @@ real consumer.
 
 Depends on: the `pq` timer (already present) and the OLC-4 entry hook.
 
-### OLC-6: Proactive mob behavior
+### OLC-6: Proactive mob behavior (shipped)
 
-The deferred half of OLC-4. Mobs act on their own, as agents consuming
-`EV_TIMER`/`EV_ENTER`.
+The deferred half of OLC-4. A mob woken as an agent (`agent_mob.c`, `__rover`
+`#453`, named by a mob's `brain` and started with `@wake`) acts on its own,
+driven by the same comma-separated `behavior` prop as the reactive verbs:
 
-- Wander: move between adjacent rooms on the agent's `EV_TIMER` cadence.
-- Patrol: follow a fixed route.
-- Aggro/greet on sight already work reactively; idle chatter joins them.
+- `wander`: on each `EV_TIMER` tick, step through a random exit of the current
+  room (an exit is any resident object with a `dest` prop, as the `go` verb
+  reads it), announcing the departure and arrival.
+- `patrol`: on each tick, advance along the `route` prop (a comma-separated list
+  of room ids), wrapping at the end; `patrol_idx` tracks the current stop.
+  `patrol` takes precedence over `wander` when both are set.
+- The tick period is the `dwell` prop in ms (default 5000). A downed or dead
+  mob, or one in an active fight (`cb_active`), holds position.
+- Reactive `greet`/`aggro` still fire: because a woken mob receives `EV_ENTER`
+  in its mailbox instead of the host spawning `on_enter`, the agent handles it
+  through the same `mob_react` (shared in `mob_behavior.h`) that `verb_mob.c`
+  uses, so waking a mob does not cost it its OLC-4 reactivity.
 
-Depends on: OLC-5 (the tick), OLC-2 (spawned mobs need somewhere to return to).
+New host primitive: `sys_getobj(obj, name)` (syscall 23) returns an objref
+property's value as an int (or -1), the companion to `sys_getprop`, which only
+returns strings. A wander agent needs it to read its own live `location`; it
+also serves OLC-7 (a vehicle reading its position).
+
+Deferred: idle chatter (a timer that only broadcasts a line) is a trivial
+`behavior` token to add when a world wants it. Aggro opened by a woken agent
+runs its `__combat` task under the system session rather than the intruder's,
+so it is not reaped on that player's disconnect; it still ends on the normal
+fight teardown. Revisit if that proves to leak.
+
+Depends on: OLC-5 (the tick and the event mailbox), OLC-2 (spawned mobs need
+somewhere to come from and return to).
 
 ### OLC-7: Vehicles
 

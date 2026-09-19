@@ -1216,6 +1216,63 @@ curl -sf -X POST -d "$SID1 @go #$BROOM" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'The beacon registers a visitor' \
 	"room entry is delivered to the agent (EV_ENTER)"
 
+# --- OLC-6: proactive mob behavior (see OLC.md) ---
+# A mob woken as an agent (brain #453, __rover) acts on its own: wander steps a
+# random exit each tick, patrol follows a route, and it still greets on entry.
+# Prove all three, plus that sys_getobj reads the live location (a wander mob
+# that could not read its own room would get stuck or teleport wrongly).
+# An isolated room pair keeps the moving mobs off the shared rooms above.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+RA=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$RA.name=Rove West" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$RA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @dig east to Rove East" http://localhost:$PORT/cmd >/dev/null
+RB=$(grep -oE 'Dug #[0-9]+ to #[0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '#[0-9]+' | tail -1 | tr -d '#')
+
+# wander: the mob steps between the two rooms on its own, announcing each move.
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+DRIFT=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$DRIFT.name=drifter" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DRIFT.location=#$RA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DRIFT.behavior=wander" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DRIFT.dwell=200" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DRIFT.brain=#453" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @wake #$DRIFT" http://localhost:$PORT/cmd >/dev/null
+# no player command drives the mob; a wander broadcast proves the autonomous tick
+check_log /tmp/smolmoo_p1.log 'drifter leaves' \
+	"a woken mob wanders with no player (EV_TIMER moves it)"
+# quiet it so it stops moving through the shared assertions that follow
+curl -sf -X POST -d "$SID1 @set #$DRIFT.behavior=idle" http://localhost:$PORT/cmd >/dev/null
+
+# patrol: a route-following mob announces its scheduled steps.
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+SENTRY=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SENTRY.name=sentry" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SENTRY.location=#$RA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SENTRY.behavior=patrol" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SENTRY.route=$RA,$RB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SENTRY.dwell=200" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SENTRY.brain=#453" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @wake #$SENTRY" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'sentry leaves' \
+	"a woken mob patrols a route with no player (EV_TIMER)"
+curl -sf -X POST -d "$SID1 @set #$SENTRY.behavior=idle" http://localhost:$PORT/cmd >/dev/null
+
+# reactive still works for a woken mob: EV_ENTER routes to the agent, which
+# greets. Give it a huge dwell so it does not wander during the check.
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+GUARD=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$GUARD.name=guard" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GUARD.location=#$RB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GUARD.behavior=greet" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GUARD.greeting=The guard salutes." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GUARD.dwell=999999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GUARD.brain=#453" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @wake #$GUARD" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$RB" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'The guard salutes' \
+	"a woken mob still greets on entry (EV_ENTER via the agent)"
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.

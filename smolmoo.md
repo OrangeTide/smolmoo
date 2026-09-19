@@ -199,10 +199,16 @@ The syscall table is small:
    20  sys_setpriv    raise to / drop from the verb owner's authority
    21  sys_getmsg     pop one event from the task mailbox
    22  sys_listen     route an object's events to this task
+   23  sys_getobj     read an objref property's value as an int
 
 Numbers 1-3 and 5 are unused: an earlier file-descriptor event model (open,
 close, read, and a `sys_wait` multiplexer) was removed once the OLC-5 mailbox
 (`sys_listen`/`sys_getmsg`) replaced it.
+
+`sys_getobj(obj, name)` returns the object id stored in an objref property (for
+example `location` or `dest`), or -1 if the property is missing or not an
+objref. `sys_getprop` returns only string values, so this is the read path for
+object-valued properties.
 
 Syscalls use the RISC-V `ecall` instruction. Arguments follow the standard
 ILP32 psABI: up to seven in `a0`-`a6`, the syscall number in `a7`, the return

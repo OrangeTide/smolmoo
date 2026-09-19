@@ -158,8 +158,21 @@ Reactions fire only while a player is present, so an empty room stays quiet and
 costs nothing. `aggro` starts a normal fight, so the mob needs combat stats; the
 simplest source is to parent it to an NPC prototype that already has them. A
 mob with no `behavior` property does nothing. Walking into a fight that is
-already running does not pull you in; `attack` to join it. Autonomous movement
-(wander, patrol) is not yet available; it needs a server-side timer.
+already running does not pull you in; `attack` to join it.
+
+For a mob to act on its own, with no player present, wake it as an agent:
+
+    @set #N.brain=#453              the mob agent (__rover)
+    @set #N.behavior=wander         step a random exit each tick
+    @set #N.behavior=patrol         follow the `route` stops in order
+    @set #N.route=#A,#B,#C          patrol stops (room ids), wraps at the end
+    @set #N.dwell=3000              tick period in ms (default 5000)
+    @wake #N                        start it (wizard only)
+
+A woken mob keeps its `greet`/`aggro` reactions as well, so `wander,greet` both
+wanders and greets. `patrol` takes precedence over `wander`. It holds position
+while downed, dead, or in a fight. See also the `programming` topic for writing
+your own agent.
 
 ## programming
 

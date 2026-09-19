@@ -94,6 +94,7 @@ extern int sys_hasverb(int target, const char *verb);
 extern int sys_setpriv(int on);
 extern int sys_getmsg(void *buf, int len);   /* pop a mailbox event, or -2 */
 extern int sys_listen(int objid);            /* route objid's events here */
+extern int sys_getobj(int obj, const char *name); /* objref prop value, or -1 */
 
 /* Privilege bracketing (see OLC.md). A verb runs with its caller's authority by
  * default. grant_accept() elevates to the verb owner's authority, but only if

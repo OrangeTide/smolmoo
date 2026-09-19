@@ -2797,6 +2797,18 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
         RET(0);
         return 0;
     }
+    case 23: { /* sys_getobj(obj, name) → the objref value of a property, or -1.
+                * The companion to sys_getprop for objref-typed props (location,
+                * dest, brain), which sys_getprop cannot return. */
+        int objid = (int)ARG(0);
+        char name[64];
+        struct obj *o = obj_find(objid);
+
+        if (!o) { RET(-E_INVARG); return 0; }
+        vm_read_str(vm, ARG(1), name, sizeof(name));
+        RET(prop_objnum(o, make_atom(name)));   /* objnum, or OBJ_NONE (-1) */
+        return 0;
+    }
     }
     return -1;
 
