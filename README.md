@@ -23,8 +23,8 @@ of source. Keeping the source small is a first-class constraint.
       monospaced terminal.
 - [x] Core server is small. Target: under 20 kLoC including vendored
       libraries (smolvfs), excluding the MooScript compiler and test code.
-      The core server is about 18.5 kLoC (`smolmoo.c`, the RV32 VM, and the
-      vendored smolvfs and monocypher). `smolmoo.c` itself is about 6.7 kLoC.
+      The core server is about 19 kLoC (`smolmoo.c`, the RV32 VM, and the
+      vendored smolvfs and monocypher). `smolmoo.c` itself is about 7.5 kLoC.
 - [x] Dependency-free. The distribution comes with all the utilities and
       libraries needed to build and run on a Raspberry Pi (Linux).
 
@@ -489,8 +489,8 @@ and `dm.c` is the commented version.
   commands (combat, gear, skills).
 - `FUTURE.md`: the deferred feature menu (federation, packing, asset store)
   and the rationale for each.
-- `OLC.md`: the online-creation plan. How builders will create areas, rooms,
-  items, NPCs, stores, and vehicles in-game, mostly as verbs.
+- `OLC.md`: the online-creation design record. How builders create areas,
+  rooms, items, NPCs, stores, and vehicles in-game, mostly as verbs.
 - [Mini Six: Bare Knuckle Edition](http://www.antipaladingames.com/p/mini-six.html)
 - [Mini Six: Bare Bones Edition](https://www.drivethrurpg.com/en/product/144558/mini-six-bare-bones-edition)
 </content>
