@@ -9,7 +9,7 @@
  * K&R braces for control flow, own-line braces for function definitions.
  * Return type on a separate line from the function name in definitions.
  * Target 78 columns, up to 120 when breaking would hurt readability.
- * Every file starts with a `/* file.x : description */` tag, followed by a copyright section.
+ * Every file starts with a `/* file.x : description */` tag, followed by an SPDX license tag (a copyright line is optional).
  * Comment blocks use `/* */`, `/** */` for function docs, and
    `/**** ****/` for section headers - all prose, no `@param` tags.
  * `snake_case` names, `UPPER_CASE` constants, module prefix on exports.
@@ -173,8 +173,15 @@ to align past the opening parenthesis:
 
 ## File Header
 
-Every source file starts with two comment lines - a filename tag
-and a copyright notice:
+Every source file starts with a filename tag line and an SPDX license
+tag. The SPDX identifier for this project is `0BSD OR CC0-1.0`:
+
+    /* filename.x : one-line description */
+    /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+
+An author may add a copyright line above the SPDX tag. It is optional
+and belongs to the human author, so most files carry the two-line form
+above:
 
     /* filename.x : one-line description */
     /* Copyright (c) YYYY Author Name <email>
