@@ -17,8 +17,9 @@ these primitives live in `chromesix.md` and `chromesix-smolmoo.md`.
 - A single-threaded `select(2)` event loop over a fixed connection array (like
   the dm reference MUD). Pending HTTP connections carry read buffers and are
   dispatched when complete.
-- Memory-based world: the server loads the world from a single file on boot and
-  writes a snapshot on demand (`save`) or on a trigger.
+- Memory-based world: the server loads the world from the content-addressed
+  depot (an object map keyed by hash) on boot and writes an incremental
+  snapshot on demand (`save`) or on a trigger.
 - Each connection gets a dedicated RISC-V RV32 VM, so no state machine is
   needed for user input and parsing.
 - MOO-like objects held in memory: a list of free-form properties with
@@ -29,12 +30,15 @@ these primitives live in `chromesix.md` and `chromesix-smolmoo.md`.
 
 ### Threading
 
-Single-threaded for now. The target Raspberry Pi is multi-core and the expected
-workload splits into I/O-bound work (the HTTP server, world save) and CPU-bound
-work (RV32 VM execution). Threading with pthreads (an rwlock on objects, a
-message ring between the I/O and VM threads) is roughly 100 to 150 lines. The
-`rv_run(cpu, N)` model makes preemption natural: run N instructions, return to
-the I/O thread, repeat.
+The event loop and all VM execution run on one `select(2)` thread. The single
+exception is world save: a background writer thread does the fsync-durable store
+off the loop, fed a bounded queue of snapshots so the main loop never blocks on
+disk (Milestone 26). Parallelizing VM execution itself is not done. The workload
+does split into I/O-bound work (the HTTP server) and CPU-bound work (RV32 VM
+execution), and the `rv_run(cpu, N)` model would make preemption natural (run N
+instructions, return to the I/O thread, repeat), but bounded quanta on the one
+loop have been enough, so the rwlock-on-objects and message-ring approach stays
+unbuilt.
 
 ## Data model
 
@@ -91,8 +95,10 @@ works. The bundled path is the in-tree skjegg toolchain, `skj-cc-rv-psabi` (C,
 standard RISC-V ILP32 psABI) then `skj-as-rv` (assembler) then `skj-ld-rv`
 (linker). The default scripting language for world builders is MooScript, a
 statically typed LambdaMOO-inspired language
-(see `sdk/moo/lambdamoo-syntax.md`); its compiler is a later milestone, so verbs
-today are written in C. Evaluated alternatives were Picol (Tcl, weak
+(see `sdk/moo/lambdamoo-syntax.md`), compiled to RV32 by the vendored
+`skj-mooc-rv` pipeline. Verbs are written in either C or MooScript, and
+`@program` compiles both in the running server. Evaluated alternatives were
+Picol (Tcl, weak
 sandboxing), Forth/MUF (proven in TinyMUCK but hostile syntax for casual
 builders), and a custom bytecode VM (the right abstraction but more code than a
 stock CPU emulator for equivalent isolation).
