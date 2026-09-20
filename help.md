@@ -225,8 +225,10 @@ defines two functions in place of `main`:
     int  verb_dwell(void);   tick period in ms (<= 0 to block, no ticks)
 
 `on_event` receives an `EV_TIMER` each time the dwell elapses with no other
-event, `EV_ENTER` when a player walks into the agent's room, and `EV_USER` for
-a typed command. Start an agent with `@wake #N` (see the `building` topic).
+event, `EV_ENTER` when a player walks into the agent's room, and `EV_USER` with a
+string argument when another verb routes a request to it with `sys_notify` (as
+the `floor` verb does to a vehicle). Start an agent with `@wake #N` (see the
+`building` topic).
 
 ## history
 

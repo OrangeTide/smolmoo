@@ -36,6 +36,7 @@
     .globl sys_getobj
     .globl sys_post
     .globl sys_taskid
+    .globl sys_notify
     .globl _start
 
     /* CRT entry: the ELF entry point for every C verb. The host has seeded sp;
@@ -157,6 +158,11 @@ sys_post:                               /* a0=task_id -> a0=0 ok / -1 */
 
 sys_taskid:                             /* -> a0=current task id */
     li      a7, 25
+    ecall
+    ret
+
+sys_notify:                             /* a0=obj, a1=arg -> a0=0 ok / -1 */
+    li      a7, 26
     ecall
     ret
 

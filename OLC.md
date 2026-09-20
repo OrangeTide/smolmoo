@@ -22,6 +22,8 @@ The verb syscall surface already covers what OLC needs:
 - `sys_getobj` (23): read an objref property's value (location, dest, ...)
 - `sys_post` (24), `sys_taskid` (25): wake a task by id / read the current id
   (resume a blocked task, such as the combat turn loop)
+- `sys_notify` (26): deliver an `EV_USER` (with a string arg) to the agent
+  listening on an object, so a control verb routes a request to its engine
 - `sys_move` (13), `sys_next` (14): containment move and iteration
 - `sys_objfind` (9): find an object by name
 - `sys_spawn` (10), `sys_suspend` (11): timed and background tasks
@@ -409,16 +411,21 @@ riders are in.
   vehicle's `brain` and started with `@wake`) advances the vehicle and announces
   each move to the riders and both platforms. A train is self-paced: `dwell` > 0
   makes each `EV_TIMER` advance one stop. An elevator is on-command: with no
-  `dwell` it never ticks and moves only on an `EV_USER` "floor <n>".
+  `dwell` it never ticks and moves only on a `floor <n>` request.
+- `floor <n>` (`verb_vehicle.c`, `#457`, a plain `0755` verb) is the elevator
+  control. It reads the vehicle the caller is aboard, then routes the requested
+  stop to the vehicle's agent through `sys_notify`; the agent owns the move and
+  rejects an out-of-range floor. The verb steers nothing itself, so a rider on a
+  self-paced train that refuses the request cannot force it off route.
 
-New host path: `EV_USER` delivery. A command a player types that matches no verb
-is delivered to the live agent listening on the player's current room, as an
-`EV_USER` event carrying the verb and args (`agent_deliver_user`, hooked at the
-unknown-command fallback). Because a rider's room is the vehicle, the vehicle
-agent receives its own control commands; a normal room has no listening agent,
-so the command falls through to "unknown command" as before. Known verbs still
-dispatch normally (the fallback runs only after `verb_dispatch` fails), so `look`
-and the rest work aboard.
+New host primitive: `sys_notify(obj, arg)` (syscall 26) delivers an `EV_USER`
+event carrying `arg` to the agent listening on `obj`. A control verb routes its
+request to the engine this way, explicitly, the same shape as combat's action
+verbs waking `__combat`. This replaces an earlier catch-all that routed every
+unrecognized command to whatever agent a room happened to run: that hijacked the
+unknown-command stream (a genuinely unknown command aboard was swallowed) and
+coupled command dispatch to room listeners. With `floor` an ordinary verb,
+`verb_dispatch` handles it and an unrecognized command aboard is just unknown.
 
 Deferred: a "call the vehicle to this platform" command (routing `EV_USER` from
 a platform, not just from aboard) and mid-transit state (the model hops stop to

@@ -36,6 +36,26 @@ main(void)
 
     cs_getstr(cs_sheet(self), "name", nm, sizeof(nm));
 
+    /* floor <n> : ask the vehicle you are aboard to go to a stop. The request
+       routes to the vehicle's agent (sys_notify -> EV_USER), which owns the move
+       and rejects an invalid floor. A plain verb: it steers nothing itself. */
+    if (cs_streq(verb, "floor")) {
+        int veh = sys_getobj(self, "location");
+        char *arg = (char *)vm_args->argstr;
+
+        if (veh <= 0 || !cs_geti(veh, "vehicle", 0)) {
+            puts("You aren't aboard a vehicle.");
+            _exit(0);
+        }
+        if (cs_atoi(arg) <= 0) {
+            puts("Usage: floor <number>");
+            _exit(0);
+        }
+        if (sys_notify(veh, arg) != 0)
+            puts("Nothing responds.");
+        _exit(0);
+    }
+
     if (cs_streq(verb, "disembark")) {
         int veh = sys_getobj(self, "location");
         int stop;

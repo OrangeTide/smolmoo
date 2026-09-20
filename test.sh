@@ -1327,7 +1327,7 @@ check_log /tmp/smolmoo_p1.log 'climbs aboard' "board puts the player aboard the 
 # a self-paced train runs its own route and refuses a rider's floor request,
 # so a rider cannot steer it off schedule
 curl -sf -X POST -d "$SID1 floor 2" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p1.log 'carriage does not respond to "floor 2"' \
+check_log /tmp/smolmoo_p1.log 'carriage runs a fixed route' \
 	"a self-paced train refuses rider floor requests"
 # the train moves on its own; a rider inside sees the scheduled arrival
 check_log /tmp/smolmoo_p1.log 'carriage arrives at' \
@@ -1349,18 +1349,19 @@ curl -sf -X POST -d "$SID1 @set #$LIFT.route=$HUB,$L2,$L3" http://localhost:$POR
 curl -sf -X POST -d "$SID1 @set #$LIFT.brain=#456" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @wake #$LIFT" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 board elevator" http://localhost:$PORT/cmd >/dev/null
-# "floor 3" is not a global verb, so it routes to the elevator agent as EV_USER
+# the `floor` verb routes the request to the vehicle agent (sys_notify -> EV_USER)
 curl -sf -X POST -d "$SID1 floor 3" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'elevator arrives at Level Three' \
-	"a floor request routes to the vehicle agent (EV_USER) and moves it"
+	"the floor verb routes a stop request to the vehicle agent and moves it"
 # the elevator refuses a floor outside its route rather than silently ignoring it
 curl -sf -X POST -d "$SID1 floor 9" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p1.log 'elevator does not respond to "floor 9"' \
+check_log /tmp/smolmoo_p1.log 'elevator has no such floor' \
 	"an elevator refuses an out-of-range floor"
-# any command the vehicle cannot parse is rejected, not swallowed in silence
+# with the catch-all gone, an unknown command aboard is just unknown, not
+# swallowed by whatever agent runs the room
 curl -sf -X POST -d "$SID1 wibble" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p1.log 'elevator does not respond to "wibble"' \
-	"a vehicle rejects an unknown command typed aboard"
+check_log /tmp/smolmoo_p1.log 'Unknown command' \
+	"an unknown command aboard a vehicle is reported, not routed to the agent"
 # disembarking the lift lands the rider at the floor it stopped on
 curl -sf -X POST -d "$SID1 disembark" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'steps off the elevator' \

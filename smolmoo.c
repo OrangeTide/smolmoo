@@ -2833,6 +2833,30 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
         RET(tasks[task_current].id);
         return 0;
     }
+    case 26: { /* sys_notify(obj, arg): deliver an EV_USER carrying `arg` to the
+                * agent listening on obj (its handler task), or -1 if none. A
+                * control verb (an elevator's `floor`) routes its request to the
+                * engine this way, explicitly, rather than the host routing every
+                * unrecognized command to whatever agent a room happens to run. */
+        int objid = (int)ARG(0);
+        int ti = handler_task_of(objid);
+        char arg[160];
+        struct host_event e;
+
+        if (ti < 0) { RET(-1); return 0; }
+        vm_read_str(vm, ARG(1), arg, sizeof(arg));
+        memset(&e, 0, sizeof(e));
+        e.type = EV_USER;
+        e.player = cc[vm->sid].obj;
+        e.room = objid;
+        e.this_obj = objid;
+        e.dobj = OBJ_NONE;
+        e.iobj = OBJ_NONE;
+        snprintf(e.argstr, sizeof(e.argstr), "%s", arg);
+        mbox_push(ti, &e);
+        RET(0);
+        return 0;
+    }
     }
     return -1;
 
@@ -3600,32 +3624,6 @@ verb_dispatch(int sid, const char *verb, const char *args)
     return vm_exec(sid, m.hash, cc[sid].obj, player_room(sid), args, &m);
 }
 
-/* OLC-7: deliver an unrecognized command to the live agent listening on the
-   player's current room, as an EV_USER event. When a player rides a vehicle,
-   their room IS the vehicle, so the vehicle agent handles its own commands
-   (an elevator's floor request). A normal room has no listening agent, so this
-   returns ERR and the caller reports the command as unknown. */
-static int
-agent_deliver_user(int sid, const char *verb, const char *args)
-{
-    int room = player_room(sid);
-    int ti = handler_task_of(room);
-    struct host_event e;
-
-    if (ti < 0)
-        return ERR;
-    memset(&e, 0, sizeof(e));
-    e.type = EV_USER;
-    e.player = cc[sid].obj;
-    e.room = room;
-    e.this_obj = room;
-    e.dobj = OBJ_NONE;
-    e.iobj = OBJ_NONE;
-    snprintf(e.verb, sizeof(e.verb), "%s", verb ? verb : "");
-    snprintf(e.argstr, sizeof(e.argstr), "%s", args ? args : "");
-    mbox_push(ti, &e);
-    return OK;
-}
 
 /* General command help lives on the #0.help object, one topic per property, so
  * it is editable in-game and viewable through the wiki/editor (see help.md).
@@ -6498,7 +6496,7 @@ dispatch(int sid, char *line)
     }
     if (verb_dispatch(sid, cmdbuf, args) == OK)
         status_update(sid);
-    else if (agent_deliver_user(sid, cmdbuf, args) != OK)
+    else
         session_write(sid, "Unknown command. Type 'help' for a list.");
 }
 
