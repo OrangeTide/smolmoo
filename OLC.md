@@ -473,9 +473,9 @@ stops), OLC-2 (a vehicle can be a reset-managed object).
 - Builder sandbox: the deferred world-branching idea in FUTURE.md would let
   builders work off a fork of the live world and merge when ready. It pairs
   naturally with OLC but is not a prerequisite.
-- Ownership quotas: as builders gain `@create` and `@clone`, a per-account cap
-  on object count would prevent id exhaustion. A host-side check, small, worth
-  considering with OLC-1.
+- Ownership quotas: builders now have `@create` and `@clone`, so a per-account
+  cap on object count would prevent id exhaustion. OLC-1 shipped without one; it
+  is a small host-side check to add if builder growth makes it a concern.
 - Prototype discovery: `@create` needs the builder to know parent ids. A small
   `@proto list` (host or verb) that lists the base prototypes would help.
 - Per-agent VM cost: every woken agent (OLC-5/6/7) is a full task. It holds a
