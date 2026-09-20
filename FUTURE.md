@@ -11,15 +11,17 @@ Each entry notes the smolvfs pieces it leans on, so the build cost is
 visible up front.
 
 Online creation (letting builders make areas, rooms, items, NPCs, stores,
-and vehicles in-game) is planned separately in `OLC.md`, since it builds on
-the verb VM rather than the CAS and signing foundation.
+and vehicles in-game) shipped as its own arc on the verb VM rather than the
+CAS and signing foundation. Its design record is `OLC.md` and the summary is
+Milestone 32 in `PLAN.md`.
 
-## Versioned world history (shipped: Milestones 29-30)
+## Versioned world history (shipped: Milestones 29-31)
 
 Done, and the foundation several items below build on. Each world save
 appends a signed version record, chained to its predecessor, forming an
 append-only, verifiable log of world roots. `@history` lists it, `@rewind`
-restores an earlier root, and `@gc` bounds the depot growth it creates.
+restores an earlier root, `@gc` bounds the depot growth it creates, and
+`@fsck` verifies the store and the signed chain.
 
 Leans on: `cas-sign` (records and chain walk), monocypher (already
 vendored). No `cas-tree` needed for the local case.
