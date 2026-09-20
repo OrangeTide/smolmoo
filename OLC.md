@@ -451,4 +451,14 @@ stops), OLC-2 (a vehicle can be a reset-managed object).
   considering with OLC-1.
 - Prototype discovery: `@create` needs the builder to know parent ids. A small
   `@proto list` (host or verb) that lists the base prototypes would help.
+- Per-agent VM cost: every woken agent (OLC-5/6/7) is a full task. It holds a
+  128 KiB VM (`VM_MEMSZ` 0x20000), one of the `MAX_TASK` (1024) task slots, and
+  its own dwell timer. The `tasks` array is one `calloc`, so idle pages are not
+  faulted in and a handful of agents costs almost nothing (60 agents is about
+  8 MiB resident, which a Pi handles easily). The cost is linear in the number
+  of awake entities, though, so waking hundreds of mobs or vehicles is real
+  memory and real slots. A densely populated world should prefer one shared
+  "world tick" agent that iterates the mobs on each tick (one VM, one timer)
+  over waking each mob as its own agent. Reserve per-mob agents for a handful of
+  distinctive actors. This is a guideline for builders, not a code change.
 </content>
