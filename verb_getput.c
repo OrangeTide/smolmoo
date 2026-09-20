@@ -105,8 +105,9 @@ main(void)
     char *verb = (char *)vm_args->verb;
     char nm[32], an[32];
 
-    grant_accept();   /* moves items in and out of containers not owned by the caller */
-
+    /* Each branch elevates only for the item relocation itself (a move, or the
+     * slot clear on a looted item), since the caller may not own what it moves.
+     * The validation, messages and broadcasts around it run at caller authority. */
     cs_getstr(self, "name", an, sizeof(an));
 
     if (cs_streq(verb, "drop")) {
@@ -117,7 +118,9 @@ main(void)
             _exit(0);
         }
         cs_getstr(item, "name", nm, sizeof(nm));
+        grant_accept();
         sys_move(item, room);
+        grant_release();
         tell("You drop the ", nm, 0);
         announce(room, an, " drops something.");
         _exit(0);
@@ -147,7 +150,9 @@ main(void)
             _exit(0);
         }
         cs_getstr(item, "name", nm, sizeof(nm));
+        grant_accept();
         sys_move(item, dst);
+        grant_release();
         tell("You stow the ", nm, 0);
         announce(room, an, " stows something away.");
         _exit(0);
@@ -182,8 +187,10 @@ main(void)
         cs_getstr(from, "name", nm, sizeof(nm));
         /* a looted item may still name a slot on the body; clear it so it reads
          * as loose gear once it is in your hands. */
+        grant_accept();
         sys_setprop(from, "slot", "");
         sys_move(from, self);
+        grant_release();
         if (body) {
             o.len = 0;
             cs_s(&o, "You strip the ");
@@ -216,7 +223,9 @@ main(void)
     if (is_creature(item)) { puts("You can't pick that up."); _exit(0); }
     if (holds(self, item)) { puts("You already have that."); _exit(0); }
     cs_getstr(item, "name", nm, sizeof(nm));
+    grant_accept();
     sys_move(item, self);
+    grant_release();
     tell("You pick up the ", nm, 0);
     announce(room, an, " picks something up.");
     if (cs_encumbrance(self) >= 2) puts("You are overloaded.");

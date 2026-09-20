@@ -93,10 +93,18 @@ elevates to wizard authority. `owner` and `group` stay unsettable as ordinary
 properties through `sys_setprop`, matching `@set`, and execute permission still
 gates who may run a verb.
 
-The gameplay verbs that write shared state (combat, social, gear, get/put, use,
-reload, movement, flee) were migrated to `grant_accept()` at the top of the
-verb; narrowing each to bracket only the privileged span is future refinement,
-and the MooScript `with priv` block will make that ergonomic. The smoke suite
+The gameplay verbs that write shared state were migrated to `grant_accept()`.
+How far the elevation reaches is a per-verb call, not a pending refinement.
+Where the privileged span is small (a single transfer surrounded by validation,
+messages and reads) the verb brackets only that span with
+`grant_accept()`/`grant_release()`, so the rest runs at the caller's authority:
+`buy` (the stock move), `board`/`disembark` (the relocate), and `get`/`put`/
+`drop` (the item move, plus the slot clear on a looted item) do this. The
+combat and social verbs instead run their whole body elevated by design: they
+write room state and combatant sheets throughout (roster, `cb_*`, band, wounds,
+BP, free strikes), so there is no meaningful unprivileged span to hold back.
+The elevation always ends when the verb task exits, so a missed
+`grant_release()` cannot leak past the verb. The smoke suite
 proves the full model with a non-admin player: a non-setuid verb is refused on a
 non-owned object, a setuid verb is refused before `grant_accept`, succeeds after
 it, and is refused again after `grant_release`, `grant_accept` cannot elevate a

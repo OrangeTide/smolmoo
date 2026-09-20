@@ -134,7 +134,6 @@ main(void)
         }
         cs_getstr(veh, "name", vn, sizeof(vn));
 
-        grant_accept();
         o.len = 0;
         cs_s(&o, nm);
         cs_s(&o, " steps off the ");
@@ -142,7 +141,11 @@ main(void)
         cs_s(&o, ".");
         sys_broadcast(veh, cs_cstr(&o));
 
+        /* elevate only for the relocation; the checks, broadcasts and the
+         * arrival look above and below run at the caller's own authority */
+        grant_accept();
         sys_move(self, stop);
+        grant_release();
 
         o.len = 0;
         cs_s(&o, nm);
@@ -168,7 +171,6 @@ main(void)
         }
         cs_getstr(veh, "name", vn, sizeof(vn));
 
-        grant_accept();
         o.len = 0;
         cs_s(&o, nm);
         cs_s(&o, " boards the ");
@@ -176,7 +178,10 @@ main(void)
         cs_s(&o, ".");
         sys_broadcast(room, cs_cstr(&o));
 
+        /* elevate only for the relocation, not the surrounding announcements */
+        grant_accept();
         sys_move(self, veh);
+        grant_release();
 
         o.len = 0;
         cs_s(&o, nm);
