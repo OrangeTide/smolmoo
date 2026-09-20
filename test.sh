@@ -1221,6 +1221,23 @@ curl -sf -X POST -d "$SID1 @go #$BROOM" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'The beacon registers a visitor' \
 	"room entry is delivered to the agent (EV_ENTER)"
 
+# @wake marks the object awake in the persistent world, so a boot scan (at
+# startup or after @rewind) re-wakes it with no wizard re-running @wake.
+curl -sf -X POST -d "$SID1 @examine #$BEACON" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'awake = "1"' \
+	"@wake marks the agent awake for boot-scan persistence"
+# @sleep stops the agent and clears the flag: ticks stop and awake reads 0.
+curl -sf -X POST -d "$SID1 @sleep #$BEACON" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'is now asleep' "@sleep stops a running agent"
+TS1=$(beacon_ticks)
+sleep 0.6
+TS2=$(beacon_ticks)
+[ "${TS2:-0}" -eq "${TS1:-0}" ] \
+	&& pass "a slept agent stops ticking" \
+	|| fail "a slept agent stops ticking"
+curl -sf -X POST -d "$SID1 @examine #$BEACON" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'awake = "0"' "@sleep clears the awake flag"
+
 # --- OLC-6: proactive mob behavior (see OLC.md) ---
 # A mob woken as an agent (brain #453, __rover) acts on its own: wander steps a
 # random exit each tick, patrol follows a route, and it still greets on entry.
@@ -1421,6 +1438,41 @@ check_log /tmp/smolmoo_h.log 'rewound to seq 1' \
 	"@rewind restores an earlier root"
 kill $HSRV $HP1 2>/dev/null || true
 rm -rf "$HDEP" "$HDEP.key" /tmp/smolmoo_h.log /tmp/smolmoo_h_p.log
+
+# --- OLC-5: agent persistence across a world reload (boot-scan) ---
+# Isolated instance, like the @rewind test. An awake agent is saved into the
+# first version; the world is then changed and rewound back to it. On reload the
+# boot scan must re-wake the agents the restored world marks awake, the same path
+# that revives the living world after a server restart.
+ADEP=$(mktemp -d)
+cp -a depot/* "$ADEP/" 2>/dev/null || true
+SMOLMOO_PORT=7783 SMOLMOO_DEPOT="$ADEP" _build/smolmoo serve --bootstrap \
+	2>/tmp/smolmoo_a.log &
+ASRV=$!
+waitgrep /tmp/smolmoo_a.log 'world signing on' || true
+AINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_a.log \
+	| head -1 | cut -d' ' -f3)
+curl -sN http://localhost:7783/events > /tmp/smolmoo_a_p.log &
+AP1=$!
+waitgrep /tmp/smolmoo_a_p.log "^data: I" || true
+ASID=$(grep -m1 "^data: I" /tmp/smolmoo_a_p.log | sed 's/^data: I//')
+curl -sf -X POST -d "$ASID create AWiz apass $AINV" \
+	http://localhost:7783/cmd >/dev/null
+# Version 1 carries an awake agent (a beacon with the __ticker brain).
+curl -sf -X POST -d "$ASID @create #300" http://localhost:7783/cmd >/dev/null
+ABEACON=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_a_p.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$ASID @set #$ABEACON.brain=#452" http://localhost:7783/cmd >/dev/null
+curl -sf -X POST -d "$ASID @wake #$ABEACON" http://localhost:7783/cmd >/dev/null
+check_log /tmp/smolmoo_a_p.log "Woke #$ABEACON" "agent woken in the persistence instance"
+curl -sf -X POST -d "$ASID @save" http://localhost:7783/cmd >/dev/null
+# Version 2 is a later change, then rewind back to version 1's awake agent.
+curl -sf -X POST -d "$ASID @create #1" http://localhost:7783/cmd >/dev/null
+curl -sf -X POST -d "$ASID @save" http://localhost:7783/cmd >/dev/null
+curl -sf -X POST -d "$ASID @rewind 1" http://localhost:7783/cmd >/dev/null || true
+check_log /tmp/smolmoo_a.log 're-woke' \
+	"a reload re-wakes agents the restored world marks awake"
+kill $ASRV $AP1 2>/dev/null || true
+rm -rf "$ADEP" "$ADEP.key" /tmp/smolmoo_a.log /tmp/smolmoo_a_p.log
 
 # --- M30: depot garbage collection (@gc) ---
 # Isolated instance: build several versions so there is superseded garbage,

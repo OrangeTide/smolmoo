@@ -331,12 +331,18 @@ Locked design:
   one-shot verbs, `agent_*.c` for event-loop agents. An `@program ... agent`
   token for in-game agent authoring is a follow-up.
 - Launch: `@wake #N` (wizard only) starts object `#N` as an agent under the
-  reserved system session; `#N.brain` names the agent verb. A boot-time scan
-  that auto-starts agents is a follow-up.
+  reserved system session; `#N.brain` names the agent verb. `@wake` also marks
+  `#N.awake=1` in the persistent world, and a boot-time scan re-wakes every
+  object so marked, so the living world (wandering mobs, running vehicles) comes
+  back on its own after a restart. `@sleep #N` stops a running agent and clears
+  the flag, so it stays stopped. The scan also runs after `@rewind` reloads the
+  world in place: the old world's agents are stopped and the restored world's
+  awake objects are re-woken.
 
-Shipped: the event bus, the `@wake` launcher, and a demo agent (`__ticker`,
-`#452`) that ticks with no player present and announces a newcomer on
-`EV_ENTER`. Follow-ups: `@program ... agent` and boot-scan auto-start.
+Shipped: the event bus, the `@wake`/`@sleep` launcher with boot-scan
+persistence, and a demo agent (`__ticker`, `#452`) that ticks with no player
+present and announces a newcomer on `EV_ENTER`. Follow-up: `@program ... agent`
+for in-game agent authoring.
 
 `__combat` was not converted into a `verbmain` agent: it is a sequential,
 self-terminating, per-fight task (bound to the player's session for reaping),

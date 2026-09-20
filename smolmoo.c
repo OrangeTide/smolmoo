@@ -2120,6 +2120,9 @@ static void task_free(int ti);
 static void task_wake(void *arg);
 static int  task_find_by_id(int id);
 static uint32_t vm_put_str(struct vm *vm, uint32_t *off, const char *s);
+static int  agent_wake(int mid);
+static void agent_stop_all(void);
+static void agent_boot_scan(void);
 static int  task_setup(int ti, const char *hash, int player, int room_id,
                        const char *argstr, const struct verb_match *m);
 static int  verb_resolve_on(int target, const char *verb, int sid,
@@ -4395,6 +4398,10 @@ cmd_rewind(int sid, const char *arg)
         }
     }
 
+    /* Stop the running agents: they are bound to the world about to be freed.
+       The post-reload scan re-wakes the ones the restored world marks awake. */
+    agent_stop_all();
+
     /* Replace the live persistent world with the restored root. */
     world_free();
     if (cas_omap_load(obj_map, r.root) != CAS_OK) {
@@ -4404,6 +4411,9 @@ cmd_rewind(int sid, const char *arg)
     }
     cas_omap_foreach(obj_map, load_one_cb, &count);
     world_bootstrap();
+    /* The old world's agents were bound to objects just freed; stop them and
+       re-wake the ones the restored world marks awake. */
+    agent_boot_scan();
     fprintf(stderr, "[history] rewound to seq %ld: %d objects loaded\n",
             seq, count);
 }
@@ -4440,6 +4450,93 @@ olc_ci_contains(const char *hay, const char *needle)
     for (; *hay; hay++)
         if (strncasecmp(hay, needle, nl) == 0) return 1;
     return 0;
+}
+
+/* Start object mid as an autonomous agent under the system session, the shared
+   core of @wake and the boot-time re-scan. Returns WAKE_OK, or a code the
+   interactive caller turns into a message. Does not touch the persistent `awake`
+   flag: @wake sets it (so the agent is re-woken after a restart or @rewind) and
+   the boot scan only reads it. */
+enum { WAKE_OK, WAKE_NOOBJ, WAKE_ALREADY, WAKE_NOBRAIN, WAKE_NOELF,
+       WAKE_NOSLOT, WAKE_FAIL };
+static int
+agent_wake(int mid)
+{
+    int brain, mode, ti, roomid;
+    struct obj *mo, *bo;
+    const char *elf;
+    char hash[65];
+    struct verb_match m;
+
+    mo = obj_find(mid);
+    if (!mo)
+        return WAKE_NOOBJ;
+    if (handler_task_of(mid) >= 0)
+        return WAKE_ALREADY;
+    brain = prop_objnum(mo, make_atom("brain"));
+    bo = obj_find(brain);
+    if (!bo)
+        return WAKE_NOBRAIN;
+    elf = prop_str(bo, make_atom("elf"));
+    if (!elf || elf_parse(elf, &mode, hash, sizeof(hash)) != OK)
+        return WAKE_NOELF;
+    roomid = prop_objnum(mo, make_atom("location"));
+    ti = task_alloc(SYS_SID);
+    if (ti < 0)
+        return WAKE_NOSLOT;
+    memset(&m, 0, sizeof(m));
+    m.verb = "boot";
+    m.this_obj = mid;
+    m.verb_obj = brain;
+    m.dobj = OBJ_NONE;
+    m.iobj = OBJ_NONE;
+    memcpy(m.hash, hash, sizeof(m.hash));
+    if (task_setup(ti, hash, mid, roomid, "", &m) != OK) {
+        task_free(ti);
+        return WAKE_FAIL;
+    }
+    /* Register the object on the task now, before the agent runs its own
+       sys_listen on the first step, so a rapid second wake sees it as awake and
+       does not start a duplicate orphan task. */
+    mo->task_id = tasks[ti].id;
+    tasks[ti].handler_obj = mid;
+    return WAKE_OK;
+}
+
+/* Stop every running agent (free each task under the system session). Used by
+   @rewind before it replaces the live world, so agents bound to the old world
+   do not linger as orphans; the post-reload scan re-wakes the restored ones. */
+static void
+agent_stop_all(void)
+{
+    for (int i = 0; i < MAX_TASK; i++)
+        if (tasks[i].state != TASK_FREE && tasks[i].vm.sid == SYS_SID)
+            task_free(i);
+}
+
+/* Re-wake every object marked `awake` that is not already running. Called at
+   boot after the world loads and after @rewind reloads it, so the living world
+   (wandering mobs, running vehicles) comes back on its own. */
+static void
+agent_boot_scan(void)
+{
+    int woke = 0;
+
+    for (int i = 0; i < MAX_OBJ; i++) {
+        const char *a;
+        int id = objs[i].id;
+
+        if (id == OBJ_NONE)
+            continue;
+        a = prop_str(&objs[i], make_atom("awake"));
+        if (!a || strcmp(a, "0") == 0)
+            continue;
+        if (agent_wake(id) == WAKE_OK)
+            woke++;
+    }
+    if (woke)
+        fprintf(stderr, "[agents] re-woke %d agent%s\n",
+                woke, woke == 1 ? "" : "s");
 }
 
 static void
@@ -5272,11 +5369,53 @@ cmd_feedback(int sid, const char *args)
        under the system session with this = #N, so it keeps ticking with no
        player present. */
     if (strcmp(tag, "wake") == 0) {
-        int mid, brain, mode, ti, roomid;
-        struct obj *mo, *bo;
-        const char *elf;
-        char hash[65], b[64], i1[16];
-        struct verb_match m;
+        int mid;
+        struct obj *mo;
+        char b[64], i1[16];
+
+        if (!is_wizard(sid)) {
+            session_write(sid, "You are not authorized to do that.");
+            return;
+        }
+        mid = olc_ref(sid, p);
+        switch (agent_wake(mid)) {
+        case WAKE_OK:
+            /* Mark it awake in the persistent world so a restart or @rewind
+               brings it back on its own (agent_boot_scan). */
+            mo = obj_find(mid);
+            if (mo)
+                prop_set(mo, make_atom("awake"), val_str("1"));
+            snprintf(b, sizeof(b), "Woke %s.", obj_fmt(mid, i1, sizeof(i1)));
+            session_write(sid, b);
+            return;
+        case WAKE_NOOBJ:
+            session_write(sid, "Wake what?");
+            return;
+        case WAKE_ALREADY:
+            session_write(sid, "It is already awake.");
+            return;
+        case WAKE_NOBRAIN:
+            session_write(sid,
+                "That has no brain (set #N.brain=#<agent verb>).");
+            return;
+        case WAKE_NOELF:
+            session_write(sid, "Its brain has no compiled program.");
+            return;
+        case WAKE_NOSLOT:
+            session_write(sid, "No task slots.");
+            return;
+        default:
+            session_write(sid, "Failed to start agent.");
+            return;
+        }
+    }
+
+    /* @sleep #N : stop a running agent and clear its persistent `awake` flag, so
+       it stays stopped across a restart or @rewind. The inverse of @wake. */
+    if (strcmp(tag, "sleep") == 0) {
+        int mid, ti;
+        struct obj *mo;
+        char b[64], i1[16];
 
         if (!is_wizard(sid)) {
             session_write(sid, "You are not authorized to do that.");
@@ -5284,46 +5423,14 @@ cmd_feedback(int sid, const char *args)
         }
         mid = olc_ref(sid, p);
         mo = obj_find(mid);
-        if (!mo) { session_write(sid, "Wake what?"); return; }
-        if (handler_task_of(mid) >= 0) {
-            session_write(sid, "It is already awake.");
-            return;
-        }
-        brain = prop_objnum(mo, make_atom("brain"));
-        bo = obj_find(brain);
-        if (!bo) {
-            session_write(sid,
-                "That has no brain (set #N.brain=#<agent verb>).");
-            return;
-        }
-        elf = prop_str(bo, make_atom("elf"));
-        if (!elf || elf_parse(elf, &mode, hash, sizeof(hash)) != OK) {
-            session_write(sid, "Its brain has no compiled program.");
-            return;
-        }
-        roomid = prop_objnum(mo, make_atom("location"));
-        ti = task_alloc(SYS_SID);
-        if (ti < 0) { session_write(sid, "No task slots."); return; }
-        memset(&m, 0, sizeof(m));
-        m.verb = "boot";
-        m.this_obj = mid;
-        m.verb_obj = brain;
-        m.dobj = OBJ_NONE;
-        m.iobj = OBJ_NONE;
-        memcpy(m.hash, hash, sizeof(m.hash));
-        if (task_setup(ti, hash, mid, roomid, "", &m) != OK) {
+        if (!mo) { session_write(sid, "Sleep what?"); return; }
+        ti = handler_task_of(mid);
+        if (ti >= 0)
             task_free(ti);
-            session_write(sid, "Failed to start agent.");
-            return;
-        }
-        /* Register the object on the task now, before the agent runs its own
-           sys_listen on the first step. Without this a rapid second @wake would
-           not see it as awake and would start a duplicate orphan task. The
-           agent's later sys_listen re-sets the same values, and task_free clears
-           them via handler_obj. */
-        mo->task_id = tasks[ti].id;
-        tasks[ti].handler_obj = mid;
-        snprintf(b, sizeof(b), "Woke %s.", obj_fmt(mid, i1, sizeof(i1)));
+        prop_set(mo, make_atom("awake"), val_str("0"));
+        snprintf(b, sizeof(b), "%s is now %s.",
+                 obj_fmt(mid, i1, sizeof(i1)),
+                 ti >= 0 ? "asleep" : "already asleep (flag cleared)");
         session_write(sid, b);
         return;
     }
@@ -7164,6 +7271,11 @@ main(int argc, char *argv[])
     timer_add(AUTOSAVE_MS, autosave_cb, NULL);
     timer_add(INVITE_REFRESH_MS, invite_refresh_cb, NULL);
     timer_add(DEATH_SWEEP_MS, death_sweep_cb, NULL);
+
+    /* Re-wake agents the persistent world marks awake, so the living world
+       (wandering mobs, running vehicles) resumes without a wizard re-running
+       @wake after every restart (OLC-5 boot-scan). */
+    agent_boot_scan();
 
     /* bootstrap admin invite on first boot or --bootstrap */
     {

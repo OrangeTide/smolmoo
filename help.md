@@ -90,6 +90,7 @@ Create and edit objects. Most building commands are wizard or owner gated.
     @chgrp #N=#G             set an object's group
     @program #N              compile the object's src into a verb
     @wake #N                 start #N as an autonomous agent (wizard only)
+    @sleep #N                stop an agent and keep it stopped (wizard only)
 
 `@dig <exit> to <name>` creates a new room and links it, or `@dig <exit> to
 #N` links an existing room; both add a return exit named `back`. Object
@@ -98,8 +99,9 @@ arguments are `#N`, `&N`, or a name near you.
 `@wake #N` starts object `#N` as an agent: a program that keeps running with
 no player present. `#N.brain` must name the agent verb (a program that links
 the event-loop runtime; see the `programming` topic). The agent runs under the
-system session, so its timer keeps firing in an empty room. It stops when the
-server restarts; wake it again to restart it.
+system session, so its timer keeps firing in an empty room. `@wake` marks the
+object awake in the world, so it comes back on its own after a restart or a
+`@rewind`. `@sleep #N` stops it and clears that mark, so it stays stopped.
 
 Permission flags are three comma-separated owner/group/world triplets of `r`
 and `w`; the default is `rw,r,r`. See also the `editor`, `programming`, and
