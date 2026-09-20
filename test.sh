@@ -1413,6 +1413,28 @@ curl -sf -X POST -d "$SID1 disembark" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'steps off the elevator' \
 	"disembark leaves the lift at the requested floor"
 
+# call: summon the line a platform names in its `line` prop, from the platform.
+# Mark each stop as served by the lift; the lift is at Level Three now, so a
+# call from the hub brings it there.
+curl -sf -X POST -d "$SID1 @set #$HUB.line=#$LIFT" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$L2.line=#$LIFT" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$L3.line=#$LIFT" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$HUB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 call" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'You signal the elevator' "call signals the platform's line"
+check_log /tmp/smolmoo_p1.log 'elevator pulls in' \
+	"the called elevator comes to the platform"
+# a room with no line has nothing to call
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 call" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Nothing runs from here' "call needs a line to summon"
+# a line set on a room the vehicle does not serve is refused
+curl -sf -X POST -d "$SID1 @set #101.line=#$LIFT" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 call" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'not on that line' "call refuses a platform off the route"
+# clear the stray line so the lobby is not left pointing at a test vehicle
+curl -sf -X POST -d "$SID1 @set #101.line=" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.

@@ -189,15 +189,19 @@ Riders board it, ride it, and step off wherever it currently is.
     @set #N.route=#A,#B,#C          the stops it travels, in order
     @set #N.brain=#456              the vehicle agent (__transit)
     @set #N.dwell=8000              tick period in ms for a timed vehicle
+    @set #<stop>.line=#N            let `call` on that platform summon it
     @wake #N                        start it (wizard only)
 
 With a positive `dwell` the vehicle is a train: it advances one stop each tick,
 on its own, wrapping at the end of the route. With no `dwell` it is an elevator:
 it never moves until a rider aboard names a stop with `floor <n>` (n counts from
-1 along the route). Players use it with:
+1 along the route), or someone on a platform calls it. A platform can summon its
+vehicle only if that stop's room names the vehicle in a `line` prop. Players use
+it with:
 
     board <vehicle>                 climb aboard, when it is at your stop
     floor <n>                       (aboard an elevator) go to the nth stop
+    call                            (on a platform) summon its line here
     disembark                       step off at the vehicle's current stop
 
 ## programming

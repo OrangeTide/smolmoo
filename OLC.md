@@ -423,6 +423,14 @@ riders are in.
   stop to the vehicle's agent through `sys_notify`; the agent owns the move and
   rejects an out-of-range floor. The verb steers nothing itself, so a rider on a
   self-paced train that refuses the request cannot force it off route.
+- `call` (`verb_vehicle.c`, `#458`, a plain `0755` verb) is the platform-side
+  summon. A platform names its vehicle in a `line` objref prop; `call` reads it,
+  finds the platform's index in the vehicle's `route`, and routes that stop to
+  the agent through `sys_notify`, so the vehicle comes to the caller. An
+  on-command elevator answers; a scheduled train refuses and stays on its route.
+  There is no global "which vehicle serves this room" lookup (a vehicle's
+  `location` is its current stop, so `sys_next` cannot enumerate vehicles), so
+  the platform-to-vehicle link is the explicit `line` prop.
 
 New host primitive: `sys_notify(obj, arg)` (syscall 26) delivers an `EV_USER`
 event carrying `arg` to the agent listening on `obj`. A control verb routes its
@@ -433,9 +441,8 @@ unknown-command stream (a genuinely unknown command aboard was swallowed) and
 coupled command dispatch to room listeners. With `floor` an ordinary verb,
 `verb_dispatch` handles it and an unrecognized command aboard is just unknown.
 
-Deferred: a "call the vehicle to this platform" command (routing `EV_USER` from
-a platform, not just from aboard) and mid-transit state (the model hops stop to
-stop with no in-between). Neither is needed for working trains and lifts.
+Deferred: mid-transit state (the model hops stop to stop with no in-between).
+Not needed for working trains and lifts.
 
 Depends on: OLC-5 (the agent/tick and the event mailbox), OLC-6 (`sys_getobj`,
 which the agent uses to read its own position), OLC-1 (build the vehicle and its

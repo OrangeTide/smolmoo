@@ -2,11 +2,41 @@
  * object marked with `vehicle`=1 whose own `location` is its current stop and
  * whose riders have `location` = the vehicle, so moving the vehicle carries
  * them. board puts the player aboard a vehicle that is present at their stop;
- * disembark steps them off to the vehicle's current stop. Setuid, like go: both
- * relocate the player. */
+ * disembark steps them off to the vehicle's current stop. Both are setuid, like
+ * go, since they relocate the player. `floor <n>` (aboard) and `call` (on a
+ * platform, which names its vehicle in a `line` prop) route a stop request to
+ * the vehicle's agent through sys_notify; they are plain verbs that steer
+ * nothing themselves. */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
 #include "chromesix_verb.h"
+
+/* the 1-based position of `stop` in a comma-separated route, or 0 if absent */
+static int
+route_index(const char *route, int stop)
+{
+    int v = 0, seen = 0, pos = 0, i;
+
+    for (i = 0; ; i++) {
+        char c = route[i];
+
+        if (c >= '0' && c <= '9') {
+            v = v * 10 + (c - '0');
+            seen = 1;
+        } else {
+            if (seen) {
+                pos++;
+                if (v == stop)
+                    return pos;
+            }
+            v = 0;
+            seen = 0;
+            if (c == '\0')
+                break;
+        }
+    }
+    return 0;
+}
 
 /* show the destination room's name and description to the mover */
 static void
@@ -53,6 +83,39 @@ main(void)
         }
         if (sys_notify(veh, arg) != 0)
             puts("Nothing responds.");
+        _exit(0);
+    }
+
+    /* call : summon the platform's line to this stop. The platform names its
+       vehicle in a `line` prop; the request routes to that vehicle's agent,
+       which comes if it is on-command (an elevator). A scheduled train refuses
+       and stays on its route. */
+    if (cs_streq(verb, "call")) {
+        int veh = sys_getobj(room, "line");
+        char route[128], n[8];
+        int pos;
+
+        if (veh <= 0 || !cs_geti(veh, "vehicle", 0)) {
+            puts("Nothing runs from here.");
+            _exit(0);
+        }
+        cs_getstr(veh, "route", route, sizeof(route));
+        pos = route_index(route, room);
+        if (pos <= 0) {
+            puts("This platform is not on that line.");
+            _exit(0);
+        }
+        cs_getstr(veh, "name", vn, sizeof(vn));
+        cs_itoa(n, pos);
+        if (sys_notify(veh, n) != 0) {
+            puts("Nothing responds.");
+            _exit(0);
+        }
+        o.len = 0;
+        cs_s(&o, "You signal the ");
+        cs_s(&o, vn);
+        cs_s(&o, ".");
+        puts(cs_cstr(&o));
         _exit(0);
     }
 
