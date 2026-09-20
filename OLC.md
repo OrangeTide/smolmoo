@@ -3,9 +3,20 @@
 
 The goal is to let builders log into the running game and create content:
 areas, rooms, exits, items, NPCs and mobs, stores and vending machines,
-and vehicles such as carriages, trains, and elevators. This document is a
-plan, not committed work. It records the design decision, the small host
-prerequisites, and a milestone sequence.
+and vehicles such as carriages, trains, and elevators. It records the design
+decision, the small host prerequisites, and a milestone sequence.
+
+Status: the arc is shipped. Prerequisites P1 (`@`-to-verb routing) and P2
+(privilege bracketing) and milestones OLC-1 through OLC-7 are all committed;
+each section below is marked `(shipped)` with what landed. The review notes
+folded into the milestone sections (the OLC-2, OLC-5, and holistic reviews) are
+resolved: boot-scan agent persistence, the `sys_notify` control path replacing
+the EV_USER catch-all, corpse reaping and clean reset spawns, platform-side
+`call`, and narrowing verb elevation to the privileged span all landed. What
+remains is genuinely optional and called out per section (idle chatter, an
+`@program ... agent` authoring token, mid-transit vehicle state) plus the
+cross-cutting notes at the end. This doc is now the design record for a built
+system, not a plan for unbuilt work.
 
 ## Design decision: build OLC as verbs
 
@@ -193,10 +204,11 @@ building command was needed. The reconcile is host code, reusing OLC-1's object
 iteration and creation; it stays a host command because a background driver
 would need a session context a verb does not have.
 
-Deferred by decision (chosen scope: on-demand only): there is no automatic or
-periodic trigger yet, so a live world is topped up by running `@reset`. Adding
-a driver is the open question for OLC-2..5 as a group, either a host timer (like
-autosave) or a reserved "system" session so a timer can invoke sim verbs. The
+Deferred by decision (chosen scope: on-demand only): `@reset` restocking has no
+automatic or periodic trigger, so a live world is topped up by running `@reset`.
+The driver this section once posed as an open question shipped later: OLC-5 added
+the reserved system session and the agent timer, and OLC-6 put proactive mobs on
+it, so a timed trigger now exists if a periodic `@reset` is ever wanted. The
 Area object is only a grouping handle so far; shared-ownership and
 export-as-a-unit are not wired.
 
@@ -288,14 +300,14 @@ a fight already in progress is not drawn in, since `__combat` tracks one player;
 they `attack` to join. Reactions never fire for a non-player entrant, so future
 wandering NPCs will not set each other off.
 
-Deferred (proactive, needs an autonomous driver):
+Deferred at OLC-4, shipped in OLC-6:
 
-- Wander, patrol, and idle chatter all require a tick with no player present.
-  That needs a system session (a reserved connection slot the task loop never
-  frees) plus a heartbeat timer that spawns behavior tasks. This is the
-  host-timer driver deferred since OLC-2; add it when proactive NPCs are worth
-  that change. `sys_move`, `sys_next`, `sys_random`, and `sys_spawn` are the
-  primitives a wander/patrol verb would use once the driver exists.
+- Wander and patrol both require a tick with no player present. That needs a
+  system session (a reserved connection slot the task loop never frees) plus a
+  heartbeat timer that drives behavior. OLC-5 built that driver (the agent event
+  loop under the system session) and OLC-6's `__rover` mob agent uses it for
+  wander and patrol, built on `sys_move`, `sys_next`, and `sys_random`. Idle
+  chatter is the one piece of this still unbuilt.
 
 Depends on: OLC-2 (spawned mobs need somewhere to come from and return to).
 
