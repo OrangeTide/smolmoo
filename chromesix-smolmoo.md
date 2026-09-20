@@ -8,10 +8,10 @@ described in `smolmoo.md`; this doc covers only the ChromeSix mapping.
 
 ## 1. Language reality
 
-ChromeSix ships as C verbs compiled to RV32 ELFs, since smolmoo has no
-MooScript compiler yet (see `smolmoo.md` for the verb VM and syscalls). The
-pseudo-code in earlier drafts targets LambdaMOO; treat those snippets as
-expressions of intent, not as code to port line by line.
+ChromeSix ships as C verbs compiled to RV32 ELFs (see `smolmoo.md` for the verb
+VM and syscalls). MooScript is available too for world builders, but the combat
+and social code stays in C. The pseudo-code in earlier drafts targets LambdaMOO;
+treat those snippets as expressions of intent, not as code to port line by line.
 
 ## 2. Data model
 
