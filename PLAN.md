@@ -432,6 +432,44 @@ flipping a byte in a stored object, confirming the damage is detected.
 
 ---
 
+## Milestone 32: Online Creation (OLC arc)
+
+In-game world building, run as verbs on the VM rather than host commands, so a
+running server can grow its world without a rebuild. The full design record and
+per-milestone detail live in OLC.md; this is the summary. Two host prerequisites
+came first. P1 routes `@`-prefixed commands through verb dispatch (4840007), so
+builder commands are ordinary verbs. P2 adds privilege bracketing (78fd04b,
+2a33216): a setuid verb elevates to its owner's authority for a bounded span via
+`grant_accept`/`grant_release`, and `sys_move`/`sys_setprop` check that the
+effective account owns the object, so a player-invoked verb can write shared
+state without granting the player that power.
+
+The arc then shipped in seven milestones. OLC-1 is the builder toolkit
+(`@clone`, `@move`, `@dig`, `@find`, `@contents`, and the rest; f4e1a08).
+OLC-2 is the on-demand reset system that keeps rooms stocked (8288311), later
+extended to reap fallen bodies and spawn clean instances (0588ca1). OLC-3 is
+generic stores and vending machines (fe1f2a2). OLC-4 is reactive mob behavior,
+NPCs that greet or aggro when a player enters (ef0e5b3). OLC-5 is the event bus
+and agent runtime: the CRT owns `_start` so agents define `main`, objects run as
+persistent event-loop handlers under a reserved system session, and `@wake`/
+`@sleep` plus a boot-time scan give agents that survive restart and `@rewind`
+(8f87517, 61dbd74, 4010a85). OLC-6 is proactive mobs (wander and patrol on a
+timer, `__rover`; 3d2db22). OLC-7 is vehicles: rooms that carry riders stop to
+stop, as timed trains or on-command elevators, with `board`/`disembark`/`floor`/
+`call` and the `__transit` agent (6c466db, ab8e139, 8e99b9f).
+
+`__combat` was reworked onto the same event bus rather than converted to a
+persistent agent: it stays a sequential per-fight task that blocks on
+`sys_suspend` and is woken by task id through `sys_post`, and it does not
+`sys_listen`, so combat never intercepts other commands (4a9bb22). The event
+work added the mailbox syscalls `sys_post`, `sys_taskid`, and `sys_notify`, the
+last routing an `EV_USER` request from a plain verb to an agent. A late pass
+narrowed each verb's elevation to the privileged operation itself, leaving
+validation and messages at caller authority (9cf2ed4). The HTTP smoke suite and
+TAP unit tests cover the arc end to end (274 smoke checks pass).
+
+---
+
 # Future Milestones
 
 A broader menu of directions the CAS and signing foundation opens up (SHOAL,
