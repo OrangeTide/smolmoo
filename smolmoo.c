@@ -531,6 +531,27 @@ bp_max(struct obj *o)
     return m < 1 ? 1 : m;
 }
 
+/* Reset the combat block on a freshly spawned instance (OLC-2). A reset clone
+ * inherits its proto's properties through the parent chain, so a proto that has
+ * itself been in combat would yield an instance that starts downed, wounded, or
+ * dead. Restore full BP and clear every transient combat/death flag so the spawn
+ * is a clean template regardless of the proto's current state. */
+static void
+spawn_clean(struct obj *o)
+{
+    char b[16];
+
+    prop_set(o, make_atom("downed"), val_str("0"));
+    prop_set(o, make_atom("dead"), val_str("0"));
+    prop_set(o, make_atom("dying"), val_str("0"));
+    prop_set(o, make_atom("wounds"), val_str("0"));
+    prop_set(o, make_atom("death_tick"), val_str("0"));
+    prop_set(o, make_atom("decay_tick"), val_str("0"));
+    prop_set(o, make_atom("band"), val_str("0"));
+    snprintf(b, sizeof(b), "%d", bp_max(o));
+    prop_set(o, make_atom("bp"), val_str(b));
+}
+
 /* The signed standing step for `faction` on a sheet, mirroring cs_standing in
  * the verb helpers: the `standing` prop is a comma list of id:step pairs, and
  * an absent faction reads 0 (Neutral). Prefix-safe on ids. */
@@ -5575,7 +5596,6 @@ cmd_feedback(int sid, const char *args)
         const char *a_proto = make_atom("proto");
         const char *a_area = make_atom("area");
         const char *a_loc = make_atom("location");
-        const char *a_downed = make_atom("downed");
         int filter = OBJ_NONE, rules = 0, spawned = 0;
         char b[96];
 
@@ -5624,7 +5644,10 @@ cmd_feedback(int sid, const char *args)
                 pr = obj_find(rproto);
                 nc->owner = pr ? pr->owner : OBJ_NONE;
                 prop_set(nc, a_loc, val_obj(rroom));
-                prop_set(nc, a_downed, val_str("0"));
+                spawn_clean(nc);        /* fresh instance, no inherited wounds */
+                /* mark it reset-managed so the corpse sweep may reclaim it once
+                   it is defeated; hand-placed NPCs are left for their builder */
+                prop_set(nc, make_atom("reset_spawn"), val_str("1"));
                 spawned++;
             }
         }
@@ -6169,6 +6192,68 @@ death_sweep_cb(void *arg)
         }
     }
     timer_add(DEATH_SWEEP_MS, death_sweep_cb, NULL);
+}
+
+#define CORPSE_SWEEP_MS  2000             /* how often fallen bodies are checked */
+static int corpse_decay_ms = 180000;      /* a fallen body's lootable span, tunable */
+
+/* Reap fallen reset-managed NPC bodies (OLC-2). A defeated NPC is left `downed`
+ * in its room; the reset reconcile counts it as not-live and spawns a
+ * replacement, so without this the bodies pile up and the world grows without
+ * bound. Each sweep arms a fresh body's decay clock, counts it down (leaving a
+ * lootable window), and at zero frees the body and any gear still on it. Only
+ * instances the reset spawned (`reset_spawn`) are reaped, so a builder's
+ * hand-placed NPC persists; player bodies are ephemeral and handled by the death
+ * sweep, so they are never touched here. */
+static void
+corpse_sweep_cb(void *arg)
+{
+    const char *a_loc = make_atom("location");
+
+    (void)arg;
+    for (int i = 0; i < MAX_OBJ; i++) {
+        struct obj *o = &objs[i];
+        int room, rem;
+        char b[16];
+
+        if (o->id == OBJ_NONE || obj_is_ephemeral(o->id)) continue;
+        if (!prop_int(o, "reset_spawn", 0)) continue;  /* not reset debris */
+        if (!prop_int(o, "downed", 0)) continue;   /* not a fallen body */
+        if (prop_int(o, "carrier", 0)) continue;   /* being carried off */
+        room = prop_objnum(o, a_loc);
+        if (room == OBJ_NONE) continue;            /* unplaced (e.g. a proto) */
+        {   /* leave a body be while its room is still in a fight */
+            struct obj *ro = obj_find(room);
+            if (ro && prop_int(ro, "cb_active", 0)) continue;
+        }
+        rem = prop_int(o, "decay_tick", 0);
+        if (rem <= 0) {                            /* fresh body: arm the clock */
+            snprintf(b, sizeof(b), "%d", corpse_decay_ms);
+            prop_set(o, make_atom("decay_tick"), val_str(b));
+            continue;
+        }
+        rem -= CORPSE_SWEEP_MS;
+        if (rem > 0) {
+            snprintf(b, sizeof(b), "%d", rem);
+            prop_set(o, make_atom("decay_tick"), val_str(b));
+            continue;
+        }
+        {   /* window elapsed: announce, then free the body and its gear */
+            const char *nm = prop_str(o, make_atom("name"));
+            int cid = o->id;
+            char msg[80];
+
+            snprintf(msg, sizeof(msg), "The %s has been carried off.",
+                     nm ? nm : "body");
+            room_broadcast(-1, room, msg);
+            for (int j = 0; j < MAX_OBJ; j++)
+                if (objs[j].id != OBJ_NONE &&
+                    prop_objnum(&objs[j], a_loc) == cid)
+                    obj_free(&objs[j]);   /* unlooted gear rots with the body */
+            obj_free(o);
+        }
+    }
+    timer_add(CORPSE_SWEEP_MS, corpse_sweep_cb, NULL);
 }
 
 /* The paid clinic path (Section 11): a dead player revives at once for a fee in
@@ -7269,6 +7354,7 @@ main(int argc, char *argv[])
     timer_add(AUTOSAVE_MS, autosave_cb, NULL);
     timer_add(INVITE_REFRESH_MS, invite_refresh_cb, NULL);
     timer_add(DEATH_SWEEP_MS, death_sweep_cb, NULL);
+    timer_add(CORPSE_SWEEP_MS, corpse_sweep_cb, NULL);
 
     /* Re-wake agents the persistent world marks awake, so the living world
        (wandering mobs, running vehicles) resumes without a wizard re-running

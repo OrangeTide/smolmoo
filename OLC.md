@@ -192,19 +192,25 @@ autosave) or a reserved "system" session so a timer can invoke sim verbs. The
 Area object is only a grouping handle so far; shared-ownership and
 export-as-a-unit are not wired.
 
-Two further deferrals came out of the OLC-2 review:
+Two further deferrals came out of the OLC-2 review, both now shipped:
 
-- **Reaping the dead.** The reconcile only adds live instances; it never
-  reclaims downed ones, so a room accumulates corpses as persistent objects and
-  repeated resets grow the world. This is bounded today (wizard-paced, no auto
-  trigger). Reaping belongs with the periodic driver, and it must respect the
-  M25i window where a downed body is still lootable, so a decay timer fits
-  better than reaping inside `@reset`.
-- **Clean spawn state.** A spawn clears only `downed`; it still inherits
-  `dead`, `hp`, and other combat state from its proto through the parent chain.
-  Pristine templates are fine; a proto that has itself been in combat yields a
-  broken instance. Revisit by clearing the full combat block on spawn, or by
-  requiring reset protos to be untouched templates.
+- **Reaping the dead (shipped).** A defeated NPC is left `downed`, which the
+  reconcile counts as not-live, so it spawns a replacement while the body
+  lingers and repeated resets grow the world. A host sweep (`corpse_sweep_cb`,
+  `CORPSE_SWEEP_MS`) now reaps fallen bodies: it arms a `decay_tick` clock on a
+  fresh body, counts it down (`corpse_decay_ms`, the lootable window), and at
+  zero frees the body and any gear still on it. Reaping is scoped to instances
+  the reset spawned (a `reset_spawn` marker), so a builder's hand-placed NPC is
+  left alone, and it skips a room that is still in a fight (`cb_active`). Player
+  bodies are ephemeral and handled by the M25i death sweep, so they are never
+  touched. This is the decay-timer approach the review preferred over reaping
+  inside `@reset`.
+- **Clean spawn state (shipped).** A reset clone inherits its proto's
+  properties through the parent chain, so a proto that has itself been in combat
+  would yield an instance that starts downed, wounded, or dead. `spawn_clean`
+  now restores full BP and clears the whole combat/death block (`downed`,
+  `dead`, `dying`, `wounds`, `death_tick`, `decay_tick`, `band`) on every reset
+  spawn, so an instance is clean regardless of the proto's current state.
 
 Depends on: OLC-1 (for building the rules in-game).
 

@@ -360,6 +360,52 @@ curl -sf -X POST -d "$SID1 @set #$CH.downed=1" http://localhost:$PORT/cmd >/dev/
 curl -sf -X POST -d "$SID1 @reset" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log '1 spawned' "@reset replaces a downed instance"
 
+# clean spawn (OLC-2): a clone must not inherit its proto's combat state. Build a
+# proto that has "been in combat" (dead, downed, hurt), clone it, and check the
+# instance starts at full BP and clear of every death flag.
+curl -sf -X POST -d "$SID1 @create #201" http://localhost:$PORT/cmd >/dev/null
+CPROTO=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$CPROTO.name=gonk" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CPROTO.mig=9" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CPROTO.dead=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CPROTO.downed=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CPROTO.bp=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CPROTO.wounds=3" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+CRM=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @create #910" http://localhost:$PORT/cmd >/dev/null
+CRULE=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$CRULE.room=#$CRM" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CRULE.proto=#$CPROTO" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CRULE.count=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @reset" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @contents #$CRM" http://localhost:$PORT/cmd >/dev/null
+GONK=$(grep -oE "#[0-9]+  gonk" /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+' | head -1)
+curl -sf -X POST -d "$SID1 @examine #$GONK" http://localhost:$PORT/cmd >/dev/null
+# bp 21 = full for mig 9 (12 + 9); the proto's bp was 1, so this proves the reset
+check_log /tmp/smolmoo_p1.log 'bp = "21"' \
+	"a reset clone starts at full BP, not its proto's combat state"
+check_log /tmp/smolmoo_p1.log 'wounds = "0"' "a reset clone starts unwounded"
+# tidy up so this rule does not affect later reset-rule counts
+curl -sf -X POST -d "$SID1 @recycle #$GONK" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @recycle #$CRULE" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @recycle #$CRM" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @recycle #$CPROTO" http://localhost:$PORT/cmd >/dev/null
+
+# corpse decay (OLC-2): a fallen reset-spawned body is reaped after its lootable
+# window, so downed bodies do not pile up. A short decay clock fires the sweep at
+# once. The body is placed in the builder's current room (#101) so the reap
+# announcement reaches this session; the builder is not moved.
+curl -sf -X POST -d "$SID1 @create #201" http://localhost:$PORT/cmd >/dev/null
+DBODY=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$DBODY.name=stiff" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DBODY.location=#101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DBODY.reset_spawn=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DBODY.downed=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DBODY.decay_tick=1" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'The stiff has been carried off' \
+	"a fallen body is reaped after its lootable window"
+
 # --- M19: sys_objfind ---
 
 # resolve existing object by name
