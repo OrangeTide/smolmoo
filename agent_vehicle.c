@@ -3,7 +3,8 @@
  * and whose riders have `location` = the vehicle. Woken as an agent (@wake with
  * brain = this verb), it moves itself between stops, carrying its riders:
  *   train / carriage -- self-paced: `dwell` ms > 0 makes each EV_TIMER advance
- *                       one stop along `route`, wrapping at the end.
+ *                       one stop along `route`, wrapping at the end. It runs its
+ *                       own route and refuses rider floor requests.
  *   elevator         -- on command: leave `dwell` unset (<= 0) so it never ticks
  *                       and only moves on an EV_USER "floor <n>" (or "<n>"), n a
  *                       1-based index into `route`.
@@ -89,6 +90,28 @@ arrive(int self, int stop)
     sys_broadcast(self, cs_cstr(&o));
 }
 
+/* tell the riders a command was not understood: a train takes no requests, and
+   an elevator refuses a floor outside its route or a command it cannot parse */
+static void
+reject(int self, const char *v, const char *a)
+{
+    struct cs_out o;
+    char vn[32];
+
+    cs_getstr(self, "name", vn, sizeof(vn));
+    o.len = 0;
+    cs_s(&o, "The ");
+    cs_s(&o, vn);
+    cs_s(&o, " does not respond to \"");
+    cs_s(&o, v ? v : "");
+    if (a && *a) {
+        cs_s(&o, " ");
+        cs_s(&o, a);
+    }
+    cs_s(&o, "\".");
+    sys_broadcast(self, cs_cstr(&o));
+}
+
 void
 on_event(const struct verb_event *m)
 {
@@ -107,16 +130,26 @@ on_event(const struct verb_event *m)
             idx = 0;
         cs_seti(self, "stop_idx", idx);
         arrive(self, stops[idx]);
-    } else if (m->type == EV_USER) {            /* elevator: "floor <n>" */
+    } else if (m->type == EV_USER) {            /* a rider's command */
         const char *v = (const char *)m->verb;
         const char *a = (const char *)m->argstr;
-        int f = cs_atoi(a);                      /* "floor 3" */
+        int f;
 
+        /* A self-paced train (dwell > 0) runs its own route and takes no
+           requests, so a rider cannot steer it. Only an on-command elevator
+           moves on a "floor <n>" (or bare "<n>") request. */
+        if (cs_geti(self, "dwell", -1) > 0) {
+            reject(self, v, a);
+            return;
+        }
+        f = cs_atoi(a);                          /* "floor 3" */
         if (f <= 0)
             f = cs_atoi(v);                      /* bare "3" */
         if (f >= 1 && f <= n) {
             cs_seti(self, "stop_idx", f - 1);
             arrive(self, stops[f - 1]);
+        } else {
+            reject(self, v, a);
         }
     }
 }
