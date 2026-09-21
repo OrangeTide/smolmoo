@@ -138,9 +138,11 @@ Static x86_64 binary with musl (single binary, no shared libraries):
     make test
 
 Runs `test.sh`, which starts the server on a temporary port and exercises
-login, chat, commands, verbs, and the web editor. `make test` does not
-build verbs. It runs against whatever is already in `depot/`, so run
-`make install` first after changing verbs, the VM, or the world.
+login, chat, commands, verbs, and the web editor. `make test` runs `make
+install` first, so verbs are recompiled from source. It does not
+re-bootstrap the world, though: with a `depot/` already present the world
+loads from it, not from `world.data`. After changing the world seed, or when
+results look stale, rebuild from a clean baseline with `rm -rf depot _build`.
 
 ## Command-Line Tools
 
