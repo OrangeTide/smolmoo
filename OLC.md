@@ -12,11 +12,13 @@ each section below is marked `(shipped)` with what landed. The review notes
 folded into the milestone sections (the OLC-2, OLC-5, and holistic reviews) are
 resolved: boot-scan agent persistence, the `sys_notify` control path replacing
 the EV_USER catch-all, corpse reaping and clean reset spawns, platform-side
-`call`, and narrowing verb elevation to the privileged span all landed. What
-remains is genuinely optional and called out per section (idle chatter, an
-`@program ... agent` authoring token, mid-transit vehicle state) plus the
-cross-cutting notes at the end. This doc is now the design record for a built
-system, not a plan for unbuilt work.
+`call`, and narrowing verb elevation to the privileged span all landed. The arc
+then continued as OLC-8 (Milestone 33, see `M33.md`), which shipped in-game
+agent authoring (`@program ... agent`), the object ownership quota, and
+`@proto list`. What remains is genuinely optional and called out per section
+(idle chatter, mid-transit vehicle state) plus the cross-cutting notes at the
+end. This doc is now the design record for a built system, not a plan for
+unbuilt work.
 
 ## Design decision: build OLC as verbs
 
@@ -356,8 +358,9 @@ Locked design:
   spawning a fresh `on_enter` task.
 - Build plumbing: the `agent_` source prefix tells the installer (and
   `program_compile`) to link `verbmain.o`. Repo convention: `verb_*.c` for
-  one-shot verbs, `agent_*.c` for event-loop agents. An `@program ... agent`
-  token for in-game agent authoring is a follow-up.
+  one-shot verbs, `agent_*.c` for event-loop agents. In-game authoring of an
+  agent through `@program ... agent` shipped later in M33a (OLC-8, see
+  `M33.md`).
 - Launch: `@wake #N` (wizard only) starts object `#N` as an agent under the
   reserved system session; `#N.brain` names the agent verb. `@wake` also marks
   `#N.awake=1` in the persistent world, and a boot-time scan re-wakes every
@@ -369,8 +372,8 @@ Locked design:
 
 Shipped: the event bus, the `@wake`/`@sleep` launcher with boot-scan
 persistence, and a demo agent (`__ticker`, `#452`) that ticks with no player
-present and announces a newcomer on `EV_ENTER`. Follow-up: `@program ... agent`
-for in-game agent authoring.
+present and announces a newcomer on `EV_ENTER`. The `@program ... agent` token
+for in-game agent authoring, once a follow-up, shipped in M33a (see `M33.md`).
 
 `__combat` was not converted into a `verbmain` agent: it is a sequential,
 self-terminating, per-fight task (bound to the player's session for reaping),
@@ -473,11 +476,12 @@ stops), OLC-2 (a vehicle can be a reset-managed object).
 - Builder sandbox: the deferred world-branching idea in FUTURE.md would let
   builders work off a fork of the live world and merge when ready. It pairs
   naturally with OLC but is not a prerequisite.
-- Ownership quotas: builders now have `@create` and `@clone`, so a per-account
-  cap on object count would prevent id exhaustion. OLC-1 shipped without one; it
-  is a small host-side check to add if builder growth makes it a concern.
-- Prototype discovery: `@create` needs the builder to know parent ids. A small
-  `@proto list` (host or verb) that lists the base prototypes would help.
+- Ownership quotas (shipped, M33b): a per-account cap on object count prevents
+  id exhaustion as `@create`/`@clone` open up. It landed as a host check tunable
+  through `#0.objquota` (see `M33.md`).
+- Prototype discovery (shipped, M33c): `@proto list` lists the prototypes
+  registered on `#0` so a builder can pick a parent for `@create` without
+  reading source. It landed as a host command (see `M33.md`).
 - Per-agent VM cost: every woken agent (OLC-5/6/7) is a full task. It holds a
   128 KiB VM (`VM_MEMSZ` 0x20000), one of the `MAX_TASK` (1024) task slots, and
   its own dwell timer. The `tasks` array is one `calloc`, so idle pages are not
