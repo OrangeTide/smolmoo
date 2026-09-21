@@ -15,7 +15,10 @@
  * room it traverses in order, the stops among them plus the pass-through rooms
  * between (tunnels, track). With a `path` the train walks one room per tick and
  * really occupies each, so its riders and anyone standing in a pass-through room
- * see one another go by; `path_idx` tracks its place along it.
+ * see one another go by; `path_idx` tracks its place along it. A pass-through
+ * room may also carry an `observe` list of rooms visible from it (M34 slice 2b),
+ * so a rider glimpses a platform the train skips and its people see it pass in
+ * the distance.
  * Setuid: moving the vehicle needs the owner's authority. */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
@@ -146,13 +149,14 @@ say(int self, const char *tail)
     sys_broadcast(self, cs_cstr(&o));
 }
 
-/* the window (M34 slice 2): while passing through a room that is not a stop, the
-   room sees the vehicle go by and the riders see where they are and who is
-   outside. The vehicle occupies `room` (its own location), so its riders share
-   the room with anyone standing there; a player avatar carries a `charid`, which
-   tells it apart from the vehicle itself and from loose items. */
+/* the window (M34 slice 2): show a room the vehicle can see, both ways. `room` is
+   the vehicle's own position when `distant` is 0, or a room it only sees into
+   (M34 slice 2b, named in the position's `observe` list) when `distant` is 1.
+   The room sees the vehicle go by; the riders see the room and glimpse anyone in
+   it. A player avatar carries a `charid`, which tells it apart from the vehicle
+   itself and from loose items. */
 static void
-window(int self, int room)
+glimpse(int self, int room, int distant)
 {
     struct cs_out o;
     char vn[32], rn[32], nm[32];
@@ -164,25 +168,42 @@ window(int self, int room)
     o.len = 0;                                  /* the room sees us pass */
     cs_s(&o, "The ");
     cs_s(&o, vn);
-    cs_s(&o, " rushes past.");
+    cs_s(&o, distant ? " passes in the distance." : " rushes past.");
     sys_broadcast(room, cs_cstr(&o));
 
-    o.len = 0;                                  /* riders see where they are */
-    cs_s(&o, "Through the window: ");
+    o.len = 0;                                  /* riders see the room */
+    cs_s(&o, distant ? "In the distance: " : "Through the window: ");
     cs_s(&o, rn);
     cs_s(&o, ".");
     sys_broadcast(self, cs_cstr(&o));
 
-    while ((e = sys_next(room, e)) != 0) {      /* and who is outside */
+    while ((e = sys_next(room, e)) != 0) {      /* and glimpse who is in it */
         if (cs_geti(e, "charid", -1) < 0)
             continue;
         cs_getstr(cs_sheet(e), "name", nm, sizeof(nm));
         o.len = 0;
         cs_s(&o, "You glimpse ");
         cs_s(&o, nm);
-        cs_s(&o, " outside.");
+        cs_s(&o, distant ? " in the distance." : " outside.");
         sys_broadcast(self, cs_cstr(&o));
     }
+}
+
+/* the window on a pass-through room: the room the vehicle occupies, plus any
+   rooms that position can see into. A pass-through room names those in an
+   `observe` list (M34 slice 2b), so a rider glimpses a platform the train skips
+   and the people on it, and they see it pass in the distance. */
+static void
+window(int self, int room)
+{
+    int obs[8], nobs, i;
+    char obuf[128];
+
+    glimpse(self, room, 0);
+    cs_getstr(room, "observe", obuf, sizeof(obuf));
+    nobs = parse_ids(obuf, obs, 8);
+    for (i = 0; i < nobs; i++)
+        glimpse(self, obs[i], 1);
 }
 
 /* advance one step along `path` (M34 slice 2): the vehicle walks each room in

@@ -1543,12 +1543,21 @@ curl -sf -X POST -d "$SID1 @set #$LIFT.transit=" http://localhost:$PORT/cmd >/de
 # A train may carry a `path`: every room it traverses in order, the stops plus
 # the pass-through rooms between them. It then walks one room per tick and really
 # occupies each, so a rider sees the tunnel go by ("Through the window") and a
-# player standing in that tunnel sees the train ("rushes past"). Build a tunnel
-# between the hub and Level Two and run a short looping subway through it.
+# player standing in that tunnel sees the train ("rushes past"). A pass-through
+# room may also `observe` a room it can see into (slice 2b), so a rider glimpses
+# a platform the subway skips and its people see it pass in the distance. Build a
+# tunnel and platform beside the hub and run a short looping subway through it.
 curl -sf -X POST -d "$SID1 @go #$HUB" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
 TUN=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
 curl -sf -X POST -d "$SID1 @set #$TUN.name=the tunnel" http://localhost:$PORT/cmd >/dev/null
+# a platform the tunnel can see into (M34 slice 2b): the subway never enters it,
+# but from the tunnel its riders glimpse it and the people on it see the subway
+# pass in the distance.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+PLAT=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$PLAT.name=the platform" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$TUN.observe=$PLAT" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
 SUB=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
 curl -sf -X POST -d "$SID1 @set #$SUB.name=subway" http://localhost:$PORT/cmd >/dev/null
@@ -1566,6 +1575,9 @@ curl -sf -X POST -d "$SID1 @wake #$SUB" http://localhost:$PORT/cmd >/dev/null
 # the rider sees the pass-through tunnel and then the arrival at the next stop
 check_log /tmp/smolmoo_p1.log 'Through the window: the tunnel' \
 	"a rider on a path train sees a pass-through room go by"
+# from the tunnel the rider also glimpses the platform it can see into
+check_log /tmp/smolmoo_p1.log 'In the distance: the platform' \
+	"a rider glimpses a room the pass-through can see into"
 check_log /tmp/smolmoo_p1.log 'subway arrives at Level Two' \
 	"a path train carries its rider to the next stop"
 # step off and stand in the tunnel; the looping subway soon rushes past
@@ -1573,6 +1585,10 @@ curl -sf -X POST -d "$SID1 disembark" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #$TUN" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'subway rushes past' \
 	"a player in a pass-through room sees the train go by"
+# stand on the observed platform; the subway passes in the distance, not through
+curl -sf -X POST -d "$SID1 @go #$PLAT" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'subway passes in the distance' \
+	"a player in an observed room sees the train pass in the distance"
 # quiet the subway so its loop does not bleed into later assertions
 curl -sf -X POST -d "$SID1 @sleep #$SUB" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$SUB.route=" http://localhost:$PORT/cmd >/dev/null

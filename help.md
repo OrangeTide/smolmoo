@@ -192,6 +192,7 @@ Riders board it, ride it, and step off wherever it currently is.
     @set #N.dwell=8000              tick period in ms for a timed vehicle
     @set #N.transit=4000            travel time in ms between stops (optional)
     @set #N.path=#A,#T,#B           full room-by-room traversal (train, optional)
+    @set #<room>.observe=#P,#Q      rooms a pass-through room can see into
     @set #<stop>.line=#N            let `call` on that platform summon it
     @wake #N                        start it (wizard only)
 
@@ -212,7 +213,11 @@ A train may also carry a `path`: every room it traverses in order, the stops fro
 With a `path` the train walks one room per tick and really occupies each, so a
 rider sees each pass-through room go by and anyone standing in it sees the train
 pass, and each glimpses the other. Only a self-paced train follows a path; an
-elevator still hops to the stop it is sent to. Players use it with:
+elevator still hops to the stop it is sent to.
+
+A pass-through room may `observe` other rooms it can see into. While the train is
+in that room its riders also glimpse those rooms in the distance, and anyone
+there sees the train pass in the distance. Players use it with:
 
     board <vehicle>                 climb aboard, when it is at your stop
     floor <n>                       (aboard an elevator) go to the nth stop
