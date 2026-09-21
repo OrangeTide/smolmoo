@@ -367,9 +367,10 @@ at most two saves are ever outstanding.
 This signed, verifiable history is the local half of what the CAS and
 signing foundation makes possible. The networked half, federation across
 servers (publishing the world root as a signed topic, peering by hash,
-and off-site backup followers), is deferred by decision. It needs an
-unvendored sync protocol and ref layers, and amounts to a new networked
-subsystem that a single-server world does not need. See FUTURE.md for
+and off-site backup followers), is deferred to a distant future by
+decision. It amounts to a new networked subsystem, and it is not
+interesting until a server carries hundreds of active players, so it is
+gated by server maturity rather than explored ahead of that. See FUTURE.md for
 that menu and the full rationale.
 
 ## Browser UI

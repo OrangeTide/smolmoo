@@ -476,9 +476,12 @@ A broader menu of directions the CAS and signing foundation opens up (SHOAL,
 peering, backup followers, branching, asset storage) lives in FUTURE.md.
 
 The federation stack (SHOAL, multi-server peering, and the backup follower) is
-deferred by decision. It needs the unvendored have/want sync protocol plus the
-`cas-topic` and `cas-tree` ref layers, and amounts to a new networked
-subsystem. The local half already shipped as versioned history (M29-M31), which
-covers what a single-server world needs. Packfile compaction is likewise
+deferred to a distant future by decision. It needs the unvendored have/want
+sync protocol plus the `cas-topic` and `cas-tree` ref layers, and amounts to a
+new networked subsystem. The local half already shipped as versioned history
+(M29-M31), which covers what a single-server world needs. Federation is gated
+by server maturity: it is not worth exploring until a server carries hundreds
+of active players, since that growth will decide the design. Packfile
+compaction is likewise
 deferred. Both are documented with full rationale in FUTURE.md; revisit either
 when a concrete use case justifies the code.

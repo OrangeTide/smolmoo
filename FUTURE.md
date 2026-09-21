@@ -53,15 +53,20 @@ Leans on: CAS addressing, a fetch-by-hash sync protocol (REEF, the
 have/want exchange upstream describes), `cas-sign` for trust between
 peers.
 
-Deferred for now, by decision. This is the anchor of the federation
-stack (SHOAL above, the backup follower below, and REEF sync), and none
-of it is cheap: the have/want sync protocol is not vendored, `cas-topic`
+Deferred to a distant future, by decision. This is the anchor of the
+federation stack (SHOAL above, the backup follower below, and REEF sync), and
+none of it is cheap: the have/want sync protocol is not vendored, `cas-topic`
 and `cas-tree` are not vendored, and a networked object exchange is a new
 subsystem rather than a small addition. The local half of the story has
 already shipped as versioned history (`@history`/`@rewind`/`@gc`/`@fsck`),
-which is what most single-server worlds need. Revisit when a concrete
-multi-server or off-site use case justifies vendoring the sync and ref
-layers.
+which is what a single-server world needs.
+
+The gate is server maturity, not a use case waiting to be invented. Federation
+is not interesting until one server carries hundreds of active players and has
+proven itself in steady operation. Until then it is not worth exploring in
+depth, since the shape of what a mature server actually needs will decide the
+design. Do not vendor the sync and ref layers or prototype peering ahead of
+that; revisit only once an active server's own growth demands it.
 
 ## Remote backup follower
 
