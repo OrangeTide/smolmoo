@@ -1325,15 +1325,16 @@ Q2=$(grep -c 'Created #' /tmp/smolmoo_p3.log 2>/dev/null || true)
 [ "${Q2:-0}" -eq "${Q1:-0}" ] \
 	&& pass "the refused create made no object" \
 	|| fail "the refused create made no object"
-# an admin is exempt even at the low quota
-P1=$(grep -c 'Created #' /tmp/smolmoo_p1.log 2>/dev/null || true)
+# an admin is exempt even at the low quota (use Q-counters, not P1/P2, which
+# hold the SSE listener PIDs the cleanup trap kills)
+QW1=$(grep -c 'Created #' /tmp/smolmoo_p1.log 2>/dev/null || true)
 curl -sf -X POST -d "$SID1 @create #300" http://localhost:$PORT/cmd >/dev/null
 _qi=0; while [ $_qi -lt 60 ]; do
-	P2=$(grep -c 'Created #' /tmp/smolmoo_p1.log 2>/dev/null || true)
-	[ "${P2:-0}" -gt "${P1:-0}" ] && break
+	QW2=$(grep -c 'Created #' /tmp/smolmoo_p1.log 2>/dev/null || true)
+	[ "${QW2:-0}" -gt "${QW1:-0}" ] && break
 	sleep 0.05; _qi=$((_qi + 1))
 done
-[ "${P2:-0}" -gt "${P1:-0}" ] \
+[ "${QW2:-0}" -gt "${QW1:-0}" ] \
 	&& pass "a wizard is exempt from the quota" \
 	|| fail "a wizard is exempt from the quota"
 # raise the quota; TestPlayer3 can build again
@@ -1537,6 +1538,45 @@ curl -sf -X POST -d "$SID1 disembark" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'steps off the elevator' \
 	"a rider can disembark once the timed vehicle has stopped"
 curl -sf -X POST -d "$SID1 @set #$LIFT.transit=" http://localhost:$PORT/cmd >/dev/null
+
+# --- M34 slice 2: spatial transit (a path with pass-through rooms) ---
+# A train may carry a `path`: every room it traverses in order, the stops plus
+# the pass-through rooms between them. It then walks one room per tick and really
+# occupies each, so a rider sees the tunnel go by ("Through the window") and a
+# player standing in that tunnel sees the train ("rushes past"). Build a tunnel
+# between the hub and Level Two and run a short looping subway through it.
+curl -sf -X POST -d "$SID1 @go #$HUB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+TUN=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$TUN.name=the tunnel" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+SUB=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SUB.name=subway" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SUB.description=A subway car." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SUB.vehicle=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SUB.location=#$HUB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SUB.route=$HUB,$L2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SUB.path=$HUB,$TUN,$L2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SUB.dwell=250" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SUB.transit=250" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SUB.brain=#456" http://localhost:$PORT/cmd >/dev/null
+# board at the hub while it is stopped, then wake it so it walks the path
+curl -sf -X POST -d "$SID1 board subway" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @wake #$SUB" http://localhost:$PORT/cmd >/dev/null
+# the rider sees the pass-through tunnel and then the arrival at the next stop
+check_log /tmp/smolmoo_p1.log 'Through the window: the tunnel' \
+	"a rider on a path train sees a pass-through room go by"
+check_log /tmp/smolmoo_p1.log 'subway arrives at Level Two' \
+	"a path train carries its rider to the next stop"
+# step off and stand in the tunnel; the looping subway soon rushes past
+curl -sf -X POST -d "$SID1 disembark" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$TUN" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'subway rushes past' \
+	"a player in a pass-through room sees the train go by"
+# quiet the subway so its loop does not bleed into later assertions
+curl -sf -X POST -d "$SID1 @sleep #$SUB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SUB.route=" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$HUB" http://localhost:$PORT/cmd >/dev/null
 
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running

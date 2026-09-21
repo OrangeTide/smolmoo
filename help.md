@@ -191,6 +191,7 @@ Riders board it, ride it, and step off wherever it currently is.
     @set #N.brain=#456              the vehicle agent (__transit)
     @set #N.dwell=8000              tick period in ms for a timed vehicle
     @set #N.transit=4000            travel time in ms between stops (optional)
+    @set #N.path=#A,#T,#B           full room-by-room traversal (train, optional)
     @set #<stop>.line=#N            let `call` on that platform summon it
     @wake #N                        start it (wizard only)
 
@@ -204,7 +205,14 @@ With a positive `transit` the vehicle takes that many milliseconds to travel
 between stops: it departs, rides with its doors shut, then arrives. While it is
 under way `board`, `disembark`, `floor`, and `call` are refused, so a rider is
 carried along and cannot get off in the middle. With no `transit` the trip is
-instant, as before. Players use it with:
+instant, as before.
+
+A train may also carry a `path`: every room it traverses in order, the stops from
+`route` plus the pass-through rooms between them (a tunnel, a stretch of track).
+With a `path` the train walks one room per tick and really occupies each, so a
+rider sees each pass-through room go by and anyone standing in it sees the train
+pass, and each glimpses the other. Only a self-paced train follows a path; an
+elevator still hops to the stop it is sent to. Players use it with:
 
     board <vehicle>                 climb aboard, when it is at your stop
     floor <n>                       (aboard an elevator) go to the nth stop

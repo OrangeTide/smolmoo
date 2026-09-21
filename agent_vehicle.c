@@ -11,6 +11,11 @@
  *                       `route`) through sys_notify.
  * `route` is a comma-separated list of stop room ids; `stop_idx` tracks the
  * current stop. Each move announces to the riders and to both platforms.
+ * A train may also carry a `path` (M34 slice 2): a comma-separated list of every
+ * room it traverses in order, the stops among them plus the pass-through rooms
+ * between (tunnels, track). With a `path` the train walks one room per tick and
+ * really occupies each, so its riders and anyone standing in a pass-through room
+ * see one another go by; `path_idx` tracks its place along it.
  * Setuid: moving the vehicle needs the owner's authority. */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
@@ -141,17 +146,109 @@ say(int self, const char *tail)
     sys_broadcast(self, cs_cstr(&o));
 }
 
+/* the window (M34 slice 2): while passing through a room that is not a stop, the
+   room sees the vehicle go by and the riders see where they are and who is
+   outside. The vehicle occupies `room` (its own location), so its riders share
+   the room with anyone standing there; a player avatar carries a `charid`, which
+   tells it apart from the vehicle itself and from loose items. */
+static void
+window(int self, int room)
+{
+    struct cs_out o;
+    char vn[32], rn[32], nm[32];
+    int e = 0;
+
+    cs_getstr(self, "name", vn, sizeof(vn));
+    cs_getstr(room, "name", rn, sizeof(rn));
+
+    o.len = 0;                                  /* the room sees us pass */
+    cs_s(&o, "The ");
+    cs_s(&o, vn);
+    cs_s(&o, " rushes past.");
+    sys_broadcast(room, cs_cstr(&o));
+
+    o.len = 0;                                  /* riders see where they are */
+    cs_s(&o, "Through the window: ");
+    cs_s(&o, rn);
+    cs_s(&o, ".");
+    sys_broadcast(self, cs_cstr(&o));
+
+    while ((e = sys_next(room, e)) != 0) {      /* and who is outside */
+        if (cs_geti(e, "charid", -1) < 0)
+            continue;
+        cs_getstr(cs_sheet(e), "name", nm, sizeof(nm));
+        o.len = 0;
+        cs_s(&o, "You glimpse ");
+        cs_s(&o, nm);
+        cs_s(&o, " outside.");
+        sys_broadcast(self, cs_cstr(&o));
+    }
+}
+
+/* advance one step along `path` (M34 slice 2): the vehicle walks each room in
+   turn, not just stop to stop, so it has a real position. A room that is also a
+   stop opens the doors; any other room is a pass-through window. The current
+   position is taken from the vehicle's actual location so it stays in step even
+   if it was placed by hand. */
+static void
+advance_path(int self, int *path, int plen, int *stops, int nstops)
+{
+    int here = sys_getobj(self, "location");
+    int cur = cs_geti(self, "path_idx", 0);
+    int next, i, at_stop;
+
+    for (i = 0; i < plen; i++)
+        if (path[i] == here) { cur = i; break; }
+    next = cur + 1 >= plen ? 0 : cur + 1;
+
+    grant_accept();
+    for (i = 0; i < nstops; i++)                /* announce leaving a station */
+        if (path[cur] == stops[i]) { announce_depart(self, path[cur]); break; }
+
+    sys_move(self, path[next]);
+    cs_seti(self, "path_idx", next);
+
+    at_stop = -1;
+    for (i = 0; i < nstops; i++)
+        if (path[next] == stops[i]) { at_stop = i; break; }
+    if (at_stop >= 0) {
+        cs_seti(self, "stop_idx", at_stop);
+        cs_seti(self, "moving", 0);             /* doors open at the stop */
+        announce_arrive(self, path[next]);
+    } else {
+        cs_seti(self, "moving", 1);             /* still under way */
+        window(self, path[next]);
+    }
+}
+
 void
 on_event(const struct verb_event *m)
 {
     int self = vm_args->this_obj;
     int stops[16], n, idx;
-    char route[128];
+    int path[32], plen;
+    char route[128], pathbuf[256];
 
     cs_getstr(self, "route", route, sizeof(route));
     n = parse_ids(route, stops, 16);
     if (n == 0)
         return;
+
+    /* A `path` (M34 slice 2) makes the vehicle walk every room in turn, so it
+       has a real position and its riders and the rooms it passes see each other.
+       Only a self-paced train follows one; an on-command elevator still hops. */
+    plen = 0;
+    if (cs_geti(self, "dwell", -1) > 0) {
+        cs_getstr(self, "path", pathbuf, sizeof(pathbuf));
+        plen = parse_ids(pathbuf, path, 32);
+    }
+    if (plen > 1) {
+        if (m->type == EV_TIMER)
+            advance_path(self, path, plen, stops, n);
+        else if (m->type == EV_USER)
+            say(self, " runs a fixed route.");
+        return;
+    }
 
     /* Under way: the only thing that acts is the arrival tick; a request waits
        for the doors. */
