@@ -501,6 +501,33 @@ listing checked as the non-admin `TestPlayer3`.
 
 ---
 
+## Milestone 34: Vehicles in transit
+
+Vehicles can take game time between stops instead of hopping instantly. The full
+plan is `M34.md`; this is the summary. Slice 1 (timed transit) shipped
+(e12152e).
+
+The event loop enabler is a per-cycle dwell: `verbmain` now re-reads
+`verb_dwell()` before each block instead of once at startup, so an agent can vary
+its tick with its state. This is backward compatible, a constant-returning agent
+is unaffected.
+
+A vehicle gains an optional `transit` property (travel time in ms). With a
+positive value the agent (`agent_vehicle.c`) runs a two-phase cycle: it departs,
+moves to the target stop with its doors shut (a `moving` flag set, `verb_dwell`
+returning `transit`), and opens on the next tick, announcing arrival. While
+`moving`, `board`/`disembark`/`floor`/`call` refuse ("doors are closed"), so a
+rider is carried along and cannot get on or off mid-trip. With no `transit` the
+trip is the old instant hop, so existing vehicles are unchanged. The suite grew
+to 285 checks.
+
+The deferred slice is spatial awareness: a vehicle knowing where it is on a
+route segment so riders see what is outside (a platform, a tunnel, the players
+there) and are seen in turn. It needs a segment model and a per-tick visibility
+pass, so it is gated on real routes being in use, and is designed in `M34.md`.
+
+---
+
 # Future Milestones
 
 A broader menu of directions the CAS and signing foundation opens up (SHOAL,
