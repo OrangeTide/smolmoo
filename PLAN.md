@@ -470,6 +470,37 @@ TAP unit tests cover the arc end to end (274 smoke checks pass).
 
 ---
 
+## Milestone 33: Builder self-sufficiency (OLC-8)
+
+Completes the OLC arc's promise: a builder runs a living, self-authored world
+without touching the repo tree. The full plan is `M33.md`; this is the summary.
+Three slices shipped.
+
+M33a is in-game agent authoring (dcbd0a9). `@program #N agent` compiles a C
+program that also links `verbmain.o`, the generic event-loop `main()`, so a
+builder writes a mob or vehicle brain in the web editor and `@wake`s it with no
+rebuild. It reuses the existing agent build path (the installer's `agent_`
+prefix), exposed to `@program` through an explicit token.
+
+M33b is a per-account object ownership quota (6ebe152). `obj_quota` reads
+`#0.objquota` (default 256) so an operator tunes it live, and `acct_over_quota`
+gates all three creation paths, `sys_create` (returning `-E_QUOTA`), `@create`,
+and `@clone`, so open building cannot march the id space toward `OBJ_EPH_BASE`.
+Wizards are exempt.
+
+M33c is prototype discovery (393715e). `@proto list` walks `#0`'s properties and
+prints each objref registration as `<key> #<id> <name>`, so a builder finds a
+parent for `@create` without reading source. It is a host command, not a verb,
+because a verb cannot enumerate `#0`'s property keys (there is no
+`sys_nextprop`).
+
+The one remaining slice, generic `@clone` of list-valued properties, is deferred
+as optional: no world object uses list-valued props today. The smoke suite grew
+to 282 checks, covering each slice, with the permission-sensitive quota and
+listing checked as the non-admin `TestPlayer3`.
+
+---
+
 # Future Milestones
 
 A broader menu of directions the CAS and signing foundation opens up (SHOAL,
