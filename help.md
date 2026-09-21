@@ -212,12 +212,13 @@ A train may also carry a `path`: every room it traverses in order, the stops fro
 `route` plus the pass-through rooms between them (a tunnel, a stretch of track).
 With a `path` the train walks one room per tick and really occupies each, so a
 rider sees each pass-through room go by and anyone standing in it sees the train
-pass, and each glimpses the other. Only a self-paced train follows a path; an
-elevator still hops to the stop it is sent to.
+pass, and each glimpses the other. A train loops its path; an elevator with a
+path walks toward the stop it is sent to, showing the rooms it passes, instead of
+hopping there.
 
-A pass-through room may `observe` other rooms it can see into. While the train is
-in that room its riders also glimpse those rooms in the distance, and anyone
-there sees the train pass in the distance. Players use it with:
+A pass-through room may `observe` other rooms it can see into. While the vehicle
+is in that room its riders also glimpse those rooms in the distance, and anyone
+there sees it pass in the distance. Players use it with:
 
     board <vehicle>                 climb aboard, when it is at your stop
     floor <n>                       (aboard an elevator) go to the nth stop

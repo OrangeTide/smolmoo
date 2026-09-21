@@ -1594,6 +1594,36 @@ curl -sf -X POST -d "$SID1 @sleep #$SUB" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$SUB.route=" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #$HUB" http://localhost:$PORT/cmd >/dev/null
 
+# M34 slice 2c: an on-command elevator with a `path` walks toward the requested
+# stop, showing the rooms it passes, instead of hopping straight there. Build a
+# shaft (pass-through) between the hub and Level Three and a lift that walks it.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+SHAFT=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SHAFT.name=the shaft" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+CAR=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$CAR.name=cablecar" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CAR.description=A glass car." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CAR.vehicle=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CAR.location=#$HUB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CAR.route=$HUB,$L3" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CAR.path=$HUB,$SHAFT,$L3" http://localhost:$PORT/cmd >/dev/null
+# no dwell: it is on command; a transit time makes it tick between rooms
+curl -sf -X POST -d "$SID1 @set #$CAR.transit=250" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CAR.brain=#456" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 board cablecar" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @wake #$CAR" http://localhost:$PORT/cmd >/dev/null
+# ask for the second stop (Level Three); it walks the shaft, not hops
+curl -sf -X POST -d "$SID1 floor 2" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Through the window: the shaft' \
+	"a path elevator shows the rooms it passes on the way"
+check_log /tmp/smolmoo_p1.log 'cablecar arrives at Level Three' \
+	"a path elevator walks to the requested stop and opens there"
+curl -sf -X POST -d "$SID1 disembark" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @sleep #$CAR" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CAR.route=" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$HUB" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.

@@ -11,14 +11,15 @@
  *                       `route`) through sys_notify.
  * `route` is a comma-separated list of stop room ids; `stop_idx` tracks the
  * current stop. Each move announces to the riders and to both platforms.
- * A train may also carry a `path` (M34 slice 2): a comma-separated list of every
- * room it traverses in order, the stops among them plus the pass-through rooms
- * between (tunnels, track). With a `path` the train walks one room per tick and
+ * A vehicle may also carry a `path` (M34 slice 2): a comma-separated list of
+ * every room it traverses in order, the stops among them plus the pass-through
+ * rooms between (tunnels, track). With a `path` it walks one room per tick and
  * really occupies each, so its riders and anyone standing in a pass-through room
- * see one another go by; `path_idx` tracks its place along it. A pass-through
- * room may also carry an `observe` list of rooms visible from it (M34 slice 2b),
- * so a rider glimpses a platform the train skips and its people see it pass in
- * the distance.
+ * see one another go by; `path_idx` tracks its place along it. A train loops its
+ * path; an elevator walks it toward the requested stop `dest` (slice 2c) and
+ * blocks there. A pass-through room may also carry an `observe` list of rooms
+ * visible from it (M34 slice 2b), so a rider glimpses a platform the vehicle
+ * skips and its people see it pass in the distance.
  * Setuid: moving the vehicle needs the owner's authority. */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
@@ -206,21 +207,30 @@ window(int self, int room)
         glimpse(self, obs[i], 1);
 }
 
-/* advance one step along `path` (M34 slice 2): the vehicle walks each room in
-   turn, not just stop to stop, so it has a real position. A room that is also a
-   stop opens the doors; any other room is a pass-through window. The current
-   position is taken from the vehicle's actual location so it stays in step even
-   if it was placed by hand. */
-static void
-advance_path(int self, int *path, int plen, int *stops, int nstops)
+/* the vehicle's current index into `path`, taken from its actual location so it
+   stays in step even if it was placed by hand, falling back to the stored idx. */
+static int
+path_here(int self, int *path, int plen)
 {
     int here = sys_getobj(self, "location");
-    int cur = cs_geti(self, "path_idx", 0);
-    int next, i, at_stop;
+    int i;
 
     for (i = 0; i < plen; i++)
-        if (path[i] == here) { cur = i; break; }
-    next = cur + 1 >= plen ? 0 : cur + 1;
+        if (path[i] == here)
+            return i;
+    return cs_geti(self, "path_idx", 0);
+}
+
+/* move one room along `path` from `cur` to `next` (M34 slice 2): leave the
+   current station, then either open the doors at `next` (when `arrive`) or window
+   past it. A pass-through room shuts the doors and shows what is outside; a stop
+   opens them. The vehicle really occupies each room, so its position is a fact
+   any verb can read. */
+static void
+step_to(int self, int *path, int *stops, int nstops, int cur, int next,
+        int arrive)
+{
+    int i, at_stop = -1;
 
     grant_accept();
     for (i = 0; i < nstops; i++)                /* announce leaving a station */
@@ -229,17 +239,49 @@ advance_path(int self, int *path, int plen, int *stops, int nstops)
     sys_move(self, path[next]);
     cs_seti(self, "path_idx", next);
 
-    at_stop = -1;
     for (i = 0; i < nstops; i++)
         if (path[next] == stops[i]) { at_stop = i; break; }
-    if (at_stop >= 0) {
-        cs_seti(self, "stop_idx", at_stop);
+    if (arrive) {
+        if (at_stop >= 0)
+            cs_seti(self, "stop_idx", at_stop);
         cs_seti(self, "moving", 0);             /* doors open at the stop */
         announce_arrive(self, path[next]);
     } else {
         cs_seti(self, "moving", 1);             /* still under way */
         window(self, path[next]);
     }
+}
+
+/* a train's tick: walk one room forward along `path`, looping at the end, and
+   stop at every stop it reaches. */
+static void
+advance_path(int self, int *path, int plen, int *stops, int nstops)
+{
+    int cur = path_here(self, path, plen);
+    int next = cur + 1 >= plen ? 0 : cur + 1;
+    int arrive = 0, i;
+
+    for (i = 0; i < nstops; i++)
+        if (path[next] == stops[i]) { arrive = 1; break; }
+    step_to(self, path, stops, nstops, cur, next, arrive);
+}
+
+/* an elevator's tick (M34 slice 2c): walk one room toward the target stop `dest`
+   (a path index), passing any intermediate stop and opening only when it lands
+   on the target. Clears `dest` on arrival so the loop blocks until the next
+   request. */
+static void
+step_toward(int self, int *path, int plen, int *stops, int nstops, int dest)
+{
+    int cur = path_here(self, path, plen);
+    int next;
+
+    if (cur == dest)
+        return;
+    next = dest > cur ? cur + 1 : cur - 1;
+    if (next == dest)
+        cs_seti(self, "dest", -1);
+    step_to(self, path, stops, nstops, cur, next, next == dest);
 }
 
 void
@@ -257,17 +299,38 @@ on_event(const struct verb_event *m)
 
     /* A `path` (M34 slice 2) makes the vehicle walk every room in turn, so it
        has a real position and its riders and the rooms it passes see each other.
-       Only a self-paced train follows one; an on-command elevator still hops. */
-    plen = 0;
-    if (cs_geti(self, "dwell", -1) > 0) {
-        cs_getstr(self, "path", pathbuf, sizeof(pathbuf));
-        plen = parse_ids(pathbuf, path, 32);
-    }
-    if (plen > 1) {
+       A self-paced train loops its path; an on-command elevator walks it toward
+       the requested stop (slice 2c) instead of hopping. */
+    cs_getstr(self, "path", pathbuf, sizeof(pathbuf));
+    plen = parse_ids(pathbuf, path, 32);
+    if (plen > 1 && cs_geti(self, "dwell", -1) > 0) {   /* train: loop */
         if (m->type == EV_TIMER)
             advance_path(self, path, plen, stops, n);
         else if (m->type == EV_USER)
             say(self, " runs a fixed route.");
+        return;
+    }
+    if (plen > 1) {                             /* elevator on a path */
+        if (m->type == EV_TIMER) {
+            int dest = cs_geti(self, "dest", -1);
+            if (dest >= 0)
+                step_toward(self, path, plen, stops, n, dest);
+        } else if (m->type == EV_USER) {
+            int f = cs_atoi((const char *)m->argstr);
+            int dest = -1, i;
+
+            if (f < 1 || f > n) {
+                say(self, " has no such floor.");
+                return;
+            }
+            for (i = 0; i < plen; i++)          /* the stop's place on the path */
+                if (path[i] == stops[f - 1]) { dest = i; break; }
+            if (dest >= 0) {
+                grant_accept();                 /* elevate to persist `dest` */
+                cs_seti(self, "dest", dest);
+                step_toward(self, path, plen, stops, n, dest);
+            }
+        }
         return;
     }
 
