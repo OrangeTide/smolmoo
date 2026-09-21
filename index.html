@@ -284,15 +284,10 @@ src.onmessage = function(e) {
     }
     inp.disabled = false;
     inp.focus();
-  } else if (c === '-') {
-    inp.disabled = true;
-    if (s) stat.textContent = s;
   } else if (c === '=') {
     stat.textContent = s;
   } else if (c === '!') {
     alert(s);
-  } else if (c === '^') {
-    location.reload();
   } else {
     addOutput(s);
   }
