@@ -83,6 +83,7 @@ Create and edit objects. Most building commands are wizard or owner gated.
     @go #N                   teleport yourself to a room (wizard only)
     @find <name>             list objects whose name matches
     @contents [#N]           list what is in a room or container
+    @proto list              list the prototypes registered on #0
     @edit #N.prop            open a property in the web editor (read-write)
     @view #N.prop            open a property in the web viewer (read-only)
     @chmod #N.prop=rw,r,r    set per-property permission flags

@@ -1348,6 +1348,17 @@ done
 	&& pass "raising the quota lets a builder create again" \
 	|| fail "raising the quota lets a builder create again"
 
+# --- M33c: prototype discovery (see M33.md) ---
+# @proto list shows the prototypes registered on #0 so a builder can find a
+# parent for @create without reading source. Read-only and unprivileged, so
+# check it as the non-admin TestPlayer3. The prototype names are unique to this
+# listing in TestPlayer3's log, so presence is a sound assertion.
+curl -sf -X POST -d "$SID3 @proto list" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'Room Prototype' \
+	"@proto list shows the room prototype (non-admin)"
+check_log /tmp/smolmoo_p3.log 'Reset Prototype' \
+	"@proto list shows the reset prototype"
+
 # --- OLC-6: proactive mob behavior (see OLC.md) ---
 # A mob woken as an agent (brain #453, __rover) acts on its own: wander steps a
 # random exit each tick, patrol follows a route, and it still greets on entry.

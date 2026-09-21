@@ -5558,6 +5558,40 @@ cmd_feedback(int sid, const char *args)
         return;
     }
 
+    /* @proto list : list the prototypes and system objects registered on #0,
+       so a builder can pick a parent for @create without reading source.
+       Read-only and unprivileged. This is a host command because a verb cannot
+       enumerate #0's property keys (there is no sys_nextprop). */
+    if (strcmp(tag, "proto") == 0) {
+        struct obj *sys = obj_find(0);
+        const char *a_name = make_atom("name");
+        char b[128], i1[16];
+        int found = 0;
+
+        if (*p && strcmp(p, "list") != 0) {
+            session_write(sid, "Usage: @proto list");
+            return;
+        }
+        if (!sys) { session_write(sid, "No system object."); return; }
+        for (int i = 0; i < sys->nprops; i++) {
+            struct obj *t;
+            const char *nm;
+
+            if (sys->props[i].val.type != VAL_OBJ)
+                continue;
+            t = obj_find(sys->props[i].val.obj);
+            nm = t ? prop_str(t, a_name) : NULL;
+            snprintf(b, sizeof(b), "  %-8s %s  %s",
+                     sys->props[i].name,
+                     obj_fmt(sys->props[i].val.obj, i1, sizeof(i1)),
+                     nm ? nm : "(unnamed)");
+            session_write(sid, b);
+            found++;
+        }
+        if (!found) session_write(sid, "  (none registered)");
+        return;
+    }
+
     /* @dig <exit> to <room name | #N> : create a room (or link an existing
        one) and a matching pair of exits. Only the room's owner (or a wizard)
        may add an exit leading out of it. */
