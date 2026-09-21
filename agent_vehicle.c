@@ -40,55 +40,90 @@ parse_ids(const char *s, int *out, int max)
     return n;
 }
 
-/* the tick period: > 0 for a self-paced train, <= 0 (default) for an
-   on-command elevator that only moves on an EV_USER request */
+/* The tick period. While `moving` (between stops, M34) it is `transit`, the
+   travel time, so the loop wakes on arrival. At a stop it is `dwell`: > 0 for a
+   self-paced train, <= 0 (default) for an on-command elevator that only moves on
+   an EV_USER request. verbmain re-reads this each cycle, so it may change with
+   the vehicle's state. */
 int
 verb_dwell(void)
 {
-    return cs_geti(vm_args->this_obj, "dwell", -1);
+    int self = vm_args->this_obj;
+
+    if (cs_geti(self, "moving", 0))
+        return cs_geti(self, "transit", 0);
+    return cs_geti(self, "dwell", -1);
 }
 
-/* relocate the vehicle to `stop`, announcing to riders and both platforms */
+/* announce departure to the riders and the origin platform */
 static void
-arrive(int self, int stop)
+announce_depart(int self, int from)
 {
     struct cs_out o;
-    char vn[32], sn[32];
-    int from = sys_getobj(self, "location");
+    char vn[32];
 
-    if (stop <= 0 || stop == from)
-        return;
     cs_getstr(self, "name", vn, sizeof(vn));
-    cs_getstr(stop, "name", sn, sizeof(sn));
-
-    grant_accept();
-    o.len = 0;                                  /* riders: departure */
+    o.len = 0;                                  /* riders */
     cs_s(&o, "The ");
     cs_s(&o, vn);
     cs_s(&o, " lurches into motion.");
     sys_broadcast(self, cs_cstr(&o));
-
-    o.len = 0;                                  /* old platform */
+    o.len = 0;                                  /* origin platform */
     cs_s(&o, "The ");
     cs_s(&o, vn);
     cs_s(&o, " departs.");
     sys_broadcast(from, cs_cstr(&o));
+}
 
-    sys_move(self, stop);
+/* announce arrival to the destination platform and the riders */
+static void
+announce_arrive(int self, int stop)
+{
+    struct cs_out o;
+    char vn[32], sn[32];
 
-    o.len = 0;                                  /* new platform */
+    cs_getstr(self, "name", vn, sizeof(vn));
+    cs_getstr(stop, "name", sn, sizeof(sn));
+    o.len = 0;                                  /* destination platform */
     cs_s(&o, "The ");
     cs_s(&o, vn);
     cs_s(&o, " pulls in.");
     sys_broadcast(stop, cs_cstr(&o));
-
-    o.len = 0;                                  /* riders: arrival */
+    o.len = 0;                                  /* riders */
     cs_s(&o, "The ");
     cs_s(&o, vn);
     cs_s(&o, " arrives at ");
     cs_s(&o, sn);
     cs_s(&o, ".");
     sys_broadcast(self, cs_cstr(&o));
+}
+
+/* begin a move to `stop`. With a positive `transit` the vehicle departs, rides
+   to the stop with its doors shut (`moving` set), and opens on the next tick;
+   otherwise it is the old instant hop. */
+static void
+go_to(int self, int stop)
+{
+    int from = sys_getobj(self, "location");
+
+    if (stop <= 0 || stop == from)
+        return;
+    grant_accept();
+    announce_depart(self, from);
+    sys_move(self, stop);
+    if (cs_geti(self, "transit", 0) > 0)
+        cs_seti(self, "moving", 1);             /* doors shut; open next tick */
+    else
+        announce_arrive(self, stop);            /* instant: open now */
+}
+
+/* the arrival tick: open the doors at the current stop and leave transit */
+static void
+open_doors(int self)
+{
+    grant_accept();
+    cs_seti(self, "moving", 0);
+    announce_arrive(self, sys_getobj(self, "location"));
 }
 
 /* broadcast a short refusal to the riders */
@@ -118,12 +153,22 @@ on_event(const struct verb_event *m)
     if (n == 0)
         return;
 
+    /* Under way: the only thing that acts is the arrival tick; a request waits
+       for the doors. */
+    if (cs_geti(self, "moving", 0)) {
+        if (m->type == EV_TIMER)
+            open_doors(self);
+        else if (m->type == EV_USER)
+            say(self, " is under way; the doors are closed.");
+        return;
+    }
+
     if (m->type == EV_TIMER) {                  /* train: next stop each tick */
         idx = cs_geti(self, "stop_idx", 0) + 1;
         if (idx >= n)
             idx = 0;
         cs_seti(self, "stop_idx", idx);
-        arrive(self, stops[idx]);
+        go_to(self, stops[idx]);
     } else if (m->type == EV_USER) {            /* a stop request (the `floor`
                                                    verb sends the stop number in
                                                    argstr) */
@@ -136,7 +181,7 @@ on_event(const struct verb_event *m)
         }
         if (f >= 1 && f <= n) {
             cs_seti(self, "stop_idx", f - 1);
-            arrive(self, stops[f - 1]);
+            go_to(self, stops[f - 1]);
         } else {
             say(self, " has no such floor.");
         }

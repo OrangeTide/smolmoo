@@ -81,6 +81,10 @@ main(void)
             puts("Usage: floor <number>");
             _exit(0);
         }
+        if (cs_geti(veh, "moving", 0)) {        /* M34: doors shut in transit */
+            puts("The doors are closed; wait until it stops.");
+            _exit(0);
+        }
         if (sys_notify(veh, arg) != 0)
             puts("Nothing responds.");
         _exit(0);
@@ -106,6 +110,14 @@ main(void)
             _exit(0);
         }
         cs_getstr(veh, "name", vn, sizeof(vn));
+        if (cs_geti(veh, "moving", 0)) {        /* M34: already under way */
+            o.len = 0;
+            cs_s(&o, "The ");
+            cs_s(&o, vn);
+            cs_s(&o, " is under way; try again when it arrives.");
+            puts(cs_cstr(&o));
+            _exit(0);
+        }
         cs_itoa(n, pos);
         if (sys_notify(veh, n) != 0) {
             puts("Nothing responds.");
@@ -125,6 +137,10 @@ main(void)
 
         if (veh <= 0 || !cs_geti(veh, "vehicle", 0)) {
             puts("You aren't aboard anything.");
+            _exit(0);
+        }
+        if (cs_geti(veh, "moving", 0)) {        /* M34: doors shut in transit */
+            puts("The doors are closed; wait until it stops.");
             _exit(0);
         }
         stop = sys_getobj(veh, "location");
@@ -167,6 +183,10 @@ main(void)
         vloc = sys_getobj(veh, "location");
         if (vloc != room) {
             puts("It isn't here.");
+            _exit(0);
+        }
+        if (cs_geti(veh, "moving", 0)) {        /* M34: closed, under way */
+            puts("Its doors are closed.");
             _exit(0);
         }
         cs_getstr(veh, "name", vn, sizeof(vn));

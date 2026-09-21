@@ -1510,6 +1510,34 @@ check_log /tmp/smolmoo_p1.log 'not on that line' "call refuses a platform off th
 # clear the stray line so the lobby is not left pointing at a test vehicle
 curl -sf -X POST -d "$SID1 @set #101.line=" http://localhost:$PORT/cmd >/dev/null
 
+# --- M34: timed transit (see M34.md) ---
+# A vehicle with a positive `transit` takes travel time between stops instead of
+# hopping instantly: it departs, rides with its doors shut (moving=1), then
+# arrives. While under way board/disembark/floor/call are refused. Reuse the
+# lift (at the hub) and give it a travel time. Poll for moving=1 before probing
+# so the doors-closed check does not race the arrival. "doors are closed" is new
+# to this milestone; the arrival names Level Two, distinct from the earlier lift
+# trip to Level Three.
+curl -sf -X POST -d "$SID1 @go #$HUB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$LIFT.transit=2500" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 board elevator" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 floor 2" http://localhost:$PORT/cmd >/dev/null
+_mi=0; while [ $_mi -lt 80 ]; do
+	curl -sf -X POST -d "$SID1 @examine #$LIFT" http://localhost:$PORT/cmd >/dev/null
+	grep -q 'moving = "1"' /tmp/smolmoo_p1.log && break
+	sleep 0.05; _mi=$((_mi + 1))
+done
+curl -sf -X POST -d "$SID1 disembark" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'doors are closed' \
+	"a vehicle in transit refuses disembark (doors closed)"
+check_log /tmp/smolmoo_p1.log 'elevator arrives at Level Two' \
+	"a timed vehicle arrives at its stop after the transit delay"
+# it is stopped now: the rider steps off, and the travel time is cleared
+curl -sf -X POST -d "$SID1 disembark" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'steps off the elevator' \
+	"a rider can disembark once the timed vehicle has stopped"
+curl -sf -X POST -d "$SID1 @set #$LIFT.transit=" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.

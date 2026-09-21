@@ -190,6 +190,7 @@ Riders board it, ride it, and step off wherever it currently is.
     @set #N.route=#A,#B,#C          the stops it travels, in order
     @set #N.brain=#456              the vehicle agent (__transit)
     @set #N.dwell=8000              tick period in ms for a timed vehicle
+    @set #N.transit=4000            travel time in ms between stops (optional)
     @set #<stop>.line=#N            let `call` on that platform summon it
     @wake #N                        start it (wizard only)
 
@@ -197,8 +198,13 @@ With a positive `dwell` the vehicle is a train: it advances one stop each tick,
 on its own, wrapping at the end of the route. With no `dwell` it is an elevator:
 it never moves until a rider aboard names a stop with `floor <n>` (n counts from
 1 along the route), or someone on a platform calls it. A platform can summon its
-vehicle only if that stop's room names the vehicle in a `line` prop. Players use
-it with:
+vehicle only if that stop's room names the vehicle in a `line` prop.
+
+With a positive `transit` the vehicle takes that many milliseconds to travel
+between stops: it departs, rides with its doors shut, then arrives. While it is
+under way `board`, `disembark`, `floor`, and `call` are refused, so a rider is
+carried along and cannot get off in the middle. With no `transit` the trip is
+instant, as before. Players use it with:
 
     board <vehicle>                 climb aboard, when it is at your stop
     floor <n>                       (aboard an elevator) go to the nth stop

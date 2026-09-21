@@ -26,19 +26,22 @@ int
 main(void)
 {
     struct verb_event m;
-    int dwell = verb_dwell();
 
-    /* A dwell of 0 would busy-spin (sys_suspend(0) yields but stays runnable),
-       so treat "no positive period" as block-until-event, the same as a
-       negative return. */
-    if (dwell == 0)
-        dwell = -1;
     sys_listen(vm_args->this_obj);      /* receive this object's events */
     for (;;) {
         if (sys_getmsg(&m, sizeof(m)) >= 0) {
             on_event(&m);
             continue;
         }
+        /* Re-read the dwell each cycle, so an agent can vary its tick period
+           with its state (a vehicle runs a short period between stops and a long
+           one at a stop). A dwell of 0 would busy-spin (sys_suspend(0) yields
+           but stays runnable), so treat "no positive period" as
+           block-until-event, the same as a negative return. */
+        int dwell = verb_dwell();
+
+        if (dwell == 0)
+            dwell = -1;
         /* mailbox empty: block until an event arrives or the dwell elapses,
            then drain one event or fire a tick */
         sys_suspend(dwell);
