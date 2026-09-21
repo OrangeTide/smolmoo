@@ -678,6 +678,39 @@ obj_owner_match(struct obj *o, int sid)
     return acct_owner_match(o, player_acct(sid));
 }
 
+/* M33b: per-account object quota. A non-wizard account is capped at a number of
+ * owned persistent objects, so open building (@create/@clone/sys_create) cannot
+ * march the id space toward OBJ_EPH_BASE. The cap is #0.objquota when set to a
+ * positive integer, else the default, so an operator can tune it without a
+ * rebuild. Wizards are exempt. */
+#define OBJ_QUOTA_DEFAULT 256
+static int
+obj_quota(void)
+{
+    struct obj *sys = obj_find(0);
+    const char *v = sys ? prop_str(sys, make_atom("objquota")) : NULL;
+    int q = v ? atoi(v) : 0;
+
+    return q > 0 ? q : OBJ_QUOTA_DEFAULT;
+}
+
+/* True if acct already owns the quota's worth of persistent objects (so the
+ * next create must be refused). Wizards and a missing account are never over. */
+static int
+acct_over_quota(struct obj *acct)
+{
+    int i, n = 0, cap;
+
+    if (!acct || acct_is_wizard(acct))
+        return 0;
+    cap = obj_quota();
+    for (i = 0; i < MAX_OBJ; i++)
+        if (objs[i].id != OBJ_NONE && !obj_is_ephemeral(objs[i].id)
+            && objs[i].owner == acct->id && ++n >= cap)
+            return 1;
+    return 0;
+}
+
 static int
 acct_group_match(struct obj *o, struct obj *acct)
 {
@@ -2659,6 +2692,10 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
 
         if (!pobj || obj_is_ephemeral(parent)) {
             RET(-E_INVARG);
+            return 0;
+        }
+        if (acct_over_quota(player_acct(vm->sid))) {   /* M33b */
+            RET(-E_QUOTA);
             return 0;
         }
         newid = 0;
@@ -5233,6 +5270,12 @@ cmd_feedback(int sid, const char *args)
             return;
         }
 
+        if (acct_over_quota(player_acct(sid))) {   /* M33b */
+            session_write(sid,
+                "You have reached your object quota; recycle something first.");
+            return;
+        }
+
         /* Find next available persistent object ID */
         int newid = 0;
         while (newid < 1000000000 && obj_find(newid))
@@ -5301,6 +5344,11 @@ cmd_feedback(int sid, const char *args)
 
         if (!src || srcid == 0 || obj_is_ephemeral(srcid)) {
             session_write(sid, "Usage: @clone #N");
+            return;
+        }
+        if (acct_over_quota(player_acct(sid))) {   /* M33b */
+            session_write(sid,
+                "You have reached your object quota; recycle something first.");
             return;
         }
         newid = 0;

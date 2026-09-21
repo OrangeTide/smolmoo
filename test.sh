@@ -1309,6 +1309,45 @@ check_log /tmp/smolmoo_p1.log 'the widget hums' \
 	"an in-game authored agent runs its event loop (EV_TIMER)"
 curl -sf -X POST -d "$SID1 @sleep #$WOBJ" http://localhost:$PORT/cmd >/dev/null
 
+# --- M33b: ownership quota (see M33.md) ---
+# Open building is capped per account so it cannot exhaust the id space.
+# Wizards are exempt, so this is checked as the non-admin TestPlayer3, who
+# already owns objects from the permission tests. #0.objquota tunes the cap
+# live: set it below TestPlayer3's count and the next create is refused; raise
+# it and creation resumes. `Created #` is not unique in the log, so the create
+# assertions compare its count before and after (a delta), not mere presence.
+curl -sf -X POST -d "$SID1 @set #0.objquota=1" http://localhost:$PORT/cmd >/dev/null
+Q1=$(grep -c 'Created #' /tmp/smolmoo_p3.log 2>/dev/null || true)
+curl -sf -X POST -d "$SID3 @create #300" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'object quota' \
+	"a non-wizard over quota is refused a new object"
+Q2=$(grep -c 'Created #' /tmp/smolmoo_p3.log 2>/dev/null || true)
+[ "${Q2:-0}" -eq "${Q1:-0}" ] \
+	&& pass "the refused create made no object" \
+	|| fail "the refused create made no object"
+# an admin is exempt even at the low quota
+P1=$(grep -c 'Created #' /tmp/smolmoo_p1.log 2>/dev/null || true)
+curl -sf -X POST -d "$SID1 @create #300" http://localhost:$PORT/cmd >/dev/null
+_qi=0; while [ $_qi -lt 60 ]; do
+	P2=$(grep -c 'Created #' /tmp/smolmoo_p1.log 2>/dev/null || true)
+	[ "${P2:-0}" -gt "${P1:-0}" ] && break
+	sleep 0.05; _qi=$((_qi + 1))
+done
+[ "${P2:-0}" -gt "${P1:-0}" ] \
+	&& pass "a wizard is exempt from the quota" \
+	|| fail "a wizard is exempt from the quota"
+# raise the quota; TestPlayer3 can build again
+curl -sf -X POST -d "$SID1 @set #0.objquota=9999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 @create #300" http://localhost:$PORT/cmd >/dev/null
+_qi=0; while [ $_qi -lt 60 ]; do
+	Q3=$(grep -c 'Created #' /tmp/smolmoo_p3.log 2>/dev/null || true)
+	[ "${Q3:-0}" -gt "${Q2:-0}" ] && break
+	sleep 0.05; _qi=$((_qi + 1))
+done
+[ "${Q3:-0}" -gt "${Q2:-0}" ] \
+	&& pass "raising the quota lets a builder create again" \
+	|| fail "raising the quota lets a builder create again"
+
 # --- OLC-6: proactive mob behavior (see OLC.md) ---
 # A mob woken as an agent (brain #453, __rover) acts on its own: wander steps a
 # random exit each tick, patrol follows a route, and it still greets on entry.
