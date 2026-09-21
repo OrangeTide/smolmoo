@@ -503,9 +503,10 @@ listing checked as the non-admin `TestPlayer3`.
 
 ## Milestone 34: Vehicles in transit
 
-Vehicles can take game time between stops instead of hopping instantly. The full
-plan is `M34.md`; this is the summary. Slice 1 (timed transit) shipped
-(e12152e).
+Vehicles can take game time between stops instead of hopping instantly, and know
+where they are while under way. The full plan is `M34.md`; this is the summary.
+Slice 1 (timed transit) shipped (e12152e), and slice 2 (spatial awareness)
+shipped in three parts (see below).
 
 The event loop enabler is a per-cycle dwell: `verbmain` now re-reads
 `verb_dwell()` before each block instead of once at startup, so an agent can vary
@@ -521,10 +522,18 @@ rider is carried along and cannot get on or off mid-trip. With no `transit` the
 trip is the old instant hop, so existing vehicles are unchanged. The suite grew
 to 285 checks.
 
-The deferred slice is spatial awareness: a vehicle knowing where it is on a
-route segment so riders see what is outside (a platform, a tunnel, the players
-there) and are seen in turn. It needs a segment model and a per-tick visibility
-pass, so it is gated on real routes being in use, and is designed in `M34.md`.
+Slice 2 is spatial awareness: a vehicle knows where it is while under way, so
+riders see what is outside and are seen in turn. It shipped in three parts
+(14deef1, 9446672, 861afac). 2a adds an optional `path`, the full room-by-room
+traversal (stops plus the pass-through rooms between): a train walks it one room
+per tick and really occupies each, so a rider sees each pass-through go by and
+anyone standing in it sees the train pass. 2b lets a pass-through room `observe`
+rooms it can see into, so a rider glimpses a platform the train skips and its
+people see it pass in the distance. 2c gives an on-command elevator with a `path`
+a directional walk toward the requested stop, showing the rooms it passes instead
+of hopping. The per-room move is factored into one `step_to` shared by the
+train's looping advance and the elevator's targeted step. A vehicle with no
+`path` is unchanged. The suite grew to 292 checks.
 
 ---
 
