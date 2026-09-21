@@ -1284,6 +1284,31 @@ TS2=$(beacon_ticks)
 curl -sf -X POST -d "$SID1 @examine #$BEACON" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'awake = "0"' "@sleep clears the awake flag"
 
+# --- M33a: in-game agent authoring (@program #N agent, see M33.md) ---
+# A builder writes an event-loop agent in the editor and compiles it with the
+# `agent` token, which links -lverbmain like an agent_*.c source. Prove the
+# compiled program runs as a real agent (its EV_TIMER fires), not a one-shot
+# verb that would exit at once. SID1 is in BROOM here, so the agent's broadcast
+# to its room lands in this session's log.
+curl -sf -X POST -d "$SID1 @create #400" http://localhost:$PORT/cmd >/dev/null
+WVERB=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+printf '#include "mulibc.h"\nint verb_dwell(void){return 200;}\nvoid on_event(const struct verb_event*m){if(m->type==EV_TIMER)sys_broadcast(vm_args->room,"the widget hums");}\n' \
+	| curl -sf -X POST --data-binary @- \
+	  "http://localhost:$PORT/prop?obj=$WVERB&prop=src&sid=$SID1" >/dev/null
+curl -sf -X POST -d "__widget" \
+	"http://localhost:$PORT/prop?obj=$WVERB&prop=verb&sid=$SID1" >/dev/null
+curl -sf -X POST -d "$SID1 @program #$WVERB agent" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Programmed' "@program #N agent compiles an in-game agent"
+# wake an object that names the freshly authored brain, in SID1's current room
+curl -sf -X POST -d "$SID1 @create #300" http://localhost:$PORT/cmd >/dev/null
+WOBJ=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$WOBJ.location=#$BROOM" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$WOBJ.brain=#$WVERB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @wake #$WOBJ" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'the widget hums' \
+	"an in-game authored agent runs its event loop (EV_TIMER)"
+curl -sf -X POST -d "$SID1 @sleep #$WOBJ" http://localhost:$PORT/cmd >/dev/null
+
 # --- OLC-6: proactive mob behavior (see OLC.md) ---
 # A mob woken as an agent (brain #453, __rover) acts on its own: wander steps a
 # random exit each tick, patrol follows a route, and it still greets on entry.

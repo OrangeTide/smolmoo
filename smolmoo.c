@@ -3804,9 +3804,10 @@ cmd_page(int sid, const char *args)
  * diagnostics to the session and returns ERR. The compile runs synchronously,
  * briefly blocking the single-threaded server. */
 static int
-program_compile(int sid, const char *src, char *hash_out, int is_c)
+program_compile(int sid, const char *src, char *hash_out, int is_c,
+                int is_agent)
 {
-    char sdk[512], path[640], cmd[8192];
+    char sdk[512], path[640], cmd[8192], aobj[560];
     ssize_t n;
     FILE *f;
     char *sl;
@@ -3837,6 +3838,13 @@ program_compile(int sid, const char *src, char *hash_out, int is_c)
     fputc('\n', f);
     fclose(f);
 
+    /* An agent also links verbmain.o for the generic event-loop main(), the
+     * same object the installer adds for an agent_*.c source. */
+    if (is_c && is_agent)
+        snprintf(aobj, sizeof(aobj), " %s/verbmain.o", sdk);
+    else
+        aobj[0] = '\0';
+
     if (is_c)
         /* C verbs: skj-cc-rv-psabi (register psABI) + verb_rt_rv stubs. The
          * header comes from the SDK dir (bundled mulibc.h) or the repo (-I.).*/
@@ -3845,10 +3853,10 @@ program_compile(int sid, const char *src, char *hash_out, int is_c)
             "2>%s/_prog.err && "
             "%s/skj-as-rv -o %s/_prog.o %s/_prog.s 2>>%s/_prog.err && "
             "%s/skj-ld-rv -T vm_rv.ld -o %s/_prog.elf %s/_prog.o "
-            "%s/verb_rt_rv.o 2>>%s/_prog.err",
+            "%s/verb_rt_rv.o%s 2>>%s/_prog.err",
             sdk, sdk, depot_dir, depot_dir, depot_dir,
             sdk, depot_dir, depot_dir, depot_dir,
-            sdk, depot_dir, depot_dir, sdk, depot_dir);
+            sdk, depot_dir, depot_dir, sdk, aobj, depot_dir);
     else
         snprintf(cmd, sizeof(cmd),
             "%s/skj-mooc-rv -o %s/_prog.s %s/_prog.moo 2>%s/_prog.err && "
@@ -5663,7 +5671,7 @@ cmd_feedback(int sid, const char *args)
         struct obj *o;
         const char *src, *elf;
         char hash[65], elf_val[128];
-        int mode = 0755, em, is_c;
+        int mode = 0755, em, is_c, is_agent = 0;
         char h[65];
 
         if (*p == '#')
@@ -5687,22 +5695,27 @@ cmd_feedback(int sid, const char *args)
         elf = prop_str(o, make_atom("elf"));
         if (elf && elf_parse(elf, &em, h, sizeof(h)) == OK)
             mode = em;
-        /* Language: an explicit "c" or "moo" after #N wins, otherwise sniff
-         * the source (a C verb has #include, MooScript never does). */
+        /* Language: an explicit "c", "moo", or "agent" after #N wins,
+         * otherwise sniff the source (a C verb has #include, MooScript never
+         * does). "agent" is a C program that links the event-loop runtime, so
+         * a builder can author a mob or vehicle brain in-game (see OLC.md). */
         {
             const char *q = p;
             while (*q && !isspace((unsigned char)*q))
                 q++;
             while (isspace((unsigned char)*q))
                 q++;
-            if (*q == 'c' || *q == 'C')
+            if (*q == 'a' || *q == 'A') {
+                is_c = 1;
+                is_agent = 1;
+            } else if (*q == 'c' || *q == 'C')
                 is_c = 1;
             else if (*q == 'm' || *q == 'M')
                 is_c = 0;
             else
                 is_c = strstr(src, "#include") != NULL;
         }
-        if (program_compile(sid, src, hash, is_c) != OK)
+        if (program_compile(sid, src, hash, is_c, is_agent) != OK)
             return;
         snprintf(elf_val, sizeof(elf_val), "[0%o,b2:%s]", mode, hash);
         prop_set(o, make_atom("elf"), val_str(elf_val));
