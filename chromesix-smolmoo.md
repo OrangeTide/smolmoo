@@ -68,7 +68,9 @@ Grit or other cost, the requirements, and the effect handler. One code path
 then covers the user command, the cost-and-refuse check, and the mechanical
 effect, so adding an option is a table entry, not new plumbing. Installing a
 cyberware id also checks the graft-slot cap (2 for the Cyber-Augmented hook),
-and spell ids require the Awakened hook.
+and spell ids require the Awakened hook. The acquire side of this shipped in M35c
+as the `cs_unlocks` catalog and the `learn` verb, which price and gate an id;
+each unlock's effect still lives with its use rather than in one dispatch table.
 
 Equipment and money: weapons, armor, and stims are ordinary smolmoo objects
 held in the creature's contents. A weapon object carries its damage rating, an
@@ -437,12 +439,17 @@ ready.
     carry <player> | release     lift a fallen ally's body and set it down
     revive <player>              patch a body back to life (Medicine or Cybertech)
     train <skill>                spend Character Points to raise a skill one pip
+    learn <unlock>               spend CP to acquire a maneuver, mod, or spell
 
 Winning a scene, a fight where the foes are downed or a social scene where the
 target concedes, awards Character Points, summed over the defeated foes. `train`
-spends them: raising a skill one pip costs CP equal to its current rating in
-dice, and a skill cannot be trained past attribute + 6 skill points, the same
-ceiling character creation uses.
+spends them on skills: raising a skill one pip costs CP equal to its current
+rating in dice, and a skill cannot be trained past attribute + 6 skill points,
+the same ceiling character creation uses. `learn` spends them on unlocks: each
+maneuver, cyberware mod, and spell in the catalog costs 5 CP, and is gated by the
+hook it needs (cyberware needs the cyber hook, a spell the awakened hook) and,
+for cyberware, the two graft slots. A learned id joins the `maneuvers` list; its
+effect then applies wherever that unlock is checked.
 
 **Targeting shorthand.** `target <foe>` (or `t <foe>`) sets a default so bare
 `attack`, `cast`, and `close` act on it. Ranged verbs refuse or warn when the

@@ -211,6 +211,9 @@ cs_skill_idx(const char *name)
  * human, where the base formulas stand. */
 struct cs_derived { int pd; int soak; int maxbp; int maxgrit; };
 
+/* defined below; cs_recalc reads it for the passive cyberware unlocks (M35c) */
+static int cs_has_unlock(int sheet, const char *name);
+
 static void
 cs_recalc(int ch, struct cs_derived *d)
 {
@@ -226,6 +229,7 @@ cs_recalc(int ch, struct cs_derived *d)
     if (d->pd > 20) d->pd = 20;
     if (d->pd < 0) d->pd = 0;
     d->soak = (md << 1) + mp + armor + (size > 0 ? size : 0);
+    if (cs_has_unlock(ch, "dermal")) d->soak += 2;  /* M35c dermal plating */
     d->maxbp = 12 + md * 3 + size * 6;
     if (d->maxbp < 1) d->maxbp = 1;
     d->maxgrit = 3 + wd + cd;
@@ -808,6 +812,41 @@ cs_has_unlock(int sheet, const char *name)
         while (*p && *p != ',') p++;
     }
     return 0;
+}
+
+/* The 5 CP unlock catalog (M35c): each acquirable maneuver, cyberware mod, or
+ * spell as one id, with its CP cost, the hook it requires ("" for any), and
+ * whether it occupies a cyberware graft slot. `learn` reads this to check and
+ * price an acquisition; the effect of each unlock lives with its use. */
+struct cs_unlock { const char *id; int cp; const char *hook; int graft; };
+static const struct cs_unlock cs_unlocks[] = {
+    { "smartlink", 5, "",      0 },     /* aim maneuver, granted at creation */
+    { "dermal",    5, "cyber", 1 },     /* dermal plating, +2 Soak, one graft */
+};
+#define CS_NUNLOCKS ((int)(sizeof(cs_unlocks) / sizeof(cs_unlocks[0])))
+#define CS_GRAFT_CAP 2      /* cyberware graft slots (Cyber-Augmented hook) */
+
+/* catalog index of unlock `id`, or -1 if it is not a known unlock */
+static int
+cs_unlock_find(const char *id)
+{
+    int i;
+
+    for (i = 0; i < CS_NUNLOCKS; i++)
+        if (cs_streq(id, cs_unlocks[i].id)) return i;
+    return -1;
+}
+
+/* how many learned unlocks occupy a graft slot, against CS_GRAFT_CAP */
+static int
+cs_graft_count(int sheet)
+{
+    int i, c = 0;
+
+    for (i = 0; i < CS_NUNLOCKS; i++)
+        if (cs_unlocks[i].graft && cs_has_unlock(sheet, cs_unlocks[i].id))
+            c++;
+    return c;
 }
 
 /* Split an optional trailing "push N" off a command argument. Truncates arg

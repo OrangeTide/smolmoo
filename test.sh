@@ -992,6 +992,39 @@ curl -sf -X POST -d "$SID1 @set #$P1SH.cp=0" http://localhost:$PORT/cmd >/dev/nu
 curl -sf -X POST -d "$SID1 train stealth" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'That costs' "train refuses a raise the character cannot afford"
 
+# --- M35c: spend CP on a 5 CP unlock (learn) ---
+# `learn` adds a catalog id to the maneuvers list after checking its hook, its
+# graft-slot cap, and its CP cost. TestPlayer1 took the cyber hook at chargen, so
+# it can take the dermal cyberware; dermal raises Soak by 2, a real effect read
+# live by cs_recalc. First the hook gate: a non-cyber character cannot take it.
+curl -sf -X POST -d "$SID1 @set #$P1SH.hook=street" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.cp=20" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 learn dermal" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'needs the cyber hook' "learn gates cyberware on the hook"
+curl -sf -X POST -d "$SID1 @set #$P1SH.hook=cyber" http://localhost:$PORT/cmd >/dev/null
+# with the hook back but no CP, the unlock is refused
+curl -sf -X POST -d "$SID1 @set #$P1SH.cp=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 learn dermal" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'That costs 5 CP' "learn refuses an unlock the character cannot afford"
+# fund it, capture the baseline Soak, then learn dermal and confirm +2 Soak
+curl -sf -X POST -d "$SID1 @set #$P1SH.cp=20" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'Maneuvers: smartlink' || true
+SB=$(grep -oE 'Soak [0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
+curl -sf -X POST -d "$SID1 learn dermal" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'You learn dermal' "learn acquires an unlock and spends CP"
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'Maneuvers: smartlink,dermal' || true
+SA=$(grep -oE 'Soak [0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
+[ "${SA:-0}" -eq "$(( ${SB:-0} + 2 ))" ] \
+	&& pass "the learned dermal raises Soak by 2" \
+	|| fail "the learned dermal raises Soak by 2"
+# a known unlock and an unknown id are both refused
+curl -sf -X POST -d "$SID1 learn dermal" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'already know dermal' "learn refuses an unlock already known"
+curl -sf -X POST -d "$SID1 learn bogus" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'No such unlock' "learn refuses an unknown id"
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.
