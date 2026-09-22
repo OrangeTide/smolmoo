@@ -440,6 +440,8 @@ ready.
     revive <player>              patch a body back to life (Medicine or Cybertech)
     train <skill>                spend Character Points to raise a skill one pip
     learn [unlock]               list the unlock catalog, or acquire one by id
+    jobs                         list contracts offered here and your active one
+    accept <giver> | abandon     take an offered job, or drop your active one
 
 Winning a scene, a fight where the foes are downed or a social scene where the
 target concedes, awards Character Points, summed over the defeated foes. `train`

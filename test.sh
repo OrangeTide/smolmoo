@@ -1066,6 +1066,32 @@ GA=$(grep -oE 'Grit [0-9]+/[0-9]+' /tmp/smolmoo_p1.log | tail -1 | sed 's#.*/##'
 	|| fail "the learned vigor raises Max Grit by 3"
 curl -sf -X POST -d "$SID1 @set #$P1SH.hook=cyber" http://localhost:$PORT/cmd >/dev/null
 
+# --- M37a: jobs offered, accepted, tracked, abandoned ---
+# A job giver is a builder object marked job=1 with a description and reward.
+# Build one in the lobby and run the accept/track/abandon bookkeeping (the
+# completion and payout arrive in M37b).
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+FIX=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$FIX.name=fixer" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$FIX.job=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$FIX.job_desc=Clear out the raider." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$FIX.job_cp=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$FIX.job_creds=50" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$FIX.location=#101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'fixer: Clear out the raider' "jobs lists a contract offered here"
+curl -sf -X POST -d "$SID1 accept fixer" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'take the job from fixer' "accept takes an offered job"
+curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Your job: fixer (in progress)' "jobs shows the active contract"
+curl -sf -X POST -d "$SID1 accept fixer" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'already have a job' "accept refuses a second job"
+curl -sf -X POST -d "$SID1 abandon" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'abandon the job' "abandon drops the active job"
+curl -sf -X POST -d "$SID1 abandon" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'no job to abandon' "abandon needs an active job"
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.
