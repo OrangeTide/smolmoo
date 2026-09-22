@@ -1,6 +1,8 @@
 /* verb_use.c : ChromeSix consumables and maneuvers. Covers stims (restore
  * Grit, stack Crash past the safe limit) and the CP-unlock maneuvers a
- * character has learned, each spending its Grit cost as the turn's action. */
+ * character has learned, each spending its Grit cost as the turn's action. An
+ * active unlock dispatches through the cs_unlocks catalog (M36b): its Grit cost
+ * and effect tag are table data, so a new maneuver is a row, not a new branch. */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
 #include "chromesix_verb.h"
@@ -70,31 +72,49 @@ main(void)
         _exit(0);
     }
 
-    if (cs_streq(word, "smartlink")) {
-        /* Smartlink: 2 Grit + your action. Take aim so the next attack ignores
-         * the target's cover and lowers its Passive Defense by 2 (applied and
-         * cleared in verb_attack.c). A combat-only maneuver. */
-        if (!cs_has_unlock(sh, "smartlink")) {
-            puts("You have not learned that maneuver.");
+    /* Any other word is an active unlock, dispatched through the catalog (M36b):
+     * spend its Grit and, once it is your turn, apply its effect by tag. A
+     * passive unlock (its effect read elsewhere) is not something you activate. */
+    {
+        int idx = cs_unlock_find(word);
+        const struct cs_unlock *u;
+
+        if (idx < 0) { puts("You can't use that."); _exit(0); }
+        u = &cs_unlocks[idx];
+        if (u->effect == UEF_PASSIVE) {
+            puts("That works on its own; there is nothing to activate.");
+            _exit(0);
+        }
+        if (!cs_has_unlock(sh, u->id)) {
+            puts("You have not learned that.");
             _exit(0);
         }
         if (!turn_ok(room, self, &infight)) {
             if (!infight) puts("You are not in a fight.");
             _exit(0);
         }
-        if (cs_grit_spend(sh, 2) < 0) {
-            puts("Not enough Grit to run the smartlink (2 Grit).");
+        if (cs_grit_spend(sh, u->grit) < 0) {
+            cs_s(&o, "Not enough Grit (need "); cs_i(&o, u->grit);
+            cs_s(&o, ").");
+            puts(cs_cstr(&o));
             _exit(0);
         }
-        cs_seti(sh, "aim", 1);
         cs_getstr(sh, "name", nm, sizeof(nm));
-        cs_s(&o, nm);
-        cs_s(&o, " paints a target through the smartlink and takes aim.");
+        switch (u->effect) {
+        case UEF_AIM:
+            /* take aim: the next attack ignores the target's cover and lowers
+             * its Passive Defense by 2 (applied and cleared in verb_attack.c) */
+            cs_seti(sh, "aim", 1);
+            cs_s(&o, nm);
+            cs_s(&o, " paints a target through the smartlink and takes aim.");
+            break;
+        default:
+            cs_s(&o, nm);
+            cs_s(&o, " concentrates.");
+            break;
+        }
         sys_broadcast(room, cs_cstr(&o));
         cs_end_turn(room);
         _exit(0);
     }
-
-    puts("You can't use that.");
-    _exit(0);
 }

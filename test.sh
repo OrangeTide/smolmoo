@@ -1032,6 +1032,9 @@ curl -sf -X POST -d "$SID1 learn dermal" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'already know dermal' "learn refuses an unlock already known"
 curl -sf -X POST -d "$SID1 learn bogus" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'No such unlock' "learn refuses an unknown id"
+# M36b: a passive unlock (dermal) is not something you activate with `use`
+curl -sf -X POST -d "$SID1 use dermal" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'works on its own' "use refuses a passive unlock"
 
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default

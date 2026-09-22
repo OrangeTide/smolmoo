@@ -814,14 +814,23 @@ cs_has_unlock(int sheet, const char *name)
     return 0;
 }
 
+/* An unlock's active effect (M36b), the tag `verb_use` switches on to apply it.
+ * UEF_PASSIVE means it is not activated as an action; its effect is read where
+ * its stat applies (dermal in cs_recalc), so `use` refuses it. */
+#define UEF_PASSIVE 0
+#define UEF_AIM     1       /* smartlink: next attack ignores cover, -2 PD */
+
 /* The 5 CP unlock catalog (M35c): each acquirable maneuver, cyberware mod, or
- * spell as one id, with its CP cost, the hook it requires ("" for any), and
- * whether it occupies a cyberware graft slot. `learn` reads this to check and
- * price an acquisition; the effect of each unlock lives with its use. */
-struct cs_unlock { const char *id; int cp; const char *hook; int graft; };
+ * spell as one id, with its CP cost, the hook it requires ("" for any), whether
+ * it occupies a cyberware graft slot, and, for an active unlock, the Grit its
+ * use costs and its effect tag (M36b). `learn` reads the cost and gates; `use`
+ * reads the Grit cost and tag. The effect of each unlock lives with its use. */
+struct cs_unlock {
+    const char *id; int cp; const char *hook; int graft; int grit; int effect;
+};
 static const struct cs_unlock cs_unlocks[] = {
-    { "smartlink", 5, "",      0 },     /* aim maneuver, granted at creation */
-    { "dermal",    5, "cyber", 1 },     /* dermal plating, +2 Soak, one graft */
+    { "smartlink", 5, "",      0, 2, UEF_AIM },     /* aim, granted at creation */
+    { "dermal",    5, "cyber", 1, 0, UEF_PASSIVE }, /* +2 Soak, one graft slot */
 };
 #define CS_NUNLOCKS ((int)(sizeof(cs_unlocks) / sizeof(cs_unlocks[0])))
 #define CS_GRAFT_CAP 2      /* cyberware graft slots (Cyber-Augmented hook) */
