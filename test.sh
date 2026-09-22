@@ -1092,6 +1092,43 @@ check_log /tmp/smolmoo_p1.log 'abandon the job' "abandon drops the active job"
 curl -sf -X POST -d "$SID1 abandon" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'no job to abandon' "abandon needs an active job"
 
+# --- M37b: bounty completion at the scene win, and turn-in payout ---
+# Run this in a fresh isolated room: the lobby holds every world proto (including
+# the downed #201 raider), so "raider" there would resolve to the proto, not our
+# target. Move the fixer, spawn one clean raider, then run the loop.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+BR=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$BR.name=Contract Office" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$FIX.job_target=raider" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$FIX.location=#$BR" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$BR" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #201" http://localhost:$PORT/cmd >/dev/null
+RD=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$RD.location=#$BR" http://localhost:$PORT/cmd >/dev/null
+# a plain @create instance inherits the proto's combat state; clear it so the
+# raider is a live, fightable target
+curl -sf -X POST -d "$SID1 @set #$RD.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$RD.bp=12" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$RD.wounds=0" http://localhost:$PORT/cmd >/dev/null
+# put TestPlayer1 back in fighting shape after the earlier combat blocks
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=21" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 accept fixer" http://localhost:$PORT/cmd >/dev/null
+# reporting before the target is down is refused
+curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'not done yet' "turnin refuses an unfinished job"
+# the pistol is already wielded from the combat block (wield toggles, so do not
+# re-wield); just top up its magazine for the fight
+curl -sf -X POST -d "$SID1 reload" http://localhost:$PORT/cmd >/dev/null
+fight_over raider || true
+curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'done; report back' "defeating the target completes the bounty"
+curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'fixer pays you 50 creds and 2 CP' "turnin pays the bounty reward"
+curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'no job to report' "turnin needs an active job"
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.

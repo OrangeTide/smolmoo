@@ -92,6 +92,33 @@ award_cp(int player, int *ids, int n)
     puts(cs_cstr(&o));
 }
 
+/* M37b: if the player holds a bounty and a defeated foe matches its target, mark
+ * the job done so it can be turned in. The target is a creature name named on the
+ * job giver's `job_target`; the giver's id is on the player sheet's `job_giver`.
+ * Called once at the win point, where the roster is already in hand. */
+static void
+mark_job_done(int player, int *ids, int n)
+{
+    int psh = cs_sheet(player);
+    int giver = cs_geti(psh, "job_giver", 0);
+    char target[32], nm[32];
+    int i;
+
+    if (giver <= 0 || cs_geti(psh, "job_done", 0))
+        return;
+    cs_getstr(giver, "job_target", target, sizeof(target));
+    if (!target[0])
+        return;
+    for (i = 0; i < n; i++) {
+        if (ids[i] == player) continue;
+        cs_getstr(cs_sheet(ids[i]), "name", nm, sizeof(nm));
+        if (cs_streq(nm, target)) {
+            cs_seti(psh, "job_done", 1);
+            return;
+        }
+    }
+}
+
 /* Fire a yielded NPC's on_yield hook once (rules Section 16 outcome seam).
  * The NPC sheet names a verb object in its `on_yield` prop; spawn it by ELF
  * hash, passing the NPC id as the argument. The `yield_done` flag guards
@@ -438,6 +465,7 @@ main(void)
                     cs_s(&o, social ? "The matter is settled." : "The fight is over.");
                     sys_broadcast(room, cs_cstr(&o));
                     award_cp(player, ids, n);   /* M35a: CP for the win */
+                    mark_job_done(player, ids, n);  /* M37b: bounty complete */
                     goto done;
                 }
                 /* social: the player conceding ends the scene, no penalty.
