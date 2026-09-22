@@ -551,6 +551,10 @@ while [ $_i -lt 8 ]; do
 done
 check_log /tmp/smolmoo_p1.log 'It drops' "mook downed on first hit"
 check_log /tmp/smolmoo_p1.log 'fight is over' "combat ends"
+# M35a: winning the fight awards Character Points, one per defeated foe with no
+# `cp_award` of its own. The raider is a single default mook, so the win is 1 CP.
+check_log /tmp/smolmoo_p1.log 'You gain 1 Character Point' \
+	"a won fight awards CP for the defeated foe"
 # The downed raider cannot be attacked again.
 curl -sf -X POST -d "$SID1 attack raider" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'already down' "downed foe rejected"

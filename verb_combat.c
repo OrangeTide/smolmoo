@@ -10,6 +10,7 @@
 #define MAX_CB      8
 #define TIMEOUT_MS  30000
 #define NPC_PACE_MS 400
+#define CP_AWARD_BASE 1     /* CP a defeated foe is worth without a cp_award */
 
 /* parse the "id,id,..." roster into ids[], returning the count */
 static int
@@ -65,6 +66,30 @@ foes_up(int *ids, int n, int player)
             c++;
     }
     return c;
+}
+
+/* M35a: on a won scene, grant the player Character Points summed over the
+ * defeated foes. Each foe is worth its `cp_award`, or a base default when it
+ * names none. Called once at the resolver's win point, so a settled scene grants
+ * nothing more. The player sheet is written under the task's grant. */
+static void
+award_cp(int player, int *ids, int n)
+{
+    int psh = cs_sheet(player);
+    int total = 0, i;
+    struct cs_out o;
+
+    for (i = 0; i < n; i++) {
+        if (ids[i] == player) continue;
+        total += cs_geti(cs_sheet(ids[i]), "cp_award", CP_AWARD_BASE);
+    }
+    if (total <= 0) return;
+    cs_seti(psh, "cp", cs_geti(psh, "cp", 0) + total);
+    o.len = 0;
+    cs_s(&o, "You gain ");
+    cs_i(&o, total);
+    cs_s(&o, total == 1 ? " Character Point." : " Character Points.");
+    puts(cs_cstr(&o));
 }
 
 /* Fire a yielded NPC's on_yield hook once (rules Section 16 outcome seam).
@@ -412,6 +437,7 @@ main(void)
                     o.len = 0;
                     cs_s(&o, social ? "The matter is settled." : "The fight is over.");
                     sys_broadcast(room, cs_cstr(&o));
+                    award_cp(player, ids, n);   /* M35a: CP for the win */
                     goto done;
                 }
                 /* social: the player conceding ends the scene, no penalty.
