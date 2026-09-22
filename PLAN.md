@@ -535,6 +535,32 @@ of hopping. The per-room move is factored into one `step_to` shared by the
 train's looping advance and the elevator's targeted step. A vehicle with no
 `path` is unchanged. The suite grew to 292 checks.
 
+## Milestone 35: Character advancement
+
+The ChromeSix growth loop that M25 designed but left inert now runs: play awards
+Character Points and CP buys a better sheet. The full plan is `M35.md`; this is
+the summary. It shipped in three slices (b098d44, 961d153, a8df506).
+
+Slice a earns CP. The combat task (`verb_combat.c`) resolves both a fight and a
+social scene, and it declares a win at one point, when no foe is left up. That
+hook now grants the player CP, summed over the defeated foes (each foe's
+`cp_award`, or a base of one), announced with `puts`. It fires once per settled
+scene, so it cannot be farmed by re-opening one.
+
+Slice b spends CP on skills. The `train <skill>` verb (`verb_train.c`, non-setuid
+since it writes only the caller's own sheet) raises a skill one pip for CP equal
+to its current rating in dice, capped at attribute + 6 skill points like
+creation, refusing an unknown skill, a raise past the cap, and one the character
+cannot afford.
+
+Slice c spends CP on unlocks. The `learn <id>` verb (`verb_learn.c`) adds a
+maneuver, cyberware mod, or spell from the new `cs_unlocks` catalog, which holds
+each id's CP cost, required hook, and graft-slot use. It checks the id, prior
+ownership, the hook, the graft-slot cap, and the cost. The catalog ships with the
+`smartlink` maneuver and a new `dermal` cyberware that adds two Soak (read live
+by `cs_recalc`), so a learned unlock has a real effect and the catalog grows one
+row per future unlock. The suite grew to 302 checks.
+
 ---
 
 # Future Milestones
