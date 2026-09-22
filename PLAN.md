@@ -561,6 +561,29 @@ ownership, the hook, the graft-slot cap, and the cost. The catalog ships with th
 by `cs_recalc`), so a learned unlock has a real effect and the catalog grows one
 row per future unlock. The suite grew to 302 checks.
 
+## Milestone 36: The unlock roster
+
+M35 shipped `learn` but left its catalog nearly empty and its effects hardcoded.
+M36 fills the roster and finishes the machinery. The full plan is `M36.md`; this
+is the summary. It shipped in three slices (c6fe839, abe1252, 4be0109).
+
+Slice a makes the catalog visible: `learn` with no id lists each unlock's CP
+cost, required hook, and status (owned, available, too dear, the wrong hook, or
+full graft slots), closing the discoverability gap M35c left.
+
+Slice b makes the use side table-driven. Each `cs_unlocks` row gained a Grit cost
+and an effect tag, and `verb_use.c` now dispatches an active unlock through the
+catalog (find, refuse if passive, check learned, gate to the turn, spend Grit,
+switch on the tag) instead of a hardcoded branch. `smartlink` became the
+`UEF_AIM` row and behaves unchanged. Adding an active unlock is now a row plus,
+only for a new kind of effect, one case.
+
+Slice c fills the roster. Beside `smartlink` (maneuver) and `dermal` (cyberware,
++2 Soak) it adds `reflex` (cyberware, +2 Passive Defense, filling the second
+graft slot) and `vigor` (awakened spell, +3 Max Grit). Each new unlock is a
+catalog row and one line in `cs_recalc`, no verb code. `vigor` newly exercises
+the awakened hook `learn` gates on. The suite grew to 309 checks.
+
 ---
 
 # Future Milestones
