@@ -1036,6 +1036,36 @@ check_log /tmp/smolmoo_p1.log 'No such unlock' "learn refuses an unknown id"
 curl -sf -X POST -d "$SID1 use dermal" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'works on its own' "use refuses a passive unlock"
 
+# --- M36c: the unlock roster (reflex cyberware, vigor spell) ---
+# reflex is cyberware, +2 Defense, and fills the second graft slot beside dermal.
+# Measure Defense before and after, under the cyber hook (the hook itself feeds
+# Passive Defense, so the reading must not straddle a hook change).
+curl -sf -X POST -d "$SID1 @set #$P1SH.cp=50" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'Maneuvers: smartlink,dermal' || true
+DB=$(grep -oE 'Defense [0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
+curl -sf -X POST -d "$SID1 learn reflex" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'You learn reflex' "learn acquires the reflex cyberware"
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'Maneuvers: smartlink,dermal,reflex' || true
+DA=$(grep -oE 'Defense [0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
+GB=$(grep -oE 'Grit [0-9]+/[0-9]+' /tmp/smolmoo_p1.log | tail -1 | sed 's#.*/##')
+[ "${DA:-0}" -eq "$(( ${DB:-0} + 2 ))" ] \
+	&& pass "the learned reflex raises Defense by 2" \
+	|| fail "the learned reflex raises Defense by 2"
+# vigor is an awakened spell, +3 Max Grit. A character takes one hook at creation;
+# switch to awakened to take it, then restore the cyber hook.
+curl -sf -X POST -d "$SID1 @set #$P1SH.hook=awakened" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 learn vigor" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'You learn vigor' "learn acquires the vigor spell on the awakened hook"
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'Maneuvers: smartlink,dermal,reflex,vigor' || true
+GA=$(grep -oE 'Grit [0-9]+/[0-9]+' /tmp/smolmoo_p1.log | tail -1 | sed 's#.*/##')
+[ "${GA:-0}" -eq "$(( ${GB:-0} + 3 ))" ] \
+	&& pass "the learned vigor raises Max Grit by 3" \
+	|| fail "the learned vigor raises Max Grit by 3"
+curl -sf -X POST -d "$SID1 @set #$P1SH.hook=cyber" http://localhost:$PORT/cmd >/dev/null
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.

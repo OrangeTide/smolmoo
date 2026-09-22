@@ -226,6 +226,7 @@ cs_recalc(int ch, struct cs_derived *d)
     int armor = cs_geti(ch, "armor", 0);
 
     d->pd = (ad << 1) + ap + cs_hook_bonus(ch) - size * 2;
+    if (cs_has_unlock(ch, "reflex")) d->pd += 2;    /* M36c reflex booster */
     if (d->pd > 20) d->pd = 20;
     if (d->pd < 0) d->pd = 0;
     d->soak = (md << 1) + mp + armor + (size > 0 ? size : 0);
@@ -233,6 +234,7 @@ cs_recalc(int ch, struct cs_derived *d)
     d->maxbp = 12 + md * 3 + size * 6;
     if (d->maxbp < 1) d->maxbp = 1;
     d->maxgrit = 3 + wd + cd;
+    if (cs_has_unlock(ch, "vigor")) d->maxgrit += 3;  /* M36c vigor */
 }
 
 /* Passive Perception (chromesix.md): the always-on notice TN an ambusher's
@@ -829,8 +831,10 @@ struct cs_unlock {
     const char *id; int cp; const char *hook; int graft; int grit; int effect;
 };
 static const struct cs_unlock cs_unlocks[] = {
-    { "smartlink", 5, "",      0, 2, UEF_AIM },     /* aim, granted at creation */
-    { "dermal",    5, "cyber", 1, 0, UEF_PASSIVE }, /* +2 Soak, one graft slot */
+    { "smartlink", 5, "",         0, 2, UEF_AIM },     /* aim, granted at start */
+    { "dermal",    5, "cyber",    1, 0, UEF_PASSIVE }, /* +2 Soak, one graft */
+    { "reflex",    5, "cyber",    1, 0, UEF_PASSIVE }, /* +2 Defense, one graft */
+    { "vigor",     5, "awakened", 0, 0, UEF_PASSIVE }, /* +3 Max Grit */
 };
 #define CS_NUNLOCKS ((int)(sizeof(cs_unlocks) / sizeof(cs_unlocks[0])))
 #define CS_GRAFT_CAP 2      /* cyberware graft slots (Cyber-Augmented hook) */
