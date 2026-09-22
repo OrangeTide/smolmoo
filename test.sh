@@ -516,6 +516,7 @@ check_log /tmp/smolmoo_p1.log 'Defense 10  Soak 6' "chargen recalc with hook"
 check_log /tmp/smolmoo_p1.log 'BP 21/21' "chargen set BP to max"
 check_log /tmp/smolmoo_p1.log 'Grit 6/6' "chargen set Grit to max"
 check_log /tmp/smolmoo_p1.log 'firearms 2D' "chargen wrote skills"
+check_log /tmp/smolmoo_p1.log 'CP 10' "chargen banks the 10 CP creation budget"
 
 # --- M25d: Grit on the fuel gauge ---
 # The status bar carries the live Grit gauge next to Fuel. Max Grit is

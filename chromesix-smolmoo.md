@@ -534,8 +534,9 @@ Land it in small, testable steps rather than one drop:
   (attributes sum 24 and each 3 to 9; skills sum 12 and each within +2D of its
   attribute; one valid Hook; graft slots at most 2; Spellcasting points only
   with the Awakened Hook), applies the Hook effects,
-  grants the starting kit into hand and body slots, 300 creds, and 10 CP of
-  unlocks, and sets current BP and Grit to their maxima; and skill-check
+  grants the starting kit into hand and body slots, 300 creds, the smartlink
+  maneuver, and a 10 CP budget to spend on skills and unlocks, and sets current
+  BP and Grit to their maxima; and skill-check
   resolution against the TN ladder. No combat yet.
 * **M25b** (_DONE_) Add the `sys_random` syscall and the `roll_pool` engine, with a
   smoke test that the distribution is sane.

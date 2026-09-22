@@ -182,13 +182,14 @@ main(void)
         sys_setprop(ch, "money", "300");
         sys_setprop(ch, "stims", "3");
         sys_setprop(ch, "maneuvers", "smartlink");
+        sys_setprop(ch, "cp", "10");
         cs_recalc(ch, &d);
         cs_itoa(buf, d.maxbp); sys_setprop(ch, "bp", buf);
         cs_itoa(buf, d.maxgrit); sys_setprop(ch, "grit", buf);
         sys_setprop(ch, "cg_step", "0");
 
-        puts("Character complete. 300 creds, 3 stims; BP and Grit at maximum.");
-        puts("Type 'sheet' to view it. Gear and CP unlocks arrive with combat.");
+        puts("Character complete. 300 creds, 3 stims, 10 CP; BP and Grit at maximum.");
+        puts("Type 'sheet' to view it, or spend CP now with 'train' and 'learn'.");
         _exit(0);
     }
 }

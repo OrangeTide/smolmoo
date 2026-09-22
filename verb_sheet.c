@@ -38,6 +38,7 @@ main(void)
 
     cs_s(&o, "Creds "); cs_i(&o, cs_geti(ch, "money", 0));
     cs_s(&o, "  Stims "); cs_i(&o, cs_geti(ch, "stims", 0));
+    cs_s(&o, "  CP "); cs_i(&o, cs_geti(ch, "cp", 0));
     n = cs_geti(ch, "crash", 0);
     if (n > 0) { cs_s(&o, "  Crash -"); cs_i(&o, n); cs_s(&o, "D"); }
     cs_s(&o, "\n");
