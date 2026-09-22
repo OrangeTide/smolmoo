@@ -436,6 +436,13 @@ ready.
     recover                      pay a clinic to revive your body (Section 11)
     carry <player> | release     lift a fallen ally's body and set it down
     revive <player>              patch a body back to life (Medicine or Cybertech)
+    train <skill>                spend Character Points to raise a skill one pip
+
+Winning a scene, a fight where the foes are downed or a social scene where the
+target concedes, awards Character Points, summed over the defeated foes. `train`
+spends them: raising a skill one pip costs CP equal to its current rating in
+dice, and a skill cannot be trained past attribute + 6 skill points, the same
+ceiling character creation uses.
 
 **Targeting shorthand.** `target <foe>` (or `t <foe>`) sets a default so bare
 `attack`, `cast`, and `close` act on it. Ranged verbs refuse or warn when the

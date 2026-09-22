@@ -970,6 +970,28 @@ curl -sf -X POST -d "$SID3 @go #101" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID3 buy cola from dispenser" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'You buy the cola for 5 creds. Balance 95' "a non-admin completes a purchase (own-sheet write, no wizard)"
 
+# --- M35b: spend CP to raise a skill (train) ---
+# Raising a skill costs CP equal to its current rating in dice and is capped at
+# attribute + 6 skill points, like creation. Combat is done by here, so nudging
+# TestPlayer1's firearms does not disturb the fights above. Read the sheet id off
+# the player object (the buy test's pattern), set a known CP budget, then train.
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @contents #101" http://localhost:$PORT/cmd >/dev/null
+P1E=$(grep -oE '&[0-9]+  TestPlayer1' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
+curl -sf -X POST -d "$SID1 @examine &$P1E" http://localhost:$PORT/cmd >/dev/null
+P1SH=$(grep -oE 'charid[^"]*"[0-9]+"' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+' | tail -1)
+curl -sf -X POST -d "$SID1 @set #$P1SH.cp=20" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 train firearms" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'You train firearms to' \
+	"train raises a skill and spends CP"
+# an unknown skill is refused
+curl -sf -X POST -d "$SID1 train bogusskill" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Unknown skill' "train refuses an unknown skill"
+# with no CP the raise is refused, not applied
+curl -sf -X POST -d "$SID1 @set #$P1SH.cp=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 train stealth" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'That costs' "train refuses a raise the character cannot afford"
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.
