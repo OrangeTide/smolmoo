@@ -1,6 +1,8 @@
 /* verb_jobs.c : accept and track a job contract (M37a). A job giver is a builder
  * object marked `job`=1 that carries a contract in props: a `job_desc` line, a
- * target for the goal, and the reward (`job_cp`, `job_creds`). A player holds one
+ * goal (a `job_target` creature for a bounty, or a `job_dest` room for a courier,
+ * M37c), and the reward (`job_cp`, `job_creds`, and an optional `job_standing`
+ * "faction:step"). A player holds one
  * job at a time, stored on the sheet as `job_giver` (the giver's id, 0 for none)
  * and `job_done` (the completion flag, set in M37b). `jobs` lists what is offered
  * here and your active contract; `accept` takes one; `abandon` drops it; `turnin`
@@ -81,15 +83,34 @@ main(void)
         creds = cs_geti(giver, "job_creds", 0);
         cs_seti(ch, "cp", cs_geti(ch, "cp", 0) + cp);
         cs_seti(ch, "money", cs_geti(ch, "money", 0) + creds);
-        cs_seti(ch, "job_giver", 0);
-        cs_seti(ch, "job_done", 0);
         cs_getstr(giver, "name", nm, sizeof(nm));
         cs_s(&o, nm);
         cs_s(&o, " pays you ");
         cs_i(&o, creds);
         cs_s(&o, " creds and ");
         cs_i(&o, cp);
-        cs_s(&o, " CP.\n");
+        cs_s(&o, " CP.");
+        /* an optional standing reward, "faction:step" on the giver (M37c) */
+        {
+            char st[64], fac[32];
+            int k = 0, sign = 1, v = 0;
+
+            cs_getstr(giver, "job_standing", st, sizeof(st));
+            while (st[k] && st[k] != ':' && k < 31) { fac[k] = st[k]; k++; }
+            fac[k] = '\0';
+            if (fac[0] && st[k] == ':') {
+                k++;
+                if (st[k] == '-') { sign = -1; k++; }
+                while (st[k] >= '0' && st[k] <= '9') { v = v * 10 + (st[k] - '0'); k++; }
+                cs_standing_add(ch, fac, sign * v);
+                cs_s(&o, " Your standing with ");
+                cs_s(&o, fac);
+                cs_s(&o, " shifts.");
+            }
+        }
+        cs_s(&o, "\n");
+        cs_seti(ch, "job_giver", 0);
+        cs_seti(ch, "job_done", 0);
         cs_flush(&o);
         _exit(0);
     }

@@ -317,6 +317,53 @@ cs_standing(int sheet, const char *faction)
     return 0;
 }
 
+/* Add `delta` to the sheet's standing with `faction` (M37c), the verb-side
+ * writer mirroring the host @standing merge. Rebuilds the comma-separated
+ * `id:step` list, adjusting the matching pair or appending a new one, clamped to
+ * the [-3, +3] band. The player owns the sheet, so the caller writes it. */
+static void
+cs_standing_add(int sheet, const char *faction, int delta)
+{
+    char buf[128];
+    struct cs_out o;
+    int n = sys_getprop(sheet, "standing", buf, sizeof(buf) - 1);
+    int newv = cs_standing(sheet, faction) + delta;
+    int i = 0, found = 0;
+
+    if (n < 0) n = 0;
+    buf[n] = '\0';
+    if (newv > 3) newv = 3;
+    if (newv < -3) newv = -3;
+    o.len = 0;
+    while (buf[i]) {                     /* copy each pair, replacing the match */
+        char fac[32];
+        int fj = 0, v = 0, sign = 1, ismatch;
+
+        while (buf[i] && buf[i] != ':' && buf[i] != ',' && fj < 31)
+            fac[fj++] = buf[i++];
+        fac[fj] = '\0';
+        if (buf[i] == ':') {
+            i++;
+            if (buf[i] == '-') { sign = -1; i++; }
+            while (buf[i] >= '0' && buf[i] <= '9') { v = v * 10 + (buf[i] - '0'); i++; }
+        }
+        ismatch = cs_streq(fac, faction);
+        if (fac[0]) {
+            if (o.len) cs_s(&o, ",");
+            cs_s(&o, fac); cs_s(&o, ":");
+            cs_i(&o, ismatch ? newv : sign * v);
+        }
+        if (ismatch) found = 1;
+        while (buf[i] && buf[i] != ',') i++;
+        if (buf[i] == ',') i++;
+    }
+    if (!found) {
+        if (o.len) cs_s(&o, ",");
+        cs_s(&o, faction); cs_s(&o, ":"); cs_i(&o, newv);
+    }
+    sys_setprop(sheet, "standing", cs_cstr(&o));
+}
+
 /* The band word for a standing step (rules Section 14). */
 static const char *
 cs_standing_word(int step)

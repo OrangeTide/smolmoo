@@ -112,6 +112,20 @@ main(void)
         }
     }
 
+    /* M37c: arriving at a courier job's destination completes it. The giver
+     * names the destination room in `job_dest`; grant_accept above lets us set
+     * the flag on the mover's own sheet. */
+    {
+        int giver = cs_geti(sh, "job_giver", 0);
+        char db[16];
+
+        if (giver > 0 && !cs_geti(sh, "job_done", 0)) {
+            cs_getstr(giver, "job_dest", db, sizeof(db));
+            if (db[0] && cs_atoi(db) == dest)
+                cs_seti(sh, "job_done", 1);
+        }
+    }
+
     show_room(dest);
     _exit(0);
 }

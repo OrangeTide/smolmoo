@@ -442,6 +442,7 @@ ready.
     learn [unlock]               list the unlock catalog, or acquire one by id
     jobs                         list contracts offered here and your active one
     accept <giver> | abandon     take an offered job, or drop your active one
+    turnin | report              claim the reward at the giver once the job is done
 
 Winning a scene, a fight where the foes are downed or a social scene where the
 target concedes, awards Character Points, summed over the defeated foes. `train`
@@ -454,6 +455,13 @@ the catalog costs 5 CP, and is gated by the
 hook it needs (cyberware needs the cyber hook, a spell the awakened hook) and,
 for cyberware, the two graft slots. A learned id joins the `maneuvers` list; its
 effect then applies wherever that unlock is checked.
+
+A job giver (a builder object marked `job`=1) offers a contract with a goal and a
+reward. Two goal types exist: a bounty, defeating a named target creature,
+completed at the fight's end, and a courier, reaching a named destination room,
+completed on arrival. `accept` takes the job, and once it is done `turnin` at the
+giver pays its creds, CP, and an optional faction standing step. You hold one
+contract at a time.
 
 **Targeting shorthand.** `target <foe>` (or `t <foe>`) sets a default so bare
 `attack`, `cast`, and `close` act on it. Ranged verbs refuse or warn when the

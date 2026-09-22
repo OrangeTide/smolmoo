@@ -1129,6 +1129,40 @@ curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'no job to report' "turnin needs an active job"
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M37c: courier goal (reach a destination) and standing reward ---
+# Build an origin with an exit to a destination. A courier job completes on
+# arriving at the destination (a hook in `go`) and pays a standing step. Turning
+# in requires that completion, so the unique standing line proves the whole
+# chain; the sheet then shows the new faction band.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+CA=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$CA.name=Origin" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$CA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @dig north to Destination" http://localhost:$PORT/cmd >/dev/null
+CB=$(grep -oE 'Dug #[0-9]+ to #[0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '#[0-9]+' | tail -1 | tr -d '#')
+curl -sf -X POST -d "$SID1 @go #$CA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+BRK=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$BRK.name=broker" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BRK.job=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BRK.job_desc=Run a package to the docks." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BRK.job_dest=$CB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BRK.job_cp=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BRK.job_creds=30" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BRK.job_standing=couriers:2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BRK.location=#$CA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 accept broker" http://localhost:$PORT/cmd >/dev/null
+# travel to the destination: arriving there completes the courier goal
+curl -sf -X POST -d "$SID1 go north" http://localhost:$PORT/cmd >/dev/null
+# report back at the origin: pays creds, CP, and a standing step
+curl -sf -X POST -d "$SID1 @go #$CA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'standing with couriers shifts' \
+	"reaching the destination completes a courier job and turn-in pays standing"
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'couriers' "the standing reward lands on the sheet"
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.
