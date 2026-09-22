@@ -584,6 +584,34 @@ graft slot) and `vigor` (awakened spell, +3 Max Grit). Each new unlock is a
 catalog row and one line in `cs_recalc`, no verb code. `vigor` newly exercises
 the awakened hook `learn` gates on. The suite grew to 309 checks.
 
+## Milestone 37: Jobs and contracts
+
+The character systems could fight, talk, travel, and grow, but the world had no
+reason to do any of it. M37 adds a directed loop: a job giver offers a contract,
+completing it pays creds, CP, and standing. A job is data on a builder-authored
+object, not compiled content. The full plan is `M37.md`; this is the summary. It
+shipped in three slices (f882e8e, a6dca55, 57b68d9).
+
+Slice a is the bookkeeping. A giver object marked `job=1` carries the contract in
+props (`job_desc`, a goal, and the `job_cp`/`job_creds` reward). The player holds
+one job at a time on the sheet (`job_giver`, `job_done`). `verb_jobs.c` (verbs
+461-465, non-setuid since it writes only the caller's sheet) dispatches `jobs`
+(offers here plus your active contract), `accept` (refused when you already hold
+one), and `abandon`.
+
+Slice b completes and pays a bounty. `mark_job_done` runs at the same scene-win
+point as `award_cp`; if a defeated foe's name matches the giver's `job_target`,
+it sets `job_done`. `turnin`/`report` at the giver checks the flag, pays `job_cp`
+and `job_creds` into the sheet's `cp` and `money`, and clears the job. The three
+refusals (no job, giver absent, not done) are covered.
+
+Slice c adds the courier goal and the standing reward. A giver names a
+destination room in `job_dest`; `verb_go.c` sets `job_done` on arrival, the
+travel-side mirror of `mark_job_done`, so `turnin` is unchanged. `cs_standing_add`
+is the verb-side writer that merges one `id:step` pair into the `standing` prop
+clamped to the [-3, +3] band, and `turnin` parses the giver's optional
+`job_standing` "faction:step" and pays it. The suite grew to 321 checks.
+
 ---
 
 # Future Milestones
