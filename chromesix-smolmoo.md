@@ -439,14 +439,16 @@ ready.
     carry <player> | release     lift a fallen ally's body and set it down
     revive <player>              patch a body back to life (Medicine or Cybertech)
     train <skill>                spend Character Points to raise a skill one pip
-    learn <unlock>               spend CP to acquire a maneuver, mod, or spell
+    learn [unlock]               list the unlock catalog, or acquire one by id
 
 Winning a scene, a fight where the foes are downed or a social scene where the
 target concedes, awards Character Points, summed over the defeated foes. `train`
 spends them on skills: raising a skill one pip costs CP equal to its current
 rating in dice, and a skill cannot be trained past attribute + 6 skill points,
-the same ceiling character creation uses. `learn` spends them on unlocks: each
-maneuver, cyberware mod, and spell in the catalog costs 5 CP, and is gated by the
+the same ceiling character creation uses. `learn` with no id lists the catalog,
+each unlock's cost, hook, and whether it is owned, available, or out of reach.
+`learn <id>` spends CP on that unlock: each maneuver, cyberware mod, and spell in
+the catalog costs 5 CP, and is gated by the
 hook it needs (cyberware needs the cyber hook, a spell the awakened hook) and,
 for cyberware, the two graft slots. A learned id joins the `maneuvers` list; its
 effect then applies wherever that unlock is checked.

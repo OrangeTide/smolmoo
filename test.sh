@@ -1008,6 +1008,11 @@ curl -sf -X POST -d "$SID1 learn dermal" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'That costs 5 CP' "learn refuses an unlock the character cannot afford"
 # fund it, capture the baseline Soak, then learn dermal and confirm +2 Soak
 curl -sf -X POST -d "$SID1 @set #$P1SH.cp=20" http://localhost:$PORT/cmd >/dev/null
+# M36a: with no id, learn lists the catalog and each entry's status. Cyber and
+# funded, TestPlayer1 can take dermal, so it shows available.
+curl -sf -X POST -d "$SID1 learn" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'dermal.*available' \
+	"learn with no id lists the catalog with an available unlock"
 curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
 waitgrep /tmp/smolmoo_p1.log 'Maneuvers: smartlink' || true
 SB=$(grep -oE 'Soak [0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
@@ -1019,6 +1024,9 @@ SA=$(grep -oE 'Soak [0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
 [ "${SA:-0}" -eq "$(( ${SB:-0} + 2 ))" ] \
 	&& pass "the learned dermal raises Soak by 2" \
 	|| fail "the learned dermal raises Soak by 2"
+# the catalog now marks the learned unlock owned
+curl -sf -X POST -d "$SID1 learn" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'dermal.*owned' "the catalog marks a learned unlock owned"
 # a known unlock and an unknown id are both refused
 curl -sf -X POST -d "$SID1 learn dermal" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'already know dermal' "learn refuses an unlock already known"
