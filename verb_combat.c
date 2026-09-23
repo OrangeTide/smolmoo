@@ -406,6 +406,23 @@ main(void)
                 sys_suspend(NPC_PACE_MS);
                 continue;
             }
+            /* Stunned (M40b): lose this turn's action, though a reaction is still
+             * allowed. Clears here, so it costs exactly one turn. */
+            if (cs_geti(sh, "stunned", 0)) {
+                struct cs_out o;
+                char nm[32], g[12];
+
+                cs_getstr(sh, "name", nm, sizeof(nm));
+                cs_getstr(sh, "grade", g, sizeof(g));
+                cs_seti(sh, "stunned", 0);
+                cs_seti(sh, "react_left", cs_streq(g, "elite") ? 2 : 1);
+                o.len = 0;
+                cs_s(&o, nm);
+                cs_s(&o, " is stunned and cannot act.");
+                sys_broadcast(room, cs_cstr(&o));
+                sys_suspend(NPC_PACE_MS);
+                continue;
+            }
             cs_seti(room, "cb_turn", me);
             cs_seti(room, "cb_acted", 0);
             /* the Cover-support bonus and the moved flag last only until
@@ -444,6 +461,8 @@ main(void)
                 else npc_turn(me, player, room);
                 sys_suspend(NPC_PACE_MS);
             }
+
+            cs_rally(sh, room);   /* M40b: a shaken combatant may shake it off */
 
             {
                 int social = cs_scene_social(room);

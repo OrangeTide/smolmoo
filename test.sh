@@ -2035,21 +2035,86 @@ curl -sf -X POST -d "$SID1 @set #$DUMMY.agi=2" http://localhost:$PORT/cmd >/dev/
 curl -sf -X POST -d "$SID1 @set #$DUMMY.downed=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$DUMMY.location=#$TRM" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.prone=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.sk_brawl=40" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 attack dummy" http://localhost:$PORT/cmd >/dev/null
 waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+# re-send the maneuver frequently so it lands inside the player's turn window
+# (a slow poll can miss the turn entirely, since the turn is shorter than 3s)
 _i=0
-while [ $_i -lt 8 ]; do
+while [ $_i -lt 40 ]; do
 	curl -sf -X POST -d "$SID1 trip dummy" http://localhost:$PORT/cmd >/dev/null
-	waitgrep /tmp/smolmoo_p1.log 'sprawls prone' && break
-	sleep 0.3
+	grep -q 'sprawls prone' /tmp/smolmoo_p1.log 2>/dev/null && break
+	sleep 0.2
 	_i=$((_i + 1))
 done
 check_log /tmp/smolmoo_p1.log 'sprawls prone' "trip knocks an engaged foe prone"
 # the tripped foe takes its turn Prone; its attack line notes the condition
 check_log /tmp/smolmoo_p1.log 'fists (prone)' "a prone combatant's attack notes the condition"
-curl -sf -X POST -d "$SID1 @set #$TRM.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+# clean teardown: down the foe and confirm the fight ends, so its combat task
+# does not linger and prompt the player into the next scenario
+curl -sf -X POST -d "$SID1 @set #$DUMMY.downed=1" http://localhost:$PORT/cmd >/dev/null
+fight_over dummy || true
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
+# --- M40b: Stunned and Shaken, the stun and menace maneuvers ---
+# Deterministic sheet display first.
+curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.stunned=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.shaken=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Conditions: stunned, shaken' "the sheet lists stunned and shaken"
+curl -sf -X POST -d "$SID1 @set #$P1SH.stunned=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.shaken=0" http://localhost:$PORT/cmd >/dev/null
+# In a fight: stun skips a foe's turn; menace shakes a foe, whose attack is
+# annotated and who then rallies. Isolated room, a weak durable foe, stacked
+# Brawl and Command so the opposed maneuvers win.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+SR2=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SR2.name=Drill Hall" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$SR2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+D2=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$D2.name=goon" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D2.grade=tough" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D2.bp=60" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D2.mig=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D2.agi=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D2.wit=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D2.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D2.location=#$SR2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.prone=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.sk_brawl=40" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.sk_command=40" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.grit=30" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack goon" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+_i=0
+while [ $_i -lt 40 ]; do
+	curl -sf -X POST -d "$SID1 stun goon" http://localhost:$PORT/cmd >/dev/null
+	grep -q 'reels, stunned' /tmp/smolmoo_p1.log 2>/dev/null && break
+	sleep 0.2
+	_i=$((_i + 1))
+done
+check_log /tmp/smolmoo_p1.log 'reels, stunned' "stun lands a stunning blow"
+check_log /tmp/smolmoo_p1.log 'is stunned and cannot act' "a stunned foe loses its turn"
+_i=0
+while [ $_i -lt 40 ]; do
+	curl -sf -X POST -d "$SID1 menace goon" http://localhost:$PORT/cmd >/dev/null
+	grep -q 'it is shaken' /tmp/smolmoo_p1.log 2>/dev/null && break
+	sleep 0.2
+	_i=$((_i + 1))
+done
+check_log /tmp/smolmoo_p1.log 'it is shaken' "menace leaves a foe shaken"
+check_log /tmp/smolmoo_p1.log 'fists (shaken)' "a shaken foe's attack notes the condition"
+# raise the foe's Wit so its next end-of-turn rally reliably succeeds
+curl -sf -X POST -d "$SID1 @set #$D2.wit=30" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'shakes off the fear' "a shaken combatant rallies on a Wit save"
+curl -sf -X POST -d "$SID1 @set #$D2.downed=1" http://localhost:$PORT/cmd >/dev/null
+fight_over goon || true
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
 # --- M24: export / merge CLI ---

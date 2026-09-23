@@ -778,8 +778,29 @@ cs_cond_list(int sheet, struct cs_out *o)
 {
     int n = 0;
 
-    if (cs_geti(sheet, "prone", 0)) cs_s(o, n++ ? ", prone" : "prone");
-    /* slice b/c extend this with stunned, shaken, and bleeding */
+    if (cs_geti(sheet, "prone", 0))   cs_s(o, n++ ? ", prone" : "prone");
+    if (cs_geti(sheet, "stunned", 0)) cs_s(o, n++ ? ", stunned" : "stunned");
+    if (cs_geti(sheet, "shaken", 0))  cs_s(o, n++ ? ", shaken" : "shaken");
+    /* slice c extends this with bleeding */
+}
+
+/* A shaken combatant tries to rally at the end of its turn: a Wit roll against
+ * Moderate (10) shakes off the fear (rules Section 8, M40b). */
+static void
+cs_rally(int sheet, int room)
+{
+    struct cs_out o;
+    char nm[32];
+    int wild;
+
+    if (!cs_geti(sheet, "shaken", 0)) return;
+    if (cs_roll(cs_geti(sheet, "wit", 0), &wild) < 10) return;
+    cs_seti(sheet, "shaken", 0);
+    cs_getstr(sheet, "name", nm, sizeof(nm));
+    o.len = 0;
+    cs_s(&o, nm);
+    cs_s(&o, " shakes off the fear.");
+    sys_broadcast(room, cs_cstr(&o));
 }
 
 /* Descriptive Difficulty scale (rules Section 15): a word for a TN. */
@@ -1116,6 +1137,7 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
 
         if (cs_geti(atk, "prone", 0)) apool -= 3;
         if (cs_geti(def, "prone", 0)) apool += ranged ? -3 : 3;
+        if (cs_geti(atk, "shaken", 0)) apool -= 3;   /* M40b: Shaken is -1D */
     }
     if (apool < 1) apool = 1;
     aroll = cs_roll(apool, &awild);
@@ -1143,6 +1165,7 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
     if (guarded) cs_s(o, " (guarded)");
     if (cs_geti(atk, "prone", 0)) cs_s(o, " (prone)");
     if (cs_geti(def, "prone", 0)) cs_s(o, " (target prone)");
+    if (cs_geti(atk, "shaken", 0)) cs_s(o, " (shaken)");
 
     if (aroll < pd) {
         cs_s(o, " and misses.");
