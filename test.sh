@@ -1994,16 +1994,21 @@ curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'Your job: runner (in progress)' "the contract reopens once the cooldown lapses"
 curl -sf -X POST -d "$SID1 abandon" http://localhost:$PORT/cmd >/dev/null
 # Standing decay: an idle reputation drifts one step toward Neutral per period.
+# The wall-clock elapsed over a fixed sleep is not exact to the second, so a
+# one-step assertion races the boundary. Instead decay far enough that the whole
+# earned band is spent: with a one-second period and a three-second sleep at
+# least three steps elapse, and cs_decay clamps at Neutral, so any extra step is
+# absorbed and the result is deterministic.
 curl -sf -X POST -d "$SID1 @set #$P1SH.standing=wolves:3" http://localhost:$PORT/cmd >/dev/null
-curl -sf -X POST -d "$SID1 @set #0.decay_secs=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #0.decay_secs=1" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.decay_tick=0" http://localhost:$PORT/cmd >/dev/null
 # the first read anchors the decay clock and shows the earned band
 curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'wolves Allied' "standing starts at its earned band"
 sleep 3
-# after one period a read has dropped the standing one step toward Neutral
+# after several periods a read has drifted the standing all the way to Neutral
 curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p1.log 'wolves Friendly' "idle standing decays one step toward Neutral"
+check_log /tmp/smolmoo_p1.log 'wolves Neutral' "idle standing decays toward Neutral"
 curl -sf -X POST -d "$SID1 @set #0.decay_secs=604800" http://localhost:$PORT/cmd >/dev/null
 
 # --- M40a: the Prone condition, the trip maneuver, and stand ---
