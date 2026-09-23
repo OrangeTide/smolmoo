@@ -465,6 +465,60 @@ cs_rest(int sheet, int room)
     cs_seti(sheet, "rest_since", since + consumed);
 }
 
+/* --- M39c: standing decay, a reputation fading toward Neutral (Section 14) ---
+ *
+ * Standing drifts one step toward Neutral for each idle DECAY_SECS (tunable via
+ * `#0.decay_secs`) that passes, so a reputation earned or lost fades if it is not
+ * renewed. It is lazy: `decay_tick` marks when the current interval began, and a
+ * standing read applies the whole steps elapsed to every faction, advancing the
+ * tick by only what it consumed. The mirror of the cs_standing_add writer. */
+#define DECAY_SECS 604800       /* one step toward Neutral per idle week */
+
+static void
+cs_decay(int sheet)
+{
+    char buf[128];
+    struct cs_out o;
+    int now = sys_now();
+    int tick = cs_geti(sheet, "decay_tick", 0);
+    int period, elapsed, steps, i = 0, n;
+
+    if (tick == 0) { cs_seti(sheet, "decay_tick", now); return; }
+    period = cs_geti(0, "decay_secs", DECAY_SECS);
+    if (period < 1) period = 1;
+    elapsed = now - tick;
+    if (elapsed < period) return;
+    steps = elapsed / period;
+    n = sys_getprop(sheet, "standing", buf, sizeof(buf) - 1);
+    if (n < 0) n = 0;
+    buf[n] = '\0';
+    o.len = 0;
+    while (buf[i]) {                     /* copy each pair, drifting it toward 0 */
+        char fac[32];
+        int fj = 0, v = 0, sign = 1;
+
+        while (buf[i] && buf[i] != ':' && buf[i] != ',' && fj < 31)
+            fac[fj++] = buf[i++];
+        fac[fj] = '\0';
+        if (buf[i] == ':') {
+            i++;
+            if (buf[i] == '-') { sign = -1; i++; }
+            while (buf[i] >= '0' && buf[i] <= '9') { v = v * 10 + (buf[i] - '0'); i++; }
+        }
+        v *= sign;
+        if (v > 0) { v -= steps; if (v < 0) v = 0; }
+        else if (v < 0) { v += steps; if (v > 0) v = 0; }
+        if (fac[0]) {
+            if (o.len) cs_s(&o, ",");
+            cs_s(&o, fac); cs_s(&o, ":"); cs_i(&o, v);
+        }
+        while (buf[i] && buf[i] != ',') i++;
+        if (buf[i] == ',') i++;
+    }
+    sys_setprop(sheet, "standing", cs_cstr(&o));
+    cs_seti(sheet, "decay_tick", tick + steps * period);
+}
+
 /* The sheet holding a combatant's stats: a player object points at its
  * persistent sheet through `charid`; an NPC object is its own sheet. */
 static int

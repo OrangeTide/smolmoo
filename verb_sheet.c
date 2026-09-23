@@ -79,7 +79,10 @@ main(void)
     /* Faction standing (rules Section 14): each id:step pair as a band word. */
     {
         char st[128];
-        int sn = sys_getprop(ch, "standing", st, sizeof(st) - 1);
+        int sn;
+
+        cs_decay(ch);           /* fade idle standing toward Neutral first (M39c) */
+        sn = sys_getprop(ch, "standing", st, sizeof(st) - 1);
         int i = 0;
 
         if (sn > 0) {

@@ -1967,6 +1967,45 @@ curl -sf -X POST -d "$SID1 @set #$P1SH.money=10" http://localhost:$PORT/cmd >/de
 curl -sf -X POST -d "$SID1 treat" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'Treatment costs 40 creds; you have 10' "treat refuses an unaffordable fee"
 
+# --- M39c: job cooldown and standing decay, the clock's deferred consumers ---
+# A giver with a job_cd cannot be turned in and re-accepted back to back.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+JR=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$JR.name=Runner Den" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$JR" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+GJ=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$GJ.name=runner" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GJ.job=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GJ.job_creds=5" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GJ.job_cd=100" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GJ.location=#$JR" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 accept runner" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.job_done=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'runner pays you 5 creds' "a cooldown job pays out on turn-in"
+# the cooldown blocks an immediate re-accept
+curl -sf -X POST -d "$SID1 accept runner" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'no fresh work for you yet' "a job cooldown blocks an immediate re-accept"
+# clearing the stamp (as the cooldown lapsing would) reopens the contract
+curl -sf -X POST -d "$SID1 @set #$P1SH.cd$GJ=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 accept runner" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Your job: runner (in progress)' "the contract reopens once the cooldown lapses"
+curl -sf -X POST -d "$SID1 abandon" http://localhost:$PORT/cmd >/dev/null
+# Standing decay: an idle reputation drifts one step toward Neutral per period.
+curl -sf -X POST -d "$SID1 @set #$P1SH.standing=wolves:3" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #0.decay_secs=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.decay_tick=0" http://localhost:$PORT/cmd >/dev/null
+# the first read anchors the decay clock and shows the earned band
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'wolves Allied' "standing starts at its earned band"
+sleep 3
+# after one period a read has dropped the standing one step toward Neutral
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'wolves Friendly' "idle standing decays one step toward Neutral"
+curl -sf -X POST -d "$SID1 @set #0.decay_secs=604800" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.
