@@ -770,6 +770,18 @@ cs_condition(int cur, int maxbp, int wounds, struct cs_out *o)
     else if (wounds >= 3) cs_s(o, ", crippled");
 }
 
+/* Append the active combat conditions on `sheet` to o, comma separated (M40). A
+ * condition is a sheet prop, in the idiom of downed and wounds; this names the
+ * ones set, for the sheet's status view. Leaves o untouched when none are set. */
+static void
+cs_cond_list(int sheet, struct cs_out *o)
+{
+    int n = 0;
+
+    if (cs_geti(sheet, "prone", 0)) cs_s(o, n++ ? ", prone" : "prone");
+    /* slice b/c extend this with stunned, shaken, and bleeding */
+}
+
 /* Descriptive Difficulty scale (rules Section 15): a word for a TN. */
 static void
 cs_difficulty(int tn, struct cs_out *o)
@@ -1097,6 +1109,14 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
     cs_skname(skprop, cs_skills[sidx].name);
     apool = cs_geti(atk, cs_skills[sidx].attr, 0) + cs_geti(atk, skprop, 0)
             + pool_mod;
+    /* M40a: Prone shifts the odds. A prone attacker is at -1D; a prone defender
+     * is +1D to melee but -1D to ranged fire (rules Section 8). */
+    {
+        int ranged = cs_streq(skill, "firearms") || cs_streq(skill, "heavy");
+
+        if (cs_geti(atk, "prone", 0)) apool -= 3;
+        if (cs_geti(def, "prone", 0)) apool += ranged ? -3 : 3;
+    }
     if (apool < 1) apool = 1;
     aroll = cs_roll(apool, &awild);
 
@@ -1121,6 +1141,8 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
     cs_s(o, wn[0] ? wn : "bare hands");
     if (pool_mod < 0) cs_s(o, " at long range");
     if (guarded) cs_s(o, " (guarded)");
+    if (cs_geti(atk, "prone", 0)) cs_s(o, " (prone)");
+    if (cs_geti(def, "prone", 0)) cs_s(o, " (target prone)");
 
     if (aroll < pd) {
         cs_s(o, " and misses.");

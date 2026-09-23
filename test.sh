@@ -2006,6 +2006,52 @@ curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'wolves Friendly' "idle standing decays one step toward Neutral"
 curl -sf -X POST -d "$SID1 @set #0.decay_secs=604800" http://localhost:$PORT/cmd >/dev/null
 
+# --- M40a: the Prone condition, the trip maneuver, and stand ---
+# Deterministic parts first: the sheet lists an active condition, and stand
+# clears it (a second stand then refuses, proving the clear).
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.prone=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Conditions: prone' "the sheet lists an active condition"
+curl -sf -X POST -d "$SID1 stand" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'gets to their feet' "stand clears the prone condition"
+curl -sf -X POST -d "$SID1 stand" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'You are not prone' "stand refuses when not prone"
+# In a fight, trip knocks an engaged foe prone; the tripped foe then fights at
+# -1D, its attack line noting it prone. Isolated room and a weak, durable foe so
+# nobody drops mid-test; the player's Brawl is stacked so the opposed trip wins.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+TRM=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$TRM.name=Sparring Cage" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$TRM" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+DUMMY=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$DUMMY.name=dummy" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DUMMY.grade=tough" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DUMMY.bp=60" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DUMMY.mig=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DUMMY.agi=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DUMMY.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DUMMY.location=#$TRM" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.prone=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.sk_brawl=40" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack dummy" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+_i=0
+while [ $_i -lt 8 ]; do
+	curl -sf -X POST -d "$SID1 trip dummy" http://localhost:$PORT/cmd >/dev/null
+	waitgrep /tmp/smolmoo_p1.log 'sprawls prone' && break
+	sleep 0.3
+	_i=$((_i + 1))
+done
+check_log /tmp/smolmoo_p1.log 'sprawls prone' "trip knocks an engaged foe prone"
+# the tripped foe takes its turn Prone; its attack line notes the condition
+check_log /tmp/smolmoo_p1.log 'fists (prone)' "a prone combatant's attack notes the condition"
+curl -sf -X POST -d "$SID1 @set #$TRM.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.

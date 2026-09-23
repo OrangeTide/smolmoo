@@ -53,6 +53,18 @@ main(void)
         cs_s(&o, "\n");
     }
 
+    {                           /* active combat conditions, when any (M40) */
+        struct cs_out c;
+
+        c.len = 0;
+        cs_cond_list(ch, &c);
+        if (c.len) {
+            cs_s(&o, "Conditions: ");
+            cs_s(&o, cs_cstr(&c));
+            cs_s(&o, "\n");
+        }
+    }
+
     {
         char mv[128];
         int mn = sys_getprop(ch, "maneuvers", mv, sizeof(mv) - 1);
