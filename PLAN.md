@@ -671,6 +671,40 @@ faction's standing toward Neutral over idle `#0.decay_secs` intervals, applied o
 a sheet read (M38). The Grit trickle on a rest is deferred as a small follow-on.
 The suite grew to 342 checks.
 
+## Milestone 40: Combat conditions
+
+The engine tracked hit-point damage, wounds, the dying track, and the stim Crash,
+but not the temporary conditions the combat rules lay out. M40 adds a condition
+framework and the highest-value conditions, so a fight is more than trading
+damage: a character can be knocked down, stunned, frightened, or set bleeding, and
+must act around it. A condition is a prop on the sheet, in the idiom of `downed`
+and `crash`, read where it bites: the turn grant for action-denial,
+`cs_attack_resolve` for pool and Passive Defense shifts. The full plan is `M40.md`;
+this is the summary. It shipped in three slices (6056e0c, ad3222b, 018dbd0).
+
+Slice a builds the framework and Prone. `cs_cond_list` names the active conditions
+and the sheet prints a `Conditions:` line. `cs_attack_resolve` folds the Prone
+modifiers in from both sheets (a prone attacker at -1D; a prone defender +1D to
+melee, -1D to ranged) and annotates the attack line. `trip` (verb 467) is the
+inflictor, an opposed Might-plus-Brawl roll that knocks an engaged foe prone;
+`stand` (verb 468) clears it, spending the turn in a fight.
+
+Slice b adds Stunned and Shaken. `stun` (verb 469) spends a Grit on an opposed
+Might-plus-Brawl blow that leaves a foe Stunned; the turn loop skips a stunned
+combatant's turn and clears the flag, mirroring the flat-footed skip. `menace`
+(verb 470) is a Charm-plus-Command intimidation that leaves a foe Shaken (-1D
+until it rallies); `cs_rally` attempts a Wit save against 10 at the end of a
+shaken combatant's turn to shake it off.
+
+Slice c adds Ongoing damage and closes an M39 leftover. `cs_cond_tick`, called at
+the turn grant, applies a sheet's `bleed` value as direct, un-soaked damage each
+turn and downs a combatant that bleeds out. `rend` (verb 471) is the inflictor, a
+Grit-fuelled opposed Might-plus-Brawl tear; `staunch` (verb 472) ends your own
+bleed. `cs_rest` now clears the `crash` stack when a rest fills BP to maximum, so
+a full short rest lifts the stim penalty (the deferred M39 item). Blinded,
+Suppressed, Held, and a persistent Exposed follow the same framework as later
+follow-ons. The suite grew to 360 checks.
+
 ---
 
 # Future Milestones
