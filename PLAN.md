@@ -642,6 +642,35 @@ The store, the aggro trigger, and the job gate all read through it. Because a
 `disp` can be a negative grudge, which `cs_geti`/`cs_atoi` cannot read, the
 helper parses the sign itself. The suite grew to 329 checks.
 
+## Milestone 39: In-game time and recovery
+
+M25i built recovery from death (the paid `recover`, a death clock, ally revive),
+but a character who survived a fight hurt had no way to mend: the suite reset
+`bp` by hand after every fight. M39 adds recovery for the living, on a new clock
+the verbs had been missing. The full plan is `M39.md`; this is the summary. It
+shipped in three slices (56e1ed3, 9ae2e79, 05cfca9).
+
+Slice a adds the clock and the short rest. `sys_now` is host syscall 27, returning
+wall-clock seconds so a stored stamp survives a restart. `cs_rest` recovers BP
+lazily while a character sits in a `safe` room out of a fight: a `rest_since`
+stamp and its `rest_room` anchor the clock, each read pays out the elapsed
+whole-BP share toward `maxbp`, and the stamp advances by only what it paid, so a
+remainder is not lost to frequent reads. The sheet applies it, and `go` banks it
+before leaving a room. The period is `#0.rest_secs`.
+
+Slice b adds wound treatment for the living. `verb_treat.c` (verb 466) scans the
+room for a `clinic`=1 object, charges its `treat_fee`, and rolls the better of
+Medicine or Cybertech against a TN that climbs with the wound, clearing one
+`wounds` step on success. It is the living-character counterpart to M25i's
+dead-only `recover`, and it gives those skills and creds a use.
+
+Slice c pays off two clock-dependent items earlier milestones deferred. A job
+giver's `job_cd` cooldown, stamped per giver on the sheet at `turnin`, blocks
+re-accepting the same giver until it lapses (M37). `cs_decay` drifts every
+faction's standing toward Neutral over idle `#0.decay_secs` intervals, applied on
+a sheet read (M38). The Grit trickle on a rest is deferred as a small follow-on.
+The suite grew to 342 checks.
+
 ---
 
 # Future Milestones
