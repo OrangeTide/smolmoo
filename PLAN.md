@@ -705,6 +705,37 @@ a full short rest lifts the stim penalty (the deferred M39 item). Blinded,
 Suppressed, Held, and a persistent Exposed follow the same framework as later
 follow-ons. The suite grew to 360 checks.
 
+## Milestone 41: The active roster
+
+M36 built a table-driven unlock catalog so a maneuver could be a row, not a
+branch, but only four unlocks filled it, leaving `learn` and the CP economy with
+almost nothing to buy. M41 stocks the shelf, adding a representative unlock for
+each active-effect family so every kind of option is proven end to end. It leans
+on two seams: the `cs_unlocks` catalog and its `use` dispatch (M36), and the
+condition framework (M40). The full plan is `M41.md`; this is the summary. It
+shipped in three slices (5c1a808, 951f998, 1541db4).
+
+Slice a adds timed self-buffs. A buff is one prop carrying rounds remaining, so
+its magnitude is computed at the read site: `cs_recalc` grants the bonus while it
+is live, `cs_cond_tick` counts it down at the turn grant, and `verb_use` sets the
+duration on activation. It ships `shield` (Mana Shield, +3 Passive Defense) and
+`mesh` (Dermal Wire Mesh, +Wit dice Soak).
+
+Slice b adds offensive unlocks and lands the M40-deferred Suppressed condition.
+`use` grew a target for an offensive unlock, so both dispatch through the catalog.
+Suppressed is a `suppress` prop, folded into `cs_attack_resolve` as a -1D on the
+attacker's next attack and then spent. `suppress` (Suppressive Fire) sets it on
+every standing foe; `shock` (Static Shock) reuses `cs_attack_resolve` for a 4D
+Wit-plus-Spellcasting attack via a world-seed focus object, and a new `out_edge`
+out-parameter reports a Tactical Edge on the hit, which shock reads to also Stun.
+
+Slice c adds the aid action. `inject` (Biomedical Injector) rolls Wit plus
+Medicine against Moderate and heals the caller or a named ally in reach by the
+margin, capped at the caller's Wit dice. It is the first ally-targeted effect, so
+a later ally-facing unlock is a row, not new plumbing. The reaction-family
+unlocks and the remaining catalog rows are deferred as later follow-ons. The
+suite grew to 375 checks.
+
 ---
 
 # Future Milestones
