@@ -1422,6 +1422,39 @@ curl -sf -X POST -d "$SID1 @set #$SENT.location=#$VLT" http://localhost:$PORT/cm
 curl -sf -X POST -d "$SID1 @go #$VLT" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'The sentinel challenges you' "@go teleport also triggers the entry hook"
 
+# --- M38b: a faction mob aggros a newcomer at Hostile standing ---
+# A mob with a `faction` attacks on entry when the newcomer's standing with that
+# faction is Hostile (-2) or worse, even without an aggro behavior token. Enter
+# once at a friendly standing (greet only), then drop to Hostile and re-enter:
+# the fresh 'turns on' proves the friendly entry did not open a fight (a running
+# fight would make the second entry fall in silently instead).
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+HR=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$HR.name=Hostile Reception" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+ENF=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$ENF.name=enforcer" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$ENF.faction=raiders" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$ENF.behavior=greet" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$ENF.greeting=The enforcer eyes you." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$ENF.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$ENF.location=#$HR" http://localhost:$PORT/cmd >/dev/null
+# in good standing the faction mob only greets
+curl -sf -X POST -d "$SID1 @standing TestPlayer1 raiders 1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$HR" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'The enforcer eyes you' "a faction mob greets a newcomer in good standing"
+# drop to Hostile, put the player back in fighting shape, and re-enter
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @standing TestPlayer1 raiders -2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=21" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$HR" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'enforcer turns on' "a faction mob aggros a Hostile newcomer without an aggro token"
+# tear the fight down and leave
+curl -sf -X POST -d "$SID1 @set #$HR.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- OLC P2 migration check: a non-admin runs the setuid combat verbs ---
 # Placed after all admin combat so it cannot disturb those fights. Test accounts
 # are admin, which masks permission checks, so prove the real path: the non-admin

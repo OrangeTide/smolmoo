@@ -53,7 +53,9 @@ roster_add(int room, int id)
 }
 
 /* React to `foe` entering `room` where `mob` lives: greet and/or aggro per the
- * mob's `behavior` list. A downed or dead mob (or foe) does not react. */
+ * mob's `behavior` list. A mob with a `faction` also aggros on a newcomer whose
+ * standing with that faction is Hostile (-2) or worse, even without the aggro
+ * token (M38b). A downed or dead mob (or foe) does not react. */
 static void
 mob_react(int mob, int foe, int room)
 {
@@ -88,10 +90,17 @@ mob_react(int mob, int foe, int room)
         }
     }
 
-    if (has_token(beh, "aggro")) {
+    {
         int fsh = cs_sheet(foe);
-        char nm[32], fn[32], roster[24], num[12];
+        char nm[32], fn[32], roster[24], num[12], fac[32];
         int i = 0, j;
+
+        /* aggro on the behavior token, or when the newcomer's standing with the
+         * mob's faction is Hostile (-2) or worse (M38b, rules Section 14) */
+        cs_getstr(mob, "faction", fac, sizeof(fac));
+        if (!has_token(beh, "aggro")
+                && !(fac[0] && cs_standing(fsh, fac) <= -2))
+            return;
 
         if (cs_geti(fsh, "downed", 0) || cs_geti(fsh, "dead", 0))
             return;
