@@ -2,13 +2,27 @@
  * Grit, stack Crash past the safe limit) and the CP-unlock maneuvers a
  * character has learned, each spending its Grit cost as the turn's action. An
  * active unlock dispatches through the cs_unlocks catalog (M36b): its Grit cost
- * and effect tag are table data, so a new maneuver is a row, not a new branch. */
+ * and effect tag are table data, so a new maneuver is a row, not a new branch.
+ * Timed self-buffs (M41a: shield, mesh), an offensive spell (M41b: shock), and
+ * an area debuff (M41b: suppress) all dispatch the same way. */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
 #include "chromesix_verb.h"
 
 #define SHIELD_ROUNDS 2         /* mana shield duration; re-use refreshes it */
 #define MESH_ROUNDS   3         /* dermal wire mesh duration (rules Section 11) */
+#define SHOCK_FOCUS   314       /* the Static Shock spell's damage profile (world seed) */
+
+/* is `foe` on the room's combat roster? */
+static int
+on_roster(int room, int foe)
+{
+    int ids[8], k = cs_roster_foes(room, 0, ids, 8), i;
+
+    for (i = 0; i < k; i++)
+        if (ids[i] == foe) return 1;
+    return 0;
+}
 
 /* Gate a combat action to the actor's own turn. Returns 1 if allowed to act
  * (a fight is running and it is the actor's unspent turn), else prints why
@@ -38,7 +52,7 @@ main(void)
     int sh = cs_sheet(self);
     char *arg = (char *)vm_args->dobjstr;
     char word[16], nm[32];
-    int i = 0, infight, crashed;
+    int i = 0, infight, crashed, foe = 0;
 
     grant_accept();   /* writes combat state on the room */
 
@@ -96,6 +110,18 @@ main(void)
             if (!infight) puts("You are not in a fight.");
             _exit(0);
         }
+        /* an offensive unlock resolves its target before it spends anything */
+        if (u->effect == UEF_SHOCK) {
+            char *tgt = arg;
+
+            while (*tgt && *tgt != ' ') tgt++;   /* skip the unlock word */
+            while (*tgt == ' ') tgt++;
+            if (!*tgt) { puts("Shock whom?"); _exit(0); }
+            foe = sys_objfind(tgt);
+            if (foe <= 0) { puts("You don't see that here."); _exit(0); }
+            if (!on_roster(room, foe)) { puts("They are not in this fight."); _exit(0); }
+            if (cs_geti(cs_sheet(foe), "downed", 0)) { puts("It is already down."); _exit(0); }
+        }
         if (cs_grit_spend(sh, u->grit) < 0) {
             cs_s(&o, "Not enough Grit (need "); cs_i(&o, u->grit);
             cs_s(&o, ").");
@@ -124,6 +150,30 @@ main(void)
             cs_s(&o, nm);
             cs_s(&o, "'s dermal wire mesh hardens under the skin.");
             break;
+        case UEF_SHOCK: {
+            /* static shock: a Wit+Spellcasting attack for 4D (the focus object's
+             * damage), a Tactical Edge on the hit also leaving the target Stunned. */
+            int fsh = cs_sheet(foe), down, edge;
+
+            cs_attack_resolve(sh, fsh, SHOCK_FOCUS, -cs_crash_penalty(sh), 0, 1,
+                              &o, &down, &edge);
+            if (edge && !down) {
+                cs_seti(fsh, "stunned", 1);
+                cs_s(&o, " The current locks it up -- stunned!");
+            }
+            break;
+        }
+        case UEF_SUPPRESS: {
+            /* suppressive fire: pin the standing foes, -1D on their next attack */
+            int ids[8], k = cs_roster_foes(room, 0, ids, 8), j;
+
+            for (j = 0; j < k; j++)
+                if (!cs_geti(cs_sheet(ids[j]), "downed", 0))
+                    cs_seti(cs_sheet(ids[j]), "suppress", 1);
+            cs_s(&o, nm);
+            cs_s(&o, " opens up with suppressive fire; the enemy is pinned.");
+            break;
+        }
         default:
             cs_s(&o, nm);
             cs_s(&o, " concentrates.");

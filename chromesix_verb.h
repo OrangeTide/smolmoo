@@ -787,6 +787,7 @@ cs_cond_list(int sheet, struct cs_out *o)
     if (cs_geti(sheet, "stunned", 0)) cs_s(o, n++ ? ", stunned" : "stunned");
     if (cs_geti(sheet, "shaken", 0))  cs_s(o, n++ ? ", shaken" : "shaken");
     if (cs_geti(sheet, "bleed", 0))   cs_s(o, n++ ? ", bleeding" : "bleeding");
+    if (cs_geti(sheet, "suppress", 0)) cs_s(o, n++ ? ", suppressed" : "suppressed");
 }
 
 /* Apply the start-of-turn ticks. Ongoing damage (`bleed`, M40c) deals its set
@@ -1064,6 +1065,8 @@ cs_has_unlock(int sheet, const char *name)
 #define UEF_AIM     1       /* smartlink: next attack ignores cover, -2 PD */
 #define UEF_SHIELD  2       /* mana shield: +3 Passive Defense while active (M41a) */
 #define UEF_MESH    3       /* dermal wire mesh: +Wit dice Soak while active (M41a) */
+#define UEF_SHOCK   4       /* static shock: a Wit+Spellcasting attack (M41b) */
+#define UEF_SUPPRESS 5      /* suppressive fire: Suppress the roster foes (M41b) */
 
 /* The 5 CP unlock catalog (M35c): each acquirable maneuver, cyberware mod, or
  * spell as one id, with its CP cost, the hook it requires ("" for any), whether
@@ -1080,6 +1083,8 @@ static const struct cs_unlock cs_unlocks[] = {
     { "vigor",     5, "awakened", 0, 0, UEF_PASSIVE }, /* +3 Max Grit */
     { "shield",    5, "awakened", 0, 1, UEF_SHIELD },  /* +3 PD, timed (M41a) */
     { "mesh",      5, "cyber",    1, 1, UEF_MESH },     /* +Wit Soak, timed (M41a) */
+    { "shock",     5, "awakened", 0, 1, UEF_SHOCK },    /* 4D spell attack (M41b) */
+    { "suppress",  5, "",         0, 1, UEF_SUPPRESS }, /* suppress the foes (M41b) */
 };
 #define CS_NUNLOCKS ((int)(sizeof(cs_unlocks) / sizeof(cs_unlocks[0])))
 #define CS_GRAFT_CAP 2      /* cyberware graft slots (Cyber-Augmented hook) */
@@ -1156,14 +1161,16 @@ cs_range_check(int weapon, int band, int *pool_mod)
  * Returns the Net Damage dealt. */
 static int
 cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
-                  int allow_react, struct cs_out *o, int *out_down)
+                  int allow_react, struct cs_out *o, int *out_down, int *out_edge)
 {
     struct cs_derived dd;
     char an[32], dn[32], wn[24], skill[16], grade[12], skprop[40], stance[12];
     int sidx, apool, aroll, awild, dmgpts, droll, dwild, net, bp, wounds, wh, pd;
-    int guarded = 0, rl;
+    int guarded = 0, rl, supp;
 
     *out_down = 0;
+    if (out_edge) *out_edge = 0;
+    supp = cs_geti(atk, "suppress", 0);   /* M41b: read before it is spent */
     cs_getstr(atk, "name", an, sizeof(an));
     cs_getstr(def, "name", dn, sizeof(dn));
     cs_getstr(weapon, "name", wn, sizeof(wn));
@@ -1182,6 +1189,8 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
         if (cs_geti(atk, "prone", 0)) apool -= 3;
         if (cs_geti(def, "prone", 0)) apool += ranged ? -3 : 3;
         if (cs_geti(atk, "shaken", 0)) apool -= 3;   /* M40b: Shaken is -1D */
+        /* M41b: Suppressed is -1D on the attacker's next attack, then spent. */
+        if (supp) { apool -= 3; cs_seti(atk, "suppress", 0); }
     }
     if (apool < 1) apool = 1;
     aroll = cs_roll(apool, &awild);
@@ -1210,6 +1219,7 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
     if (cs_geti(atk, "prone", 0)) cs_s(o, " (prone)");
     if (cs_geti(def, "prone", 0)) cs_s(o, " (target prone)");
     if (cs_geti(atk, "shaken", 0)) cs_s(o, " (shaken)");
+    if (supp) cs_s(o, " (suppressed)");
 
     if (aroll < pd) {
         cs_s(o, " and misses.");
@@ -1217,6 +1227,7 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
         else if (awild > 0) cs_s(o, " [EDGE]");
         return 0;
     }
+    if (out_edge && awild > 0) *out_edge = 1;   /* M41b: a Tactical Edge on a hit */
 
     dmgpts = cs_geti(weapon, "dmg", 6);
     droll = cs_roll(dmgpts, &dwild);
@@ -1278,7 +1289,7 @@ cs_free_strike(int foe, int target_sh, int room)
         cs_seti(fsh, "react_left", rl - 1);
         f.len = 0;
         cs_s(&f, "Free strike! ");
-        cs_attack_resolve(fsh, target_sh, fw, 0, 0, 0, &f, &down);
+        cs_attack_resolve(fsh, target_sh, fw, 0, 0, 0, &f, &down, 0);
         sys_broadcast(room, cs_cstr(&f));
     }
 }

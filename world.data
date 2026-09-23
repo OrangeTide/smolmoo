@@ -163,6 +163,14 @@ location=#101
 cap=1
 weight=1
 
+#314 #300
+owner=#0
+name=static shock
+description=A crackling lash of raw mana. The focus for the Static Shock spell.
+dmg=12
+range=short
+skill=spellcasting
+
 #202 #200
 owner=#0
 name=enforcer
