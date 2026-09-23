@@ -2324,6 +2324,75 @@ curl -sf -X POST -d "$SID1 @set #$D5.downed=1" http://localhost:$PORT/cmd >/dev/
 fight_over wraith || true
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M41c: the aid action (biomedical injector) ---
+# In a fight, inject restores BP to an ally in reach or to the caller. Grant the
+# unlock, stack Medicine so the Moderate check always clears, and set a high
+# Agility so the weak foe rarely lands a hit (keeping the caller's low BP stable).
+curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=smartlink,dermal,reflex,vigor,shield,mesh,shock,suppress,inject" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.sk_medicine=40" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.agi=12" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+SR6=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SR6.name=Trauma Bay" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$SR6" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+D6=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$D6.name=ghoul" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D6.grade=tough" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D6.bp=9999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D6.mig=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D6.agi=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D6.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D6.location=#$SR6" http://localhost:$PORT/cmd >/dev/null
+# a wounded ally standing by, not part of the fight
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+ALLY=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$ALLY.name=medtech" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$ALLY.mig=9" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$ALLY.bp=5" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$ALLY.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$ALLY.location=#$SR6" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=5" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.mig=9" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.grit=30" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack ghoul" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+# inject a wounded ally: their BP climbs (they take no combat damage otherwise)
+_i=0
+while [ $_i -lt 40 ]; do
+	curl -sf -X POST -d "$SID1 use inject medtech" http://localhost:$PORT/cmd >/dev/null
+	grep -q 'biomedical injector into medtech' /tmp/smolmoo_p1.log 2>/dev/null && break
+	sleep 0.2
+	_i=$((_i + 1))
+done
+check_log /tmp/smolmoo_p1.log 'biomedical injector into medtech' "inject aids an ally in reach"
+AB=$(curl -sf "http://localhost:$PORT/prop?obj=$ALLY&prop=bp&sid=$SID1")
+[ "${AB:-0}" -gt 5 ] && pass "inject restores an ally's Body Points" \
+	|| fail "inject restores an ally's Body Points (ally bp '$AB')"
+# an enemy cannot be injected
+_i=0
+while [ $_i -lt 40 ]; do
+	curl -sf -X POST -d "$SID1 use inject ghoul" http://localhost:$PORT/cmd >/dev/null
+	grep -q "can't inject an enemy" /tmp/smolmoo_p1.log 2>/dev/null && break
+	sleep 0.2
+	_i=$((_i + 1))
+done
+check_log /tmp/smolmoo_p1.log "can't inject an enemy" "inject refuses an enemy target"
+# with no target, inject aids the caller
+_i=0
+while [ $_i -lt 40 ]; do
+	curl -sf -X POST -d "$SID1 use inject" http://localhost:$PORT/cmd >/dev/null
+	grep -q 'biomedical injector into themselves' /tmp/smolmoo_p1.log 2>/dev/null && break
+	sleep 0.2
+	_i=$((_i + 1))
+done
+check_log /tmp/smolmoo_p1.log 'biomedical injector into themselves' "inject with no target aids the caller"
+curl -sf -X POST -d "$SID1 @set #$D6.downed=1" http://localhost:$PORT/cmd >/dev/null
+fight_over ghoul || true
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.

@@ -1067,6 +1067,7 @@ cs_has_unlock(int sheet, const char *name)
 #define UEF_MESH    3       /* dermal wire mesh: +Wit dice Soak while active (M41a) */
 #define UEF_SHOCK   4       /* static shock: a Wit+Spellcasting attack (M41b) */
 #define UEF_SUPPRESS 5      /* suppressive fire: Suppress the roster foes (M41b) */
+#define UEF_INJECT  6       /* biomedical injector: restore BP to self or ally (M41c) */
 
 /* The 5 CP unlock catalog (M35c): each acquirable maneuver, cyberware mod, or
  * spell as one id, with its CP cost, the hook it requires ("" for any), whether
@@ -1085,6 +1086,7 @@ static const struct cs_unlock cs_unlocks[] = {
     { "mesh",      5, "cyber",    1, 1, UEF_MESH },     /* +Wit Soak, timed (M41a) */
     { "shock",     5, "awakened", 0, 1, UEF_SHOCK },    /* 4D spell attack (M41b) */
     { "suppress",  5, "",         0, 1, UEF_SUPPRESS }, /* suppress the foes (M41b) */
+    { "inject",    5, "cyber",    1, 1, UEF_INJECT },   /* restore BP, self/ally (M41c) */
 };
 #define CS_NUNLOCKS ((int)(sizeof(cs_unlocks) / sizeof(cs_unlocks[0])))
 #define CS_GRAFT_CAP 2      /* cyberware graft slots (Cyber-Augmented hook) */

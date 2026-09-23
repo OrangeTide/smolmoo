@@ -3,8 +3,9 @@
  * character has learned, each spending its Grit cost as the turn's action. An
  * active unlock dispatches through the cs_unlocks catalog (M36b): its Grit cost
  * and effect tag are table data, so a new maneuver is a row, not a new branch.
- * Timed self-buffs (M41a: shield, mesh), an offensive spell (M41b: shock), and
- * an area debuff (M41b: suppress) all dispatch the same way. */
+ * Timed self-buffs (M41a: shield, mesh), an offensive spell (M41b: shock), an
+ * area debuff (M41b: suppress), and an aid action (M41c: inject) all dispatch
+ * the same way. */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
 #include "chromesix_verb.h"
@@ -12,6 +13,7 @@
 #define SHIELD_ROUNDS 2         /* mana shield duration; re-use refreshes it */
 #define MESH_ROUNDS   3         /* dermal wire mesh duration (rules Section 11) */
 #define SHOCK_FOCUS   314       /* the Static Shock spell's damage profile (world seed) */
+#define INJECT_TN     10        /* biomedical injector: Moderate Wit+Medicine check */
 
 /* is `foe` on the room's combat roster? */
 static int
@@ -122,6 +124,18 @@ main(void)
             if (!on_roster(room, foe)) { puts("They are not in this fight."); _exit(0); }
             if (cs_geti(cs_sheet(foe), "downed", 0)) { puts("It is already down."); _exit(0); }
         }
+        /* an aid unlock heals a named ally in reach, or the caller if unnamed */
+        if (u->effect == UEF_INJECT) {
+            char *tgt = arg;
+
+            while (*tgt && *tgt != ' ') tgt++;
+            while (*tgt == ' ') tgt++;
+            if (*tgt) {
+                foe = sys_objfind(tgt);
+                if (foe <= 0) { puts("You don't see that here."); _exit(0); }
+                if (on_roster(room, foe)) { puts("You can't inject an enemy."); _exit(0); }
+            }
+        }
         if (cs_grit_spend(sh, u->grit) < 0) {
             cs_s(&o, "Not enough Grit (need "); cs_i(&o, u->grit);
             cs_s(&o, ").");
@@ -172,6 +186,38 @@ main(void)
                     cs_seti(cs_sheet(ids[j]), "suppress", 1);
             cs_s(&o, nm);
             cs_s(&o, " opens up with suppressive fire; the enemy is pinned.");
+            break;
+        }
+        case UEF_INJECT: {
+            /* biomedical injector: Wit+Medicine vs Moderate, restore BP by the
+             * margin capped at the caller's Wit dice, to the caller or an ally. */
+            int tsh = foe ? cs_sheet(foe) : sh;
+            struct cs_derived dd;
+            char tn[32];
+            int wd = cs_geti(sh, "wit", 0) / 3;
+            int pool = cs_geti(sh, "wit", 0) + cs_geti(sh, "sk_medicine", 0)
+                       - cs_crash_penalty(sh);
+            int wild, roll, heal, bp;
+
+            if (pool < 1) pool = 1;
+            roll = cs_roll(pool, &wild);
+            heal = roll - INJECT_TN;
+            if (heal > wd) heal = wd;
+            cs_getstr(tsh, "name", tn, sizeof(tn));
+            cs_s(&o, nm);
+            if (heal <= 0) {
+                cs_s(&o, " triggers a biomedical injector, but the dose does nothing.");
+                break;
+            }
+            cs_recalc(tsh, &dd);
+            bp = cs_geti(tsh, "bp", dd.maxbp) + heal;
+            if (bp > dd.maxbp) bp = dd.maxbp;
+            cs_seti(tsh, "bp", bp);
+            cs_s(&o, " jacks a biomedical injector into ");
+            cs_s(&o, foe ? tn : "themselves");
+            cs_s(&o, " (+");
+            cs_i(&o, heal);
+            cs_s(&o, " BP).");
             break;
         }
         default:
