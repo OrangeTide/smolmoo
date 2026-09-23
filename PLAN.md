@@ -612,6 +612,36 @@ is the verb-side writer that merges one `id:step` pair into the `standing` prop
 clamped to the [-3, +3] band, and `turnin` parses the giver's optional
 `job_standing` "faction:step" and pays it. The suite grew to 321 checks.
 
+A follow-on chargen fix banks the documented 10 CP creation budget (chargen wrote
+none, so a new character could not reach the M35-M37 growth loop until grinding
+combat) and shows the CP balance on the sheet.
+
+## Milestone 38: Standing with teeth
+
+M37 lets a player earn faction standing, but the only consequence was vendor
+pricing. `chromesix.md` Section 14 promises more, and M38 builds it: standing now
+changes what the world lets a player do and how it treats them. The full plan is
+`M38.md`; this is the summary. It shipped in three slices (2f380cf, 470ab1d,
+470ccb2).
+
+Slice a gates access. A job giver can carry an optional `job_min` "faction:step";
+`accept` refuses a contract the caller does not rank for, and `jobs` marks a
+gated offer locked with the band needed. The "faction:step" parse is factored
+into a shared `job_fac_step` helper that the M37 standing reward now uses too.
+
+Slice b adds hostility. `mob_react` (the shared reactive-NPC hook) now opens a
+fight on entry when a mob with a `faction` meets a newcomer whose standing with
+that faction is Hostile (-2) or worse, even without an `aggro` behavior token.
+The vendor refusal at Hostile, already shipped, is the peaceful half of the same
+rule. A mob with no faction is unchanged.
+
+Slice c adds per-NPC disposition. `cs_disposition(npc, sheet, faction)` returns
+the player's standing with a faction plus the NPC's optional `disp` offset,
+clamped to the band, so a specific NPC can be warmer or colder than its faction.
+The store, the aggro trigger, and the job gate all read through it. Because a
+`disp` can be a negative grudge, which `cs_geti`/`cs_atoi` cannot read, the
+helper parses the sign itself. The suite grew to 329 checks.
+
 ---
 
 # Future Milestones
