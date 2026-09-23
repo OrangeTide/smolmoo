@@ -2,10 +2,12 @@
  * object marked `job`=1 that carries a contract in props: a `job_desc` line, a
  * goal (a `job_target` creature for a bounty, or a `job_dest` room for a courier,
  * M37c), and the reward (`job_cp`, `job_creds`, and an optional `job_standing`
- * "faction:step"). A player holds one
+ * "faction:step"). An optional `job_min` "faction:step" gates the contract behind
+ * a minimum standing (M38a). A player holds one
  * job at a time, stored on the sheet as `job_giver` (the giver's id, 0 for none)
  * and `job_done` (the completion flag, set in M37b). `jobs` lists what is offered
- * here and your active contract; `accept` takes one; `abandon` drops it; `turnin`
+ * here and your active contract, marking a gated one locked; `accept` takes one
+ * you rank for; `abandon` drops it; `turnin`
  * (at the giver, once `job_done` is set) pays the reward into the sheet's `cp` and
  * `money` (M37b). The player owns the sheet, so this runs at caller authority,
  * not setuid. */
@@ -13,11 +15,30 @@
 
 #include "chromesix_verb.h"
 
-/* print one giver's offer: its name, description, and reward */
-static void
-show_offer(struct cs_out *o, int giver)
+/* parse a "faction:step" string (a reward or a gate) into `fac` and a signed
+ * `step`. Returns 1 on a well-formed pair, 0 otherwise. */
+static int
+job_fac_step(const char *s, char *fac, int faclen, int *step)
 {
-    char nm[32], desc[128];
+    int k = 0, sign = 1, v = 0;
+
+    while (s[k] && s[k] != ':' && k < faclen - 1) { fac[k] = s[k]; k++; }
+    fac[k] = '\0';
+    if (!fac[0] || s[k] != ':') return 0;
+    k++;
+    if (s[k] == '-') { sign = -1; k++; }
+    while (s[k] >= '0' && s[k] <= '9') { v = v * 10 + (s[k] - '0'); k++; }
+    *step = sign * v;
+    return 1;
+}
+
+/* print one giver's offer: its name, description, reward, and, when `ch` does
+ * not meet the giver's `job_min` gate, a locked marker naming the band needed */
+static void
+show_offer(struct cs_out *o, int giver, int ch)
+{
+    char nm[32], desc[128], st[64], fac[32];
+    int need;
 
     cs_getstr(giver, "name", nm, sizeof(nm));
     cs_getstr(giver, "job_desc", desc, sizeof(desc));
@@ -29,7 +50,16 @@ show_offer(struct cs_out *o, int giver)
     cs_i(o, cs_geti(giver, "job_cp", 0));
     cs_s(o, " CP, ");
     cs_i(o, cs_geti(giver, "job_creds", 0));
-    cs_s(o, " creds]\n");
+    cs_s(o, " creds]");
+    cs_getstr(giver, "job_min", st, sizeof(st));
+    if (job_fac_step(st, fac, sizeof(fac), &need) && cs_standing(ch, fac) < need) {
+        cs_s(o, " (locked: needs ");
+        cs_s(o, fac);
+        cs_s(o, " ");
+        cs_s(o, cs_standing_word(need));
+        cs_s(o, ")");
+    }
+    cs_s(o, "\n");
 }
 
 int
@@ -47,6 +77,8 @@ main(void)
 
     if (cs_streq(verb, "accept")) {
         int giver = vm_args->dobj;
+        char st[64], fac[32];
+        int need;
 
         if (giver <= 0 || !cs_geti(giver, "job", 0)) {
             puts("That is not offering a job.");
@@ -54,6 +86,17 @@ main(void)
         }
         if (cs_geti(ch, "job_giver", 0) > 0) {
             puts("You already have a job; abandon it first.");
+            _exit(0);
+        }
+        cs_getstr(giver, "job_min", st, sizeof(st));
+        if (job_fac_step(st, fac, sizeof(fac), &need)
+                && cs_standing(ch, fac) < need) {
+            cs_s(&o, "You do not rank for that job (needs ");
+            cs_s(&o, fac);
+            cs_s(&o, " ");
+            cs_s(&o, cs_standing_word(need));
+            cs_s(&o, ").\n");
+            cs_flush(&o);
             _exit(0);
         }
         cs_seti(ch, "job_giver", giver);
@@ -93,16 +136,11 @@ main(void)
         /* an optional standing reward, "faction:step" on the giver (M37c) */
         {
             char st[64], fac[32];
-            int k = 0, sign = 1, v = 0;
+            int step;
 
             cs_getstr(giver, "job_standing", st, sizeof(st));
-            while (st[k] && st[k] != ':' && k < 31) { fac[k] = st[k]; k++; }
-            fac[k] = '\0';
-            if (fac[0] && st[k] == ':') {
-                k++;
-                if (st[k] == '-') { sign = -1; k++; }
-                while (st[k] >= '0' && st[k] <= '9') { v = v * 10 + (st[k] - '0'); k++; }
-                cs_standing_add(ch, fac, sign * v);
+            if (job_fac_step(st, fac, sizeof(fac), &step)) {
+                cs_standing_add(ch, fac, step);
                 cs_s(&o, " Your standing with ");
                 cs_s(&o, fac);
                 cs_s(&o, " shifts.");
@@ -132,7 +170,7 @@ main(void)
 
         cs_s(&o, "Jobs offered here:\n");
         while ((e = sys_next(room, e)) != 0) {
-            if (cs_geti(e, "job", 0)) { show_offer(&o, e); any = 1; }
+            if (cs_geti(e, "job", 0)) { show_offer(&o, e, ch); any = 1; }
         }
         if (!any)
             cs_s(&o, "  none\n");

@@ -1164,6 +1164,29 @@ curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'couriers' "the standing reward lands on the sheet"
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M38a: a job giver can gate a contract behind a minimum standing ---
+# An optional job_min "faction:step" locks a contract from a player who does not
+# rank for it. The player sits at Neutral (0) with the syndicate, below the gate,
+# so jobs marks it locked and accept refuses; raising the standing opens it.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+HIRE=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$HIRE.name=handler" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$HIRE.job=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$HIRE.job_desc=A trusted-only run." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$HIRE.job_cp=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$HIRE.job_creds=20" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$HIRE.job_min=syndicate:2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$HIRE.location=#101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'locked: needs syndicate Friendly' "jobs marks a gated contract locked"
+curl -sf -X POST -d "$SID1 accept handler" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'do not rank for that job' "accept refuses a contract below the gate"
+# meet the gate, then accept succeeds
+curl -sf -X POST -d "$SID1 @standing TestPlayer1 syndicate 2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 accept handler" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'take the job from handler' "accept takes a gated job once standing is met"
+curl -sf -X POST -d "$SID1 abandon" http://localhost:$PORT/cmd >/dev/null
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.
