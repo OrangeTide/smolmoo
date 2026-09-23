@@ -421,6 +421,50 @@ cs_disposition(int npc, int sheet, const char *faction)
     return v;
 }
 
+/* --- M39a: short rest, the between-fights BP recovery (Section 8) ---
+ *
+ * BP climbs back toward maxbp while a character sits in a `safe` room and out of
+ * a fight, with no rest command. It is computed lazily: `rest_since` stamps when
+ * the current calm stretch began, in the `rest_room` it began in, and each read
+ * pays out the elapsed whole-BP share, advancing `rest_since` by only the time
+ * that share consumed so a remainder is never lost. A step into an unsafe room
+ * (a new room re-anchors the clock) or a fight restarts it. The rest period is
+ * `#0.rest_secs` (default REST_SECS), so a test can rest in seconds. */
+#define REST_SECS 7200          /* full BP over two in-game hours (Section 8) */
+
+static void
+cs_rest(int sheet, int room)
+{
+    struct cs_derived d;
+    int now, since, bp, period, elapsed, gained, consumed;
+
+    if (cs_geti(room, "safe", 0) != 1 || cs_geti(room, "cb_active", 0) == 1) {
+        cs_seti(sheet, "rest_since", 0);   /* unsafe or fighting: clock off */
+        return;
+    }
+    now = sys_now();
+    since = cs_geti(sheet, "rest_since", 0);
+    if (since == 0 || cs_geti(sheet, "rest_room", 0) != room) {
+        cs_seti(sheet, "rest_since", now); /* a fresh calm stretch starts here */
+        cs_seti(sheet, "rest_room", room);
+        return;
+    }
+    cs_recalc(sheet, &d);
+    bp = cs_geti(sheet, "bp", d.maxbp);
+    if (bp >= d.maxbp) { cs_seti(sheet, "rest_since", now); return; }
+    period = cs_geti(0, "rest_secs", REST_SECS);
+    if (period < 1) period = 1;
+    elapsed = now - since;
+    if (elapsed <= 0) return;
+    gained = elapsed * d.maxbp / period;
+    if (gained <= 0) return;               /* remainder kept: rest_since unchanged */
+    bp += gained;
+    if (bp > d.maxbp) bp = d.maxbp;
+    cs_seti(sheet, "bp", bp);
+    consumed = gained * period / d.maxbp;  /* advance only by what was paid out */
+    cs_seti(sheet, "rest_since", since + consumed);
+}
+
 /* The sheet holding a combatant's stats: a player object points at its
  * persistent sheet through `charid`; an NPC object is its own sheet. */
 static int

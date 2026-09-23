@@ -20,6 +20,7 @@ main(void)
     if (n < 0) n = 0;
     nm[n] = '\0';
 
+    cs_rest(ch, vm_args->room);      /* pay out any short-rest BP before display */
     cs_recalc(ch, &d);
 
     cs_s(&o, "=== "); cs_s(&o, nm); cs_s(&o, " ===\n");

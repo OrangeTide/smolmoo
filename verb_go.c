@@ -36,6 +36,8 @@ main(void)
 
     grant_accept();   /* clears combat state on the room when fleeing */
 
+    cs_rest(sh, room);   /* bank any short-rest BP before leaving the room (M39a) */
+
     if (exit <= 0) { puts("Go where?"); _exit(0); }
     cs_getstr(exit, "dest", dbuf, sizeof(dbuf));
     dest = cs_atoi(dbuf);

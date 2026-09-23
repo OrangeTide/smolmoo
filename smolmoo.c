@@ -2915,6 +2915,13 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
         RET(0);
         return 0;
     }
+    case 27: { /* sys_now(): the current wall-clock time in seconds. A verb diffs
+                * a stored stamp against this to measure elapsed rest, a cooldown,
+                * or a decay interval (M39). Wall-clock, not monotonic, so a stamp
+                * survives a restart. */
+        RET((int)time(NULL));
+        return 0;
+    }
     }
     return -1;
 

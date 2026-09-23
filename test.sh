@@ -1902,6 +1902,36 @@ curl -sf -X POST -d "$SID1 @sleep #$CAR" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$CAR.route=" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #$HUB" http://localhost:$PORT/cmd >/dev/null
 
+# --- M39a: short rest recovers BP over time in a safe room (Section 8) ---
+# BP climbs back toward its maximum while a character sits in a `safe` room out
+# of a fight, computed lazily on a sheet read. Tune the rest period short so the
+# test does not wait on real hours. Distinct damaged values (8 safe, 7 unsafe)
+# keep the negative check from matching the positive case's earlier log line.
+curl -sf -X POST -d "$SID1 @set #0.rest_secs=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+SAFE=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SAFE.name=Safehouse" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SAFE.safe=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=8" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.rest_since=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$SAFE" http://localhost:$PORT/cmd >/dev/null
+# the first read anchors the rest clock and shows the damaged BP
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'BP 8/21' "a damaged character reads below maximum before resting"
+sleep 3
+# after more than the rest period, a read pays out the recovery
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'BP 21/21' "a short rest in a safe room restores BP over time"
+# an unsafe room accrues nothing: damage again, wait, and read once
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=7" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.rest_since=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$HUB" http://localhost:$PORT/cmd >/dev/null
+sleep 3
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'BP 7/21' "an unsafe room does not recover BP"
+curl -sf -X POST -d "$SID1 @set #0.rest_secs=7200" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=21" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.
