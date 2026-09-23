@@ -1932,6 +1932,41 @@ check_log /tmp/smolmoo_p1.log 'BP 7/21' "an unsafe room does not recover BP"
 curl -sf -X POST -d "$SID1 @set #0.rest_secs=7200" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.bp=21" http://localhost:$PORT/cmd >/dev/null
 
+# --- M39b: treat a wound at a clinic (Section 8) ---
+# Wounds do not rest off; a living character mends at a clinic for a fee plus a
+# Medicine or Cybertech check. Build a ward with a clinic object, and drive the
+# refusal, success, and fee paths. The Medicine pool is set high enough that the
+# check clears even on all-ones, so the success is deterministic.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+CLIN=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$CLIN.name=Trauma Ward" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$CLIN" http://localhost:$PORT/cmd >/dev/null
+# no clinic object in the room yet
+curl -sf -X POST -d "$SID1 treat" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'no clinic here' "treat needs a clinic in the room"
+curl -sf -X POST -d "$SID1 @create #300" http://localhost:$PORT/cmd >/dev/null
+DOC=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$DOC.name=medic" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DOC.clinic=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DOC.treat_fee=40" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DOC.location=#$CLIN" http://localhost:$PORT/cmd >/dev/null
+# unwounded: nothing to treat
+curl -sf -X POST -d "$SID1 @set #$P1SH.wounds=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 treat" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'no wounds to treat' "treat refuses an unwounded patient"
+# a wound, funds, and a strong Medicine skill: the mend clears one step
+curl -sf -X POST -d "$SID1 @set #$P1SH.wounds=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.sk_medicine=60" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.money=333" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 treat" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'treats your wound (1 left)' "treat clears one wound step on success"
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Creds 293' "treat spends the clinic fee"
+# too few creds: refused
+curl -sf -X POST -d "$SID1 @set #$P1SH.money=10" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 treat" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Treatment costs 40 creds; you have 10' "treat refuses an unaffordable fee"
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.
