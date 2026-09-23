@@ -1,12 +1,17 @@
-/* verb_menace.c : two combat maneuvers that impose a condition on a foe (M40b).
- * `stun <foe>` spends a Grit on a stunning blow, an opposed Might-plus-Brawl roll
- * against an engaged foe that, on a win, leaves it Stunned (it loses its next
- * action). `menace <foe>` is an intimidation, Charm-plus-Command against the
- * foe's Wit that, on a win, leaves it Shaken (-1D until it rallies). Both spend
- * your action for the turn. Setuid: they write the room and the foe's sheet. */
+/* verb_menace.c : three combat maneuvers that impose a condition on a foe. `stun
+ * <foe>` (M40b) spends a Grit on a stunning blow, an opposed Might-plus-Brawl
+ * roll against an engaged foe that, on a win, leaves it Stunned (it loses its
+ * next action). `menace <foe>` (M40b) is an intimidation, Charm-plus-Command
+ * against the foe's Wit that, on a win, leaves it Shaken (-1D until it rallies).
+ * `rend <foe>` (M40c) spends a Grit on a savage melee tear, opposed
+ * Might-plus-Brawl, that on a win sets it Bleeding for REND_BLEED direct damage
+ * each of its turns until it is staunched. All spend your action for the turn.
+ * Setuid: they write the room and the foe's sheet. */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
 #include "chromesix_verb.h"
+
+#define REND_BLEED 4            /* Ongoing damage a rend inflicts per turn */
 
 /* is `foe` on the room's combat roster? */
 static int
@@ -38,13 +43,18 @@ main(void)
     char *verb = (char *)vm_args->verb;
     char *foename = (char *)vm_args->dobjstr;
     int stun = cs_streq(verb, "stun");
+    int rend = cs_streq(verb, "rend");
+    int melee = stun || rend;   /* the physical blows need the target in melee */
     int foe, defsh, apool, dpool, aroll, droll, awild, dwild;
     char an[32], dn[32];
 
     grant_accept();
 
     while (foename && *foename == ' ') foename++;
-    if (!foename || !*foename) { puts(stun ? "Stun whom?" : "Menace whom?"); _exit(0); }
+    if (!foename || !*foename) {
+        puts(stun ? "Stun whom?" : rend ? "Rend whom?" : "Menace whom?");
+        _exit(0);
+    }
     if (cs_wrong_mode(room, 0)) _exit(0);
     if (cs_geti(room, "cb_active", 0) != 1) {
         puts("You are not in a fight.");
@@ -63,14 +73,16 @@ main(void)
     defsh = cs_sheet(foe);
     if (cs_geti(defsh, "downed", 0)) { puts("It is already down."); _exit(0); }
     if (!on_roster(room, foe)) { puts("They are not in this fight."); _exit(0); }
-    if (stun && cs_geti(defsh, "band", 0) != 0) {
-        puts("You must be in melee to stun them.");
+    if (melee && cs_geti(defsh, "band", 0) != 0) {
+        puts(stun ? "You must be in melee to stun them."
+                  : "You must be in melee to rend them.");
         _exit(0);
     }
 
-    if (stun) {
+    if (melee) {
         if (cs_grit_spend(atk, 1) < 0) {
-            puts("You lack the Grit for a stunning blow.");
+            puts(stun ? "You lack the Grit for a stunning blow."
+                      : "You lack the Grit for a savage tear.");
             _exit(0);
         }
         apool = cs_geti(atk, "mig", 0) + cs_geti(atk, "sk_brawl", 0)
@@ -95,6 +107,11 @@ main(void)
             cs_s(&o, " lands a stunning blow on ");
             cs_s(&o, dn);
             cs_s(&o, "; it reels, stunned.");
+        } else if (rend) {
+            cs_seti(defsh, "bleed", REND_BLEED);
+            cs_s(&o, " rends ");
+            cs_s(&o, dn);
+            cs_s(&o, "; it is bleeding.");
         } else {
             cs_seti(defsh, "shaken", 1);
             cs_s(&o, " menaces ");
@@ -102,9 +119,11 @@ main(void)
             cs_s(&o, "; it is shaken.");
         }
     } else {
-        cs_s(&o, stun ? " swings to stun " : " menaces ");
+        cs_s(&o, stun ? " swings to stun " : rend ? " tears at " : " menaces ");
         cs_s(&o, dn);
-        cs_s(&o, stun ? ", but it shrugs it off." : ", but it holds its nerve.");
+        cs_s(&o, stun ? ", but it shrugs it off."
+                      : rend ? ", but the blow glances off."
+                             : ", but it holds its nerve.");
     }
     sys_broadcast(room, cs_cstr(&o));
     cs_end_turn(room);

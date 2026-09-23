@@ -391,6 +391,10 @@ main(void)
             int sh = cs_sheet(me);
 
             if (cs_geti(sh, "downed", 0)) continue;
+            /* Ongoing damage (M40c): bleed ticks at the start of the turn and
+             * can drop the combatant, who then loses the turn. */
+            cs_cond_tick(sh, room);
+            if (cs_geti(sh, "downed", 0)) { sys_suspend(NPC_PACE_MS); continue; }
             /* an ambushed foe loses this one round's action, then recovers */
             if (me != player && cs_geti(sh, "surprised", 0)) {
                 struct cs_out o;

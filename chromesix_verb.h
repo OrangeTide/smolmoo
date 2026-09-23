@@ -459,7 +459,10 @@ cs_rest(int sheet, int room)
     gained = elapsed * d.maxbp / period;
     if (gained <= 0) return;               /* remainder kept: rest_since unchanged */
     bp += gained;
-    if (bp > d.maxbp) bp = d.maxbp;
+    if (bp >= d.maxbp) {           /* M40c: a rest that fills BP clears Crash */
+        bp = d.maxbp;
+        cs_seti(sheet, "crash", 0);
+    }
     cs_seti(sheet, "bp", bp);
     consumed = gained * period / d.maxbp;  /* advance only by what was paid out */
     cs_seti(sheet, "rest_since", since + consumed);
@@ -781,7 +784,35 @@ cs_cond_list(int sheet, struct cs_out *o)
     if (cs_geti(sheet, "prone", 0))   cs_s(o, n++ ? ", prone" : "prone");
     if (cs_geti(sheet, "stunned", 0)) cs_s(o, n++ ? ", stunned" : "stunned");
     if (cs_geti(sheet, "shaken", 0))  cs_s(o, n++ ? ", shaken" : "shaken");
-    /* slice c extends this with bleeding */
+    if (cs_geti(sheet, "bleed", 0))   cs_s(o, n++ ? ", bleeding" : "bleeding");
+}
+
+/* Apply the start-of-turn condition ticks (M40c): Ongoing damage (`bleed`) deals
+ * its set amount as direct, un-soaked damage and downs the victim at 0 BP. It
+ * runs until an action or save ends it. */
+static void
+cs_cond_tick(int sheet, int room)
+{
+    struct cs_out o;
+    char nm[32];
+    int bleed = cs_geti(sheet, "bleed", 0), bp;
+
+    if (bleed <= 0) return;
+    bp = cs_geti(sheet, "bp", 0) - bleed;
+    cs_getstr(sheet, "name", nm, sizeof(nm));
+    o.len = 0;
+    cs_s(&o, nm);
+    cs_s(&o, " bleeds for ");
+    cs_i(&o, bleed);
+    if (bp <= 0) {
+        cs_seti(sheet, "bp", 0);
+        cs_seti(sheet, "downed", 1);
+        cs_s(&o, " and bleeds out. Downed!");
+    } else {
+        cs_seti(sheet, "bp", bp);
+        cs_s(&o, ".");
+    }
+    sys_broadcast(room, cs_cstr(&o));
 }
 
 /* A shaken combatant tries to rally at the end of its turn: a Wit roll against

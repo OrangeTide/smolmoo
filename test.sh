@@ -2117,6 +2117,71 @@ curl -sf -X POST -d "$SID1 @set #$D2.downed=1" http://localhost:$PORT/cmd >/dev/
 fight_over goon || true
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M40c: Ongoing damage (bleed), the rend maneuver and staunch; Crash on rest ---
+# Deterministic parts first: the sheet lists bleeding, and staunch clears it out
+# of a fight (a second staunch then refuses, proving the clear).
+curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bleed=3" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Conditions: bleeding' "the sheet lists the bleeding condition"
+curl -sf -X POST -d "$SID1 staunch" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'staunches the bleeding' "staunch ends the bleeding"
+curl -sf -X POST -d "$SID1 staunch" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'You are not bleeding' "staunch refuses when not bleeding"
+# In a fight, rend sets an engaged foe bleeding; the bleed then ticks direct
+# damage at the start of the foe's turn. Isolated room, a weak durable foe,
+# stacked Brawl and Grit so the opposed rend wins.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+SR3=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SR3.name=Kill Room" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$SR3" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+D3=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$D3.name=savage" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D3.grade=tough" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D3.bp=60" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D3.mig=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D3.agi=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D3.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D3.location=#$SR3" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bleed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.sk_brawl=40" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.grit=30" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack savage" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+_i=0
+while [ $_i -lt 40 ]; do
+	curl -sf -X POST -d "$SID1 rend savage" http://localhost:$PORT/cmd >/dev/null
+	grep -q 'it is bleeding' /tmp/smolmoo_p1.log 2>/dev/null && break
+	sleep 0.2
+	_i=$((_i + 1))
+done
+check_log /tmp/smolmoo_p1.log 'it is bleeding' "rend sets an engaged foe bleeding"
+# the bleeding foe takes direct damage at the start of its next turn
+check_log /tmp/smolmoo_p1.log 'bleeds for 4' "Ongoing damage ticks at the start of the turn"
+curl -sf -X POST -d "$SID1 @set #$D3.downed=1" http://localhost:$PORT/cmd >/dev/null
+fight_over savage || true
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+# Crash clears on a full short rest (the M39 leftover). Damage BP and stack a
+# Crash, rest to full in the safe room, and confirm the stack is gone.
+curl -sf -X POST -d "$SID1 @set #0.rest_secs=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=8" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.crash=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.rest_since=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$SAFE" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+sleep 3
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'BP 21/21' "a full rest restores BP before clearing Crash"
+CR=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=crash&sid=$SID1")
+[ "$CR" = "0" ] && pass "a full short rest clears the Crash stack" \
+	|| fail "a full short rest clears the Crash stack (got '$CR')"
+curl -sf -X POST -d "$SID1 @set #0.rest_secs=7200" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=21" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.
