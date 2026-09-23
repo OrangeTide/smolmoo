@@ -3,8 +3,9 @@
  * vending machine, a crate. `list [from <store>]` shows the stock; `buy <item>
  * [from <store>]` sells one instance, moving the object to the buyer and
  * drawing its price off their creds. With no `from`, the store is the room's
- * `vendor` NPC. Standing with the store's faction shifts the price ten percent
- * per step and gates the sale at Hostile or worse (rules Section 14). A store
+ * `vendor` NPC. Standing with the store's faction, plus the store's own `disp`
+ * offset (M38c), shifts the price ten percent per step and gates the sale at
+ * Hostile or worse (rules Section 14). A store
  * that sets a `stim` base price sells the counter-based stim dose, the Grit
  * money sink (rules Section 8), through the fallback path when no priced item
  * matches the name. Selling an object instance decrements stock; a reset rule
@@ -121,7 +122,7 @@ main(void)
             _exit(0);
         }
         cs_getstr(store, "faction", faction, sizeof(faction));
-        step = faction[0] ? cs_standing(sh, faction) : 0;
+        step = faction[0] ? cs_disposition(store, sh, faction) : 0;
         cs_getstr(store, "name", nm, sizeof(nm));
         cs_s(&o, nm);
         cs_s(&o, " offers:\n");
@@ -163,7 +164,7 @@ main(void)
     }
 
     cs_getstr(store, "faction", faction, sizeof(faction));
-    step = faction[0] ? cs_standing(sh, faction) : 0;
+    step = faction[0] ? cs_disposition(store, sh, faction) : 0;
     if (step <= -2) {
         cs_s(&o, "The vendor refuses to deal with you (");
         cs_s(&o, cs_standing_word(step));

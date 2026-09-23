@@ -398,6 +398,29 @@ cs_getstr(int obj, const char *name, char *dst, int sz)
     dst[n] = '\0';
 }
 
+/* An NPC's effective standing toward a player against `faction` (M38c): the
+ * player's `cs_standing` plus the NPC's optional `disp` offset, clamped to the
+ * [-3, +3] band. With no `disp` it reads exactly as the faction standing, so a
+ * specific NPC can be warmer or colder than its faction (rules Section 14): a
+ * fixer whose faction hunts you may still deal with you, or a grudge-holder be
+ * hostile where the faction is neutral. */
+static int
+cs_disposition(int npc, int sheet, const char *faction)
+{
+    char db[12];
+    int off = 0, sign = 1, k = 0, v;
+
+    /* `disp` may be negative (a grudge), which cs_geti/cs_atoi cannot read, so
+     * parse the sign here. */
+    cs_getstr(npc, "disp", db, sizeof(db));
+    if (db[0] == '-') { sign = -1; k++; }
+    while (db[k] >= '0' && db[k] <= '9') off = off * 10 + (db[k++] - '0');
+    v = cs_standing(sheet, faction) + sign * off;
+    if (v > 3) v = 3;
+    if (v < -3) v = -3;
+    return v;
+}
+
 /* The sheet holding a combatant's stats: a player object points at its
  * persistent sheet through `charid`; an NPC object is its own sheet. */
 static int

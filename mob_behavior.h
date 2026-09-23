@@ -99,7 +99,7 @@ mob_react(int mob, int foe, int room)
          * mob's faction is Hostile (-2) or worse (M38b, rules Section 14) */
         cs_getstr(mob, "faction", fac, sizeof(fac));
         if (!has_token(beh, "aggro")
-                && !(fac[0] && cs_standing(fsh, fac) <= -2))
+                && !(fac[0] && cs_disposition(mob, fsh, fac) <= -2))
             return;
 
         if (cs_geti(fsh, "downed", 0) || cs_geti(fsh, "dead", 0))

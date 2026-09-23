@@ -1455,6 +1455,30 @@ check_log /tmp/smolmoo_p1.log 'enforcer turns on' "a faction mob aggros a Hostil
 curl -sf -X POST -d "$SID1 @set #$HR.cb_active=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M38c: an NPC's disp offset shifts its effective standing ---
+# A specific NPC can be warmer or colder than its faction. Build a vendor for the
+# fringe and prove both directions through the price, which encodes the effective
+# step: a positive disp lifts a Hostile-faction buyer into dealing range (Watched,
+# +10 percent), and a negative disp cools a Friendly-faction one (Known, -10
+# percent). The distinctive prices prove the effective step; a bare faction read
+# would refuse the first sale outright.
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+FENCE=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$FENCE.name=fence" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$FENCE.faction=fringe" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$FENCE.stim=10" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$FENCE.location=#101" http://localhost:$PORT/cmd >/dev/null
+# Hostile with the fringe, but the fence's +1 disp lifts it to Watched: it sells.
+curl -sf -X POST -d "$SID1 @standing TestPlayer1 fringe -2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$FENCE.disp=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 buy stim from fence" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'buy a stim for 11 creds' "a positive NPC disp lifts a Hostile buyer into range"
+# Friendly with the fringe, but the fence's -1 disp cools it to Known pricing.
+curl -sf -X POST -d "$SID1 @standing TestPlayer1 fringe 2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$FENCE.disp=-1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 buy stim from fence" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'buy a stim for 9 creds' "a negative NPC disp cools a friendlier faction"
+
 # --- OLC P2 migration check: a non-admin runs the setuid combat verbs ---
 # Placed after all admin combat so it cannot disturb those fights. Test accounts
 # are admin, which masks permission checks, so prove the real path: the non-admin

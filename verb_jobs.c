@@ -3,7 +3,8 @@
  * goal (a `job_target` creature for a bounty, or a `job_dest` room for a courier,
  * M37c), and the reward (`job_cp`, `job_creds`, and an optional `job_standing`
  * "faction:step"). An optional `job_min` "faction:step" gates the contract behind
- * a minimum standing (M38a). A player holds one
+ * a minimum standing, read through the giver's disposition so its `disp` offset
+ * can vouch for you (M38a, M38c). A player holds one
  * job at a time, stored on the sheet as `job_giver` (the giver's id, 0 for none)
  * and `job_done` (the completion flag, set in M37b). `jobs` lists what is offered
  * here and your active contract, marking a gated one locked; `accept` takes one
@@ -52,7 +53,8 @@ show_offer(struct cs_out *o, int giver, int ch)
     cs_i(o, cs_geti(giver, "job_creds", 0));
     cs_s(o, " creds]");
     cs_getstr(giver, "job_min", st, sizeof(st));
-    if (job_fac_step(st, fac, sizeof(fac), &need) && cs_standing(ch, fac) < need) {
+    if (job_fac_step(st, fac, sizeof(fac), &need)
+            && cs_disposition(giver, ch, fac) < need) {
         cs_s(o, " (locked: needs ");
         cs_s(o, fac);
         cs_s(o, " ");
@@ -90,7 +92,7 @@ main(void)
         }
         cs_getstr(giver, "job_min", st, sizeof(st));
         if (job_fac_step(st, fac, sizeof(fac), &need)
-                && cs_standing(ch, fac) < need) {
+                && cs_disposition(giver, ch, fac) < need) {
             cs_s(&o, "You do not rank for that job (needs ");
             cs_s(&o, fac);
             cs_s(&o, " ");
