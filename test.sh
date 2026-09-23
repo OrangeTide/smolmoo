@@ -673,11 +673,15 @@ curl -sf -X POST -d "$SID1 attack picket" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'picket at engaged range' "second foe joins the melee"
 curl -sf -X POST -d "$SID1 attack straggler" http://localhost:$PORT/cmd >/dev/null
 # Frontage caps the melee at two, so the third foe is held at Short. It first
-# shows in the next round's prompt, so allow for the intervening NPC turns.
+# shows in the next round's prompt. Drawing it may not spend the turn (a foe out
+# of reach), so drive the fight to that prompt with a deliberate hold each turn
+# rather than waiting out the turn timeout, which can outlast a fixed poll. A
+# hold only fires on the player's turn and is harmless otherwise.
 _i=0
 while [ $_i -lt 20 ]; do
 	grep -q 'straggler at short range' /tmp/smolmoo_p1.log 2>/dev/null && break
-	sleep 0.4
+	curl -sf -X POST -d "$SID1 hold" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.3
 	_i=$((_i + 1))
 done
 check_log /tmp/smolmoo_p1.log 'straggler at short range' "frontage holds the third at short"
