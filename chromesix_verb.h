@@ -227,10 +227,12 @@ cs_recalc(int ch, struct cs_derived *d)
 
     d->pd = (ad << 1) + ap + cs_hook_bonus(ch) - size * 2;
     if (cs_has_unlock(ch, "reflex")) d->pd += 2;    /* M36c reflex booster */
+    if (cs_geti(ch, "shield", 0) > 0) d->pd += 3;   /* M41a mana shield, timed */
     if (d->pd > 20) d->pd = 20;
     if (d->pd < 0) d->pd = 0;
     d->soak = (md << 1) + mp + armor + (size > 0 ? size : 0);
     if (cs_has_unlock(ch, "dermal")) d->soak += 2;  /* M35c dermal plating */
+    if (cs_geti(ch, "mesh", 0) > 0) d->soak += wd;  /* M41a dermal wire mesh, timed */
     d->maxbp = 12 + md * 3 + size * 6;
     if (d->maxbp < 1) d->maxbp = 1;
     d->maxgrit = 3 + wd + cd;
@@ -787,16 +789,23 @@ cs_cond_list(int sheet, struct cs_out *o)
     if (cs_geti(sheet, "bleed", 0))   cs_s(o, n++ ? ", bleeding" : "bleeding");
 }
 
-/* Apply the start-of-turn condition ticks (M40c): Ongoing damage (`bleed`) deals
- * its set amount as direct, un-soaked damage and downs the victim at 0 BP. It
- * runs until an action or save ends it. */
+/* Apply the start-of-turn ticks. Ongoing damage (`bleed`, M40c) deals its set
+ * amount as direct, un-soaked damage and downs the victim at 0 BP, running until
+ * an action or save ends it. Timed self-buffs (M41a) count down one round and
+ * lapse at zero. */
 static void
 cs_cond_tick(int sheet, int room)
 {
     struct cs_out o;
     char nm[32];
-    int bleed = cs_geti(sheet, "bleed", 0), bp;
+    int bleed, bp, v;
 
+    /* M41a: timed self-buffs count down one round at the start of the holder's
+     * turn and lapse at zero. Their effect is read live in cs_recalc. */
+    if ((v = cs_geti(sheet, "shield", 0)) > 0) cs_seti(sheet, "shield", v - 1);
+    if ((v = cs_geti(sheet, "mesh", 0)) > 0)   cs_seti(sheet, "mesh", v - 1);
+
+    bleed = cs_geti(sheet, "bleed", 0);
     if (bleed <= 0) return;
     bp = cs_geti(sheet, "bp", 0) - bleed;
     cs_getstr(sheet, "name", nm, sizeof(nm));
@@ -1053,6 +1062,8 @@ cs_has_unlock(int sheet, const char *name)
  * its stat applies (dermal in cs_recalc), so `use` refuses it. */
 #define UEF_PASSIVE 0
 #define UEF_AIM     1       /* smartlink: next attack ignores cover, -2 PD */
+#define UEF_SHIELD  2       /* mana shield: +3 Passive Defense while active (M41a) */
+#define UEF_MESH    3       /* dermal wire mesh: +Wit dice Soak while active (M41a) */
 
 /* The 5 CP unlock catalog (M35c): each acquirable maneuver, cyberware mod, or
  * spell as one id, with its CP cost, the hook it requires ("" for any), whether
@@ -1067,6 +1078,8 @@ static const struct cs_unlock cs_unlocks[] = {
     { "dermal",    5, "cyber",    1, 0, UEF_PASSIVE }, /* +2 Soak, one graft */
     { "reflex",    5, "cyber",    1, 0, UEF_PASSIVE }, /* +2 Defense, one graft */
     { "vigor",     5, "awakened", 0, 0, UEF_PASSIVE }, /* +3 Max Grit */
+    { "shield",    5, "awakened", 0, 1, UEF_SHIELD },  /* +3 PD, timed (M41a) */
+    { "mesh",      5, "cyber",    1, 1, UEF_MESH },     /* +Wit Soak, timed (M41a) */
 };
 #define CS_NUNLOCKS ((int)(sizeof(cs_unlocks) / sizeof(cs_unlocks[0])))
 #define CS_GRAFT_CAP 2      /* cyberware graft slots (Cyber-Augmented hook) */

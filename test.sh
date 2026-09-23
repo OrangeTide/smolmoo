@@ -2182,6 +2182,93 @@ curl -sf -X POST -d "$SID1 @set #0.rest_secs=7200" http://localhost:$PORT/cmd >/
 curl -sf -X POST -d "$SID1 @set #$P1SH.bp=21" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M41a: timed self-buffs (mana shield, dermal wire mesh) ---
+# The read side first, fully deterministic: a live buff raises the derived stat
+# read by cs_recalc and clears when it lapses. Grant both unlocks and fix Wit so
+# the mesh bonus (Wit dice, here 3) is known. Baseline with both buffs off.
+curl -sf -X POST -d "$SID1 @set #$P1SH.hook=cyber" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=smartlink,dermal,reflex,vigor,shield,mesh" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.wit=9" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.shield=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.mesh=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+DB=$(grep -oE 'Defense [0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
+SB=$(grep -oE 'Soak [0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
+# mana shield: +3 Passive Defense while its rounds remain
+curl -sf -X POST -d "$SID1 @set #$P1SH.shield=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+DA=$(grep -oE 'Defense [0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
+[ "${DA:-0}" -eq "$(( ${DB:-0} + 3 ))" ] \
+	&& pass "a live mana shield raises Passive Defense by 3" \
+	|| fail "a live mana shield raises Passive Defense by 3 (base $DB, buffed $DA)"
+# when the buff lapses (rounds 0), the bonus is gone
+curl -sf -X POST -d "$SID1 @set #$P1SH.shield=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+DL=$(grep -oE 'Defense [0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
+[ "${DL:-0}" -eq "${DB:-0}" ] \
+	&& pass "a lapsed mana shield restores Passive Defense" \
+	|| fail "a lapsed mana shield restores Passive Defense (base $DB, lapsed $DL)"
+# dermal wire mesh: +Wit dice (3) Soak while its rounds remain
+curl -sf -X POST -d "$SID1 @set #$P1SH.mesh=3" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+SA=$(grep -oE 'Soak [0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
+[ "${SA:-0}" -eq "$(( ${SB:-0} + 3 ))" ] \
+	&& pass "a live dermal wire mesh raises Soak by the Wit dice" \
+	|| fail "a live dermal wire mesh raises Soak by the Wit dice (base $SB, buffed $SA)"
+curl -sf -X POST -d "$SID1 @set #$P1SH.mesh=0" http://localhost:$PORT/cmd >/dev/null
+# learn gates the shield spell on the Awakened hook (the machinery, once here)
+curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=smartlink,dermal,reflex,vigor" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.cp=20" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 learn shield" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'needs the awakened hook' "learn gates the shield spell on the hook"
+curl -sf -X POST -d "$SID1 @set #$P1SH.hook=awakened" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 learn shield" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'You learn shield' "learn acquires the shield spell on the awakened hook"
+# In a fight, use activates the buff, and it counts down to nothing over rounds.
+curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=smartlink,dermal,reflex,vigor,shield,mesh" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+SR4=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SR4.name=Warded Cell" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$SR4" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+D4=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$D4.name=husk" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D4.grade=tough" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D4.bp=9999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D4.mig=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D4.agi=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D4.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D4.location=#$SR4" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.shield=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.grit=30" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack husk" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+_i=0
+while [ $_i -lt 40 ]; do
+	curl -sf -X POST -d "$SID1 use shield" http://localhost:$PORT/cmd >/dev/null
+	grep -q 'weaves a mana shield' /tmp/smolmoo_p1.log 2>/dev/null && break
+	sleep 0.2
+	_i=$((_i + 1))
+done
+check_log /tmp/smolmoo_p1.log 'weaves a mana shield' "use activates the mana shield in a fight"
+# cycle turns with cheap attacks so cs_cond_tick counts the buff down to zero
+_i=0
+while [ $_i -lt 40 ]; do
+	SV=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=shield&sid=$SID1")
+	[ "$SV" = "0" ] && break
+	curl -sf -X POST -d "$SID1 attack husk" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.2
+	_i=$((_i + 1))
+done
+[ "$SV" = "0" ] && pass "a timed buff counts down and lapses over rounds" \
+	|| fail "a timed buff counts down and lapses over rounds (shield left '$SV')"
+curl -sf -X POST -d "$SID1 @set #$D4.downed=1" http://localhost:$PORT/cmd >/dev/null
+fight_over husk || true
+curl -sf -X POST -d "$SID1 @set #$P1SH.hook=cyber" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.

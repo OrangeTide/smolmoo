@@ -7,6 +7,9 @@
 
 #include "chromesix_verb.h"
 
+#define SHIELD_ROUNDS 2         /* mana shield duration; re-use refreshes it */
+#define MESH_ROUNDS   3         /* dermal wire mesh duration (rules Section 11) */
+
 /* Gate a combat action to the actor's own turn. Returns 1 if allowed to act
  * (a fight is running and it is the actor's unspent turn), else prints why
  * and returns 0. Sets *infight to whether a fight is running at all. */
@@ -107,6 +110,19 @@ main(void)
             cs_seti(sh, "aim", 1);
             cs_s(&o, nm);
             cs_s(&o, " paints a target through the smartlink and takes aim.");
+            break;
+        case UEF_SHIELD:
+            /* mana shield: +3 Passive Defense for a few rounds (read in
+             * cs_recalc, counted down in cs_cond_tick). Re-use refreshes it. */
+            cs_seti(sh, "shield", SHIELD_ROUNDS);
+            cs_s(&o, nm);
+            cs_s(&o, " weaves a mana shield; a shimmering ward flares up.");
+            break;
+        case UEF_MESH:
+            /* dermal wire mesh: +Wit dice Soak for a few rounds, same timing */
+            cs_seti(sh, "mesh", MESH_ROUNDS);
+            cs_s(&o, nm);
+            cs_s(&o, "'s dermal wire mesh hardens under the skin.");
             break;
         default:
             cs_s(&o, nm);
