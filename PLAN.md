@@ -736,6 +736,38 @@ a later ally-facing unlock is a row, not new plumbing. The reaction-family
 unlocks and the remaining catalog rows are deferred as later follow-ons. The
 suite grew to 375 checks.
 
+## Milestone 42: Reactions
+
+M41 shipped the active roster but deferred the reaction unlocks, which fire out of
+turn when a hit lands rather than on your own turn. M42 builds that one shared
+mechanism, a defender-reaction check inside `cs_attack_resolve`, and lands the
+four reaction unlocks, largely closing out the ChromeSix combat engine. Each
+reaction is a `UEF_PASSIVE` catalog row read by id at the resolution point it
+bites, gated on a spare `react_left` and its cost, and firing only when reactions
+are allowed so a reaction's own strike cannot recurse. The full plan is `M42.md`;
+this is the summary. It shipped in three slices (a8e0a45, 8333f08, ea0ed39).
+
+Slice a builds the hook at the Net Damage point and ships Reflex Governor
+(cyberware): the defender spends a reaction and 2 Grit to roll Wit plus Cybertech
+against the attack total, cutting the hit by its Wit dice on a success. This
+proves the read-a-reaction-unlock-and-adjust-the-hit seam the others reuse.
+
+Slice b adds two hooks at the other points. Riposte (any hook) hooks the miss
+path: on a miss by 4 or more, the defender spends a reaction and 1 Grit and
+`cs_attack_resolve` recurses with reactions off to strike the attacker. Emergency
+Defibrillator (cyberware) hooks the lethal drop: a hit that would take the
+defender to 0 BP leaves them at 1 and sets a burnout flag, firing once until a
+repair clears it.
+
+Slice c adds the first third-party reaction and rounds out the catalog.
+`cs_attack_resolve` gained a `room` parameter, threaded through its callers, so
+Empathic Aegis (Awakened) can scan the room for a bystanding ally that spends a
+reaction and 1 Grit to add its Charm dice to the defender's Soak. Kinetic
+Absorbers (cyberware) is a passive read in `cs_recalc`, +1 Passive Defense for -1
+Max Grit. The initiative and marking unlocks (Wired Reflexes, Tactical
+Co-Processor, Threat-Assessment Optics) stay deferred as on-your-turn rows, as do
+the M40 conditions Blinded, Held, and Exposed. The suite grew to 382 checks.
+
 ---
 
 # Future Milestones
