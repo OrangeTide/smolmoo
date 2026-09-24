@@ -550,3 +550,41 @@ range=engaged
 skill=melee
 weight=1
 price=60
+#125 #100
+owner=#0
+name=Cargo Bay
+description=A dim cargo bay stacked with unclaimed freight. Something moves between the crates.
+
+#140 #100
+owner=#0
+name=cargobay
+description=A hatch into the cargo bay.
+location=#120
+dest=125
+
+#141 #100
+owner=#0
+name=concourse
+description=Back out to the concourse.
+location=#125
+dest=120
+
+#222 #200
+owner=#0
+name=fixer
+description=A wiry fixer nursing a drink in the corner booth.
+location=#121
+job=1
+job_desc=Clear the scavenger out of the cargo bay.
+job_target=scavenger
+job_creds=120
+job_cp=2
+job_standing=dockers:1
+
+#221 #200
+owner=#0
+name=scavenger
+description=A ragged scavenger picking through the freight.
+grade=tough
+mig=9
+location=#125

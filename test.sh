@@ -2677,6 +2677,52 @@ curl -sf -X POST -d "$SID1 @set #0.rest_secs=7200" http://localhost:$PORT/cmd >/
 curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M44b: the fixer and the bounty loop ---
+# The full seeded loop: a reset spawns the scavenger in the cargo bay, the fixer
+# in the bar offers the contract, and defeating the target completes it for pay
+# and standing. Drive the seeded ids with real movement between the rooms.
+curl -sf -X POST -d "$SID1 @set #$P1SH.mig=20" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.grit=30" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.sk_brawl=40" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.wielded=305" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.money=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.job_giver=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.job_done=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.standing=" http://localhost:$PORT/cmd >/dev/null
+# accept the contract at the bar
+curl -sf -X POST -d "$SID1 go waystation" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go bar" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Clear the scavenger' "the seeded fixer offers a contract"
+curl -sf -X POST -d "$SID1 accept fixer" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'take the job from fixer' "the fixer's contract is accepted"
+# travel to the cargo bay and defeat the target
+curl -sf -X POST -d "$SID1 go concourse" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go cargobay" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Cargo Bay' "the cargo bay is reachable from the hub"
+curl -sf -X POST -d "$SID1 attack scavenger" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+_i=0
+while [ $_i -lt 40 ]; do
+	JD=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=job_done&sid=$SID1")
+	[ "$JD" = "1" ] && break
+	curl -sf -X POST -d "$SID1 attack scavenger" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.3
+	_i=$((_i + 1))
+done
+[ "$JD" = "1" ] && pass "defeating the bounty target completes the job" \
+	|| fail "defeating the bounty target completes the job (job_done '$JD')"
+# report back and collect the reward
+curl -sf -X POST -d "$SID1 go concourse" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go bar" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'pays you 120 creds and 2 CP' "turn-in pays the seeded reward"
+STG=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=standing&sid=$SID1")
+case "$STG" in *dockers:1*) pass "the contract raises faction standing" ;;
+	*) fail "the contract raises faction standing (standing '$STG')" ;; esac
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.
