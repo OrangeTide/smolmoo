@@ -2723,6 +2723,63 @@ case "$STG" in *dockers:1*) pass "the contract raises faction standing" ;;
 	*) fail "the contract raises faction standing (standing '$STG')" ;; esac
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M44c: a faction presence and a living NPC ---
+# The dockers hold an office off the concourse. A handler there offers a contract
+# gated behind dockers standing (job_min), and a seeded guard reacts to who walks
+# in: it greets a newcomer, roves its route when woken (a brain), and aggros one
+# the dockers count Hostile. Drive the seeded ids to prove each consequence.
+curl -sf -X POST -d "$SID1 @set #$P1SH.mig=20" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.money=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.job_giver=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.job_done=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @standing TestPlayer1 dockers 0" http://localhost:$PORT/cmd >/dev/null
+# the seeded guard greets a newcomer entering the office (reactive on_enter)
+curl -sf -X POST -d "$SID1 go waystation" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go office" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Dockers Office' "the office is reachable from the concourse"
+check_log /tmp/smolmoo_p1.log 'guard sizes you up and grunts' "the seeded guard greets a newcomer"
+# the handler's contract is gated: at Neutral it is locked and refused
+curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'locked: needs dockers Known' "a job_min contract shows locked below the band"
+curl -sf -X POST -d "$SID1 accept handler" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'do not rank for that job' "the gate refuses accept below the band"
+# earn the band; the gate opens and the courier contract runs and pays out
+curl -sf -X POST -d "$SID1 @standing TestPlayer1 dockers 1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 accept handler" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'take the job from handler' "the gate opens once the band is earned"
+curl -sf -X POST -d "$SID1 go concourse" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go cargobay" http://localhost:$PORT/cmd >/dev/null
+JD=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=job_done&sid=$SID1")
+[ "$JD" = "1" ] && pass "reaching the courier destination completes the gated job" \
+	|| fail "reaching the courier destination completes the gated job (job_done '$JD')"
+curl -sf -X POST -d "$SID1 go concourse" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go office" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'pays you 90 creds and 1 CP' "the gated courier pays on turn-in"
+# the seeded guard carries a brain: woken, it roves its seeded route (126,120),
+# announcing the departure to the office the player is standing in
+curl -sf -X POST -d "$SID1 @set #224.dwell=200" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @wake #224" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'guard leaves' "the seeded guard roves its route when woken (brain)"
+# stop and repark it so it holds the office for the aggro check, and clear the
+# persistent awake flag so a later boot-scan does not re-wake it (stale depot)
+curl -sf -X POST -d "$SID1 @sleep #224" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #224.behavior=greet" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #224.location=#126" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #224.dwell=600000" http://localhost:$PORT/cmd >/dev/null
+# a Hostile newcomer draws the guard's aggro (faction disposition on a seeded NPC)
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @standing TestPlayer1 dockers -2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go concourse" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go office" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'guard turns on' "the seeded guard aggros a Hostile newcomer via disposition"
+# tear the fight down, restore standing, and leave
+curl -sf -X POST -d "$SID1 @set #126.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @standing TestPlayer1 dockers 1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.

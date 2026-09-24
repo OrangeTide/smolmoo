@@ -588,3 +588,49 @@ description=A ragged scavenger picking through the freight.
 grade=tough
 mig=9
 location=#125
+
+#126 #100
+owner=#0
+name=Dockers Office
+description=A cramped office behind the concourse, dockers union sigils on the wall. A handler works a battered terminal and a guard watches the door.
+
+#142 #100
+owner=#0
+name=office
+description=A door marked DOCKERS, crew only.
+location=#120
+dest=126
+
+#143 #100
+owner=#0
+name=concourse
+description=Back out to the concourse.
+location=#126
+dest=120
+
+#223 #200
+owner=#0
+name=handler
+description=A dockers handler at the terminal, sizing up who is worth the good work.
+location=#126
+faction=dockers
+job=1
+job_desc=Run a sealed manifest down to the cargo bay.
+job_dest=125
+job_creds=90
+job_cp=1
+job_standing=dockers:1
+job_min=dockers:1
+
+#224 #200
+owner=#0
+name=guard
+description=A dockers guard at the office door, one hand near a stunbaton.
+location=#126
+grade=tough
+faction=dockers
+behavior=greet,patrol
+greeting=The guard sizes you up and grunts.
+brain=#453
+route=126,120
+dwell=600000
