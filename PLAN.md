@@ -837,6 +837,49 @@ reactive through `on_enter`, so the district does not rove on its own until a
 builder wakes it. Further districts, a branching job tree, and a campaign arc stay
 deferred. The suite grew to 413 checks.
 
+## Milestone 45: Close out the combat catalog
+
+The M25c-M42 arc built the combat engine and its reaction family but left three
+Section 11 catalog rows and three conditions as explicit follow-ons. M45 lands them,
+so every family the rules lay out is proven end to end and `learn` and `use` have
+the full shelf. No new mechanism: each item is a catalog row or a condition prop
+hung on a seam that already exists (the `cs_unlocks` catalog and `use` dispatch, the
+M40 condition framework, the `cs_attack_resolve` hooks, and the opposed-roll
+inflictor pattern from `trip` and `stun`). The full plan is `M45.md`; this is the
+summary. It shipped in three slices (55556d9, 3a36058, 3747a43).
+
+Slice a adds the first unlock that touches turn order rather than a hit. Wired
+Reflexes is a cyberware passive: a catalog row plus a `cs_has_unlock` read in the
+initiative loop of `verb_combat.c`, adding a flat bonus to the rolled initiative
+before the sort so its holder acts earlier. The bonus is a flat post-roll addition,
+which keeps it deterministic to test.
+
+Slice b adds two on-your-turn cyberware unlocks that apply a tracked condition to a
+target, and lands the M40-deferred persistent Exposed as a real state. Tactical
+Co-Processor sets `exposed` (a tracked -2 Passive Defense read in
+`cs_attack_resolve`), and Threat-Assessment Optics sets `marked_by` to the marker's
+sheet so `cs_attack_resolve` adds a die when the attacker is the marker. Both
+dispatch through the catalog on the M41b offensive-target pattern and join
+`cs_cond_list`. The transient ambush Exposed is left as is, and does not double
+count since ambush does not set the prop.
+
+Slice c lands the last two M40 conditions. Blinded (`blind`) docks the blinded
+attacker 3D and wears off through `cs_cond_tick`; Held (`held`) docks the held
+attacker 1D and blocks band changes and fleeing until `break` clears it. Two
+inflictors join `verb_menace.c`: `grapple` (melee Might+Brawl) sets Held, and
+`flash` (Agility+Firearms at any range) sets Blinded, both spending a Grit. The
+initiative and marking unlocks and these conditions were the M40-M42 deferrals, so
+the combat catalog is now substantially whole; the remaining Section 11 rows add no
+new family and stay as content. The suite grew to 423 checks.
+
+A note the milestone surfaced: the M29 `@rewind` tests copy the main depot and
+generate their own signing key, so they can only rewind to roots they signed. If
+total suite runtime crosses the five-minute `AUTOSAVE_MS`, the main server autosaves
+one root under its own key, and the copied root then fails the isolated rewind. The
+suite runs well under that in a normal pass, but its growth narrows the margin, so a
+later milestone should make the isolated instances hermetic (start at their own
+genesis).
+
 ---
 
 # Future Milestones
