@@ -798,6 +798,45 @@ With combat substantially complete and its depth now approachable, the near-term
 ChromeSix leftovers are content and the trivial catalog rows; a playable starter
 district or a campaign loop are the larger next directions.
 
+## Milestone 44: A playable starter district
+
+After the combat engine and its polish, the systems had nowhere to happen: jobs,
+standing, the clinic, the vendor, and combat encounters were exercised only by
+test setup, not by any world a player could walk into. M44 seeds one small
+district that ties chargen, movement, jobs, standing, combat, and the services
+into a loop a new character can actually play. It is mostly world content, which
+is data rather than source, so it validates the engine as a game without growing
+the codebase, and it shakes out integration the isolated tests never touch since
+those build their own objects while this drives the seeded ones. The full plan is
+`M44.md`; this is the summary. It shipped in three slices (93138a2, 6b9475f,
+6e07d35).
+
+Slice a seeds the hub and its services: a five-room waystation (concourse, bar,
+med bay, supply, bunks) in a reserved id block, with a vendor stocking priced
+gear, an autodoc clinic, and a safe bunk for a short rest, all wired to the lobby
+with two-way exits. A smoke test walks in from the lobby and uses each service
+against the fixed seed ids. Two integration notes: a world-seed line beginning
+with `#` is parsed as an object header, so the seed carries no comments; and
+movement is blocked when carry load exceeds the Might-derived capacity.
+
+Slice b seeds the first playable contract loop. A fixer in the bar carries a real
+bounty against a scavenger hand-placed in a new cargo bay, rewarding creds, CP,
+and a dockers standing step. The bounty completes on the scene win and pays out at
+turn-in, the M37 loop now from the seed. The foe is hand-placed rather than
+stocked by a `#910` reset rule, because a seeded rule shifts the global `@reset`
+counts the OLC tests assert exactly; reset-based respawn is deferred to keep those
+tests green.
+
+Slice c gives the district a faction that reacts to who the player is. A dockers
+office off the concourse holds a handler whose courier contract is gated behind
+dockers standing (`job_min`), so a fresh character is refused until the slice-b
+bounty earns the band, and a guard that greets a newcomer, aggros a
+dockers-Hostile one through `cs_disposition` with no aggro token, and roves its
+route when woken as an agent (`brain`). The guard is left unwoken in the seed,
+reactive through `on_enter`, so the district does not rove on its own until a
+builder wakes it. Further districts, a branching job tree, and a campaign arc stay
+deferred. The suite grew to 413 checks.
+
 ---
 
 # Future Milestones
