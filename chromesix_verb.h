@@ -1088,6 +1088,8 @@ static const struct cs_unlock cs_unlocks[] = {
     { "suppress",  5, "",         0, 1, UEF_SUPPRESS }, /* suppress the foes (M41b) */
     { "inject",    5, "cyber",    1, 1, UEF_INJECT },   /* restore BP, self/ally (M41c) */
     { "governor",  5, "cyber",    1, 0, UEF_PASSIVE },  /* reaction: cut a hit (M42a) */
+    { "riposte",   5, "",         0, 0, UEF_PASSIVE },  /* reaction: strike a big miss (M42b) */
+    { "defib",     5, "cyber",    1, 0, UEF_PASSIVE },  /* reaction: cheat death once (M42b) */
 };
 #define CS_NUNLOCKS ((int)(sizeof(cs_unlocks) / sizeof(cs_unlocks[0])))
 #define CS_GRAFT_CAP 2      /* cyberware graft slots (Cyber-Augmented hook) */
@@ -1228,6 +1230,17 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
         cs_s(o, " and misses.");
         if (awild < 0) cs_s(o, " [GLITCH]");
         else if (awild > 0) cs_s(o, " [EDGE]");
+        /* M42b: Riposte -- a miss by 4 or more lets the defender spend a reaction
+         * and 1 Grit for an immediate free strike at base weapon damage. The
+         * strike disallows reactions so it cannot recurse. */
+        if (allow_react && (pd - aroll) >= 4 && cs_has_unlock(def, "riposte")
+            && cs_geti(def, "react_left", 0) > 0 && cs_grit_spend(def, 1) >= 0) {
+            int rdown, rw = cs_geti(def, "wielded", 305);
+
+            cs_seti(def, "react_left", cs_geti(def, "react_left", 0) - 1);
+            cs_s(o, " [riposte!] ");
+            cs_attack_resolve(def, atk, rw, 0, 0, 0, o, &rdown, 0);
+        }
         return 0;
     }
     if (out_edge && awild > 0) *out_edge = 1;   /* M41b: a Tactical Edge on a hit */
@@ -1284,7 +1297,14 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
     bp = cs_geti(def, "bp", dd.maxbp) - net;
     cs_s(o, " for ");
     cs_i(o, net);
-    if (bp <= 0) {
+    if (bp <= 0 && cs_has_unlock(def, "defib") && !cs_geti(def, "defib_used", 0)) {
+        /* M42b: Emergency Defibrillator -- a hit that would drop the defender to 0
+         * BP leaves them at 1 instead, once, until a downtime repair clears the
+         * burnout. The burnout flag is the limiter, so it always saves once. */
+        cs_seti(def, "defib_used", 1);
+        cs_seti(def, "bp", 1);
+        cs_s(o, ". The defibrillator jolts them back to 1 BP! [defib]");
+    } else if (bp <= 0) {
         cs_seti(def, "bp", 0);
         sys_setprop(def, "downed", "1");
         *out_down = 1;

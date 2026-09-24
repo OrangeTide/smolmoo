@@ -2443,6 +2443,84 @@ curl -sf -X POST -d "$SID1 @set #$D7.downed=1" http://localhost:$PORT/cmd >/dev/
 fight_over brute || true
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M42b: Riposte and Emergency Defibrillator ---
+# Riposte: when a foe misses the player's Passive Defense by 4 or more, the player
+# spends a reaction and 1 Grit for a free strike back. Give the foe a hopeless
+# attack pool and the player a high Passive Defense so every foe swing misses
+# wide, then drive the fight with holds until the riposte fires.
+curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=riposte" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.agi=12" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+SR8=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SR8.name=Parry Pit" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$SR8" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+D8=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$D8.name=flailer" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D8.grade=tough" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D8.bp=9999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D8.mig=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D8.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D8.location=#$SR8" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.grit=30" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack flailer" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+_i=0
+while [ $_i -lt 40 ]; do
+	grep -q 'riposte!' /tmp/smolmoo_p1.log 2>/dev/null && break
+	curl -sf -X POST -d "$SID1 hold" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.3
+	_i=$((_i + 1))
+done
+check_log /tmp/smolmoo_p1.log 'riposte!' "Riposte strikes back when a foe misses by a wide margin"
+curl -sf -X POST -d "$SID1 @set #$D8.downed=1" http://localhost:$PORT/cmd >/dev/null
+fight_over flailer || true
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
+# Emergency Defibrillator: a hit that would drop the player to 0 BP leaves them at
+# 1 instead, once, setting a burnout flag. Put the player at 1 BP with no Soak and
+# send a hard-hitting foe; the first landing blow triggers the defibrillator.
+curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=defib" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.mig=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.defib_used=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+SR9=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SR9.name=Flatline Ward" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$SR9" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+D9=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$D9.name=reaper" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D9.grade=tough" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D9.bp=9999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D9.mig=30" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D9.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D9.location=#$SR9" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.grit=30" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack reaper" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+_i=0
+while [ $_i -lt 40 ]; do
+	grep -q 'defibrillator jolts' /tmp/smolmoo_p1.log 2>/dev/null && break
+	curl -sf -X POST -d "$SID1 hold" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.3
+	_i=$((_i + 1))
+done
+curl -sf -X POST -d "$SID1 @set #$D9.downed=1" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'defibrillator jolts' "Emergency Defibrillator saves a lethal hit at 1 BP"
+DU=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=defib_used&sid=$SID1")
+[ "$DU" = "1" ] && pass "the defibrillator burns out after firing" \
+	|| fail "the defibrillator burns out after firing (defib_used '$DU')"
+fight_over reaper || true
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.
