@@ -791,6 +791,8 @@ cs_cond_list(int sheet, struct cs_out *o)
     if (cs_geti(sheet, "shaken", 0))  cs_s(o, n++ ? ", shaken" : "shaken");
     if (cs_geti(sheet, "bleed", 0))   cs_s(o, n++ ? ", bleeding" : "bleeding");
     if (cs_geti(sheet, "suppress", 0)) cs_s(o, n++ ? ", suppressed" : "suppressed");
+    if (cs_geti(sheet, "exposed", 0)) cs_s(o, n++ ? ", exposed" : "exposed");
+    if (cs_geti(sheet, "marked_by", 0)) cs_s(o, n++ ? ", marked" : "marked");
 }
 
 /* Apply the start-of-turn ticks. Ongoing damage (`bleed`, M40c) deals its set
@@ -1071,6 +1073,8 @@ cs_has_unlock(int sheet, const char *name)
 #define UEF_SHOCK   4       /* static shock: a Wit+Spellcasting attack (M41b) */
 #define UEF_SUPPRESS 5      /* suppressive fire: Suppress the roster foes (M41b) */
 #define UEF_INJECT  6       /* biomedical injector: restore BP to self or ally (M41c) */
+#define UEF_EXPOSE  7       /* tactical co-processor: mark a target Exposed (M45b) */
+#define UEF_MARK    8       /* threat-assessment optics: mark a target for +1D (M45b) */
 
 /* The 5 CP unlock catalog (M35c): each acquirable maneuver, cyberware mod, or
  * spell as one id, with its CP cost, the hook it requires ("" for any), whether
@@ -1096,6 +1100,8 @@ static const struct cs_unlock cs_unlocks[] = {
     { "aegis",     5, "awakened", 0, 0, UEF_PASSIVE },  /* reaction: shield an ally (M42c) */
     { "kinetic",   5, "cyber",    1, 0, UEF_PASSIVE },  /* +1 PD, -1 Max Grit (M42c) */
     { "wired",     5, "cyber",    1, 0, UEF_PASSIVE },  /* +initiative bonus (M45a) */
+    { "coproc",    5, "cyber",    1, 1, UEF_EXPOSE },   /* Expose a target (M45b) */
+    { "optics",    5, "cyber",    1, 1, UEF_MARK },     /* mark a target, +1D (M45b) */
 };
 #define CS_NUNLOCKS ((int)(sizeof(cs_unlocks) / sizeof(cs_unlocks[0])))
 #define CS_GRAFT_CAP 2      /* cyberware graft slots (Cyber-Augmented hook) */
@@ -1203,12 +1209,18 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
         if (cs_geti(atk, "shaken", 0)) apool -= 3;   /* M40b: Shaken is -1D */
         /* M41b: Suppressed is -1D on the attacker's next attack, then spent. */
         if (supp) { apool -= 3; cs_seti(atk, "suppress", 0); }
+        /* M45b: Threat-Assessment Optics -- the marker gains +1D against a target
+         * it has marked (the mark is stored on the target as the marker's sheet). */
+        if (cs_geti(def, "marked_by", 0) == atk) apool += 3;
     }
     if (apool < 1) apool = 1;
     aroll = cs_roll(apool, &awild);
 
     cs_recalc(def, &dd);
     pd = dd.pd + cs_cover(def) + pd_bonus;
+    /* M45b: Exposed is a tracked -2 Passive Defense on the target (Tactical
+     * Co-Processor sets it; the transient ambush strike still uses pd_bonus). */
+    if (cs_geti(def, "exposed", 0)) pd -= 2;
 
     /* a readied guard spends the defender's reaction to brace this hit */
     if (allow_react) {
@@ -1232,6 +1244,8 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
     if (cs_geti(def, "prone", 0)) cs_s(o, " (target prone)");
     if (cs_geti(atk, "shaken", 0)) cs_s(o, " (shaken)");
     if (supp) cs_s(o, " (suppressed)");
+    if (cs_geti(def, "exposed", 0)) cs_s(o, " (target exposed)");
+    if (cs_geti(def, "marked_by", 0) == atk) cs_s(o, " (marked)");
 
     if (aroll < pd) {
         cs_s(o, " and misses.");

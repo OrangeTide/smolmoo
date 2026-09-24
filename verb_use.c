@@ -113,12 +113,13 @@ main(void)
             _exit(0);
         }
         /* an offensive unlock resolves its target before it spends anything */
-        if (u->effect == UEF_SHOCK) {
+        if (u->effect == UEF_SHOCK || u->effect == UEF_EXPOSE
+                || u->effect == UEF_MARK) {
             char *tgt = arg;
 
             while (*tgt && *tgt != ' ') tgt++;   /* skip the unlock word */
             while (*tgt == ' ') tgt++;
-            if (!*tgt) { puts("Shock whom?"); _exit(0); }
+            if (!*tgt) { puts("On whom?"); _exit(0); }
             foe = sys_objfind(tgt);
             if (foe <= 0) { puts("You don't see that here."); _exit(0); }
             if (!on_roster(room, foe)) { puts("They are not in this fight."); _exit(0); }
@@ -175,6 +176,32 @@ main(void)
                 cs_seti(fsh, "stunned", 1);
                 cs_s(&o, " The current locks it up -- stunned!");
             }
+            break;
+        }
+        case UEF_EXPOSE: {
+            /* tactical co-processor: leave the target Exposed, a tracked -2
+             * Passive Defense read in cs_attack_resolve (M45b). */
+            char tn[32];
+
+            cs_seti(cs_sheet(foe), "exposed", 1);
+            cs_getstr(cs_sheet(foe), "name", tn, sizeof(tn));
+            cs_s(&o, nm);
+            cs_s(&o, "'s co-processor reads ");
+            cs_s(&o, tn);
+            cs_s(&o, "'s stance -- it is exposed.");
+            break;
+        }
+        case UEF_MARK: {
+            /* threat-assessment optics: mark the target so this attacker's
+             * shots gain +1D against it (stored on the target as our sheet). */
+            char tn[32];
+
+            cs_seti(cs_sheet(foe), "marked_by", sh);
+            cs_getstr(cs_sheet(foe), "name", tn, sizeof(tn));
+            cs_s(&o, nm);
+            cs_s(&o, "'s optics lock onto ");
+            cs_s(&o, tn);
+            cs_s(&o, " -- marked.");
             break;
         }
         case UEF_SUPPRESS: {

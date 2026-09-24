@@ -2817,6 +2817,70 @@ fight_over slowfoe || true
 curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M45b: the marking and debuff unlocks with Exposed ---
+# Two on-your-turn cyberware unlocks apply a tracked condition to a target:
+# Tactical Co-Processor (coproc) leaves it Exposed (-2 Passive Defense) and
+# Threat-Assessment Optics (optics) marks it so the marker's attacks gain +1D.
+# Both are read in cs_attack_resolve. Drive a fight and, on the player's turns,
+# apply each (a use off-turn is a no-op), then attack to see both annotations.
+curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=coproc,optics" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.grit=30" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.mig=20" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.sk_brawl=40" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.wielded=305" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+MR=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$MR.name=Mark Range" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$MR" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+DM=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$DM.name=dummy" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DM.grade=tough" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DM.bp=9999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DM.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DM.location=#$MR" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack dummy" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+# coproc on the player's turn Exposes the target (a use off-turn is a no-op)
+_i=0
+while [ $_i -lt 40 ]; do
+	EX=$(curl -sf "http://localhost:$PORT/prop?obj=$DM&prop=exposed&sid=$SID1" || true)
+	[ "$EX" = "1" ] && break
+	curl -sf -X POST -d "$SID1 use coproc dummy" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.3
+	_i=$((_i + 1))
+done
+[ "$EX" = "1" ] && pass "Tactical Co-Processor leaves the target Exposed" \
+	|| fail "Tactical Co-Processor leaves the target Exposed (exposed '$EX')"
+# optics on the player's turn marks the target with the marker's sheet id
+_i=0
+while [ $_i -lt 40 ]; do
+	MK=$(curl -sf "http://localhost:$PORT/prop?obj=$DM&prop=marked_by&sid=$SID1" || true)
+	[ "$MK" = "$P1SH" ] && break
+	curl -sf -X POST -d "$SID1 use optics dummy" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.3
+	_i=$((_i + 1))
+done
+[ "$MK" = "$P1SH" ] && pass "Threat-Assessment Optics marks the target" \
+	|| fail "Threat-Assessment Optics marks the target (marked_by '$MK')"
+# a player attack now reads both conditions in the resolution line
+_i=0
+while [ $_i -lt 40 ]; do
+	grep -q 'target exposed' /tmp/smolmoo_p1.log 2>/dev/null && break
+	curl -sf -X POST -d "$SID1 attack dummy" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.3
+	_i=$((_i + 1))
+done
+check_log /tmp/smolmoo_p1.log 'target exposed' "cs_attack_resolve reads Exposed on the target"
+check_log /tmp/smolmoo_p1.log '(marked)' "cs_attack_resolve reads the mark for the marker"
+curl -sf -X POST -d "$SID1 @set #$DM.downed=1" http://localhost:$PORT/cmd >/dev/null
+fight_over dummy || true
+curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.
