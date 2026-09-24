@@ -379,6 +379,30 @@ editor=@edit #N.prop  |  @view #N.prop
     The web property editor, live markdown highlighting, Ctrl+S to save.
 wiki=A wiki object (#0.wiki) holds pages as its properties.
     Set it up with @set #0.wiki=#<id>; edit pages in the web editor.
+commands=The ChromeSix game commands, by area (type 'help <area>'):
+    character  combat  maneuvers  gear  jobs  social
+    General server commands are under 'help' with no topic.
+character=chargen <steps>  |  sheet  |  status (st)  |  check <skill>
+    train <attr>  |  learn <unlock>
+    Make and grow a character. chargen builds one; sheet is the full record and
+    status the one-line vitals. check rolls a skill; train and learn spend CP.
+combat=attack <foe> [push N]  |  cover | takecover <foe>  |  reload <weapon>
+    close | retreat | engage <foe> | disengage  |  guard | ready <weapon>
+    ambush <foe>  |  flee <exit>  |  hold
+    The fight. attack opens or continues one and push spends Grit for dice. Move
+    between range bands, take cover, hold a reaction with guard or ready.
+maneuvers=use <unlock> [target]  |  trip <foe>  |  stand  |  staunch
+    stun <foe>  |  menace <foe>  |  rend <foe>
+    Tactical actions. use activates a learned unlock; the rest impose or clear a
+    condition (Prone, Stunned, Shaken, Bleeding) on your turn.
+gear=wield <item>  |  wear <item>  |  remove <item>  |  inventory (inv, i)
+    get <item> [from <container>]  |  drop <item>  |  put <item> in <container>
+    Carry and equip. wield readies a weapon, wear dons armor; the rest move items.
+jobs=jobs  |  accept <giver>  |  turnin  |  abandon  |  report  |  treat
+    Work for pay and standing. jobs lists offers here; accept takes one and turnin
+    completes it. treat mends a wound at a clinic.
+social=command <foe>  |  negotiate <foe>  |  con <foe>  |  perform <foe>
+    The four Charm approaches in a social scene, each pressing a target's Resolve.
 
 #900 #0
 owner=#0

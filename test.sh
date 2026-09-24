@@ -2607,6 +2607,16 @@ check_log /tmp/smolmoo_p1.log 'GRIT \[' "the st alias prints the status line"
 curl -sf -X POST -d "$SID1 @set #$P1SH.wounds=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
 
+# --- M43b: in-game help for the game commands ---
+# The ChromeSix verbs are seeded as help topics on #0.help, grouped by area, with
+# a 'commands' index. A player can now look them up from inside the game.
+curl -sf -X POST -d "$SID1 help commands" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'by area' "help commands lists the game command areas"
+curl -sf -X POST -d "$SID1 help combat" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'push spends Grit' "a game-command help topic prints in-game"
+curl -sf -X POST -d "$SID1 help maneuvers" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'impose or clear a' "the maneuvers help topic prints in-game"
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.
