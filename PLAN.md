@@ -768,6 +768,36 @@ Max Grit. The initiative and marking unlocks (Wired Reflexes, Tactical
 Co-Processor, Threat-Assessment Optics) stay deferred as on-your-turn rows, as do
 the M40 conditions Blinded, Held, and Exposed. The suite grew to 382 checks.
 
+## Milestone 43: Player-facing polish
+
+After eight milestones that deepened the ChromeSix systems, M43 adds no mechanics.
+It makes the existing depth approachable from inside the game: a glanceable status
+line, in-game help for the game commands, and a guided first few minutes for a new
+character. It is deliberately the lowest-code milestone of the run, wiring
+renderers and seeding content rather than building systems. The full plan is
+`M43.md`; this is the summary. It shipped in three slices (5ee9adb, f4133ef,
+832e40a).
+
+Slice a adds a `status` verb (alias `st`) that draws the Section 12 vitals line,
+the HP and Grit bars over the same `cs_meter` the combat prompt uses, a wound
+ladder, and any active conditions, a glance without the full `sheet`.
+
+Slice b seeds the ChromeSix verbs as help topics on `#0.help`, grouped into six
+area topics (character, combat, maneuvers, gear, jobs, social) with a `commands`
+index, so a player can look them up in-game rather than only in a markdown file.
+`cmd_help` already serves any property by name, so this is content only.
+
+Slice c guides a new character. `chargen` sets a `made` marker on completion (the
+character prototype supplies default stats, so `made` is the reliable set-up
+signal), a `login_welcome` helper points an unmade character at `chargen` and
+`help start`, `status` guides an unmade character rather than showing a default
+readout, and a `start` topic lays out the first steps. A scripted tutorial and a
+persistent per-line prompt stay deferred. The suite grew to 393 checks.
+
+With combat substantially complete and its depth now approachable, the near-term
+ChromeSix leftovers are content and the trivial catalog rows; a playable starter
+district or a campaign loop are the larger next directions.
+
 ---
 
 # Future Milestones
