@@ -139,7 +139,7 @@ main(void)
     }
     cs_attack_resolve(atk, defsh, weapon,
                       pool_mod + push_bonus - cs_crash_penalty(atk),
-                      pd_bonus, 1, &o, &down, 0);
+                      pd_bonus, 1, &o, &down, 0, room);
     if (aimed) cs_s(&o, " [aimed]");
     if (push > 0) {
         cs_s(&o, " [pushed +");

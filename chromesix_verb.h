@@ -227,6 +227,7 @@ cs_recalc(int ch, struct cs_derived *d)
 
     d->pd = (ad << 1) + ap + cs_hook_bonus(ch) - size * 2;
     if (cs_has_unlock(ch, "reflex")) d->pd += 2;    /* M36c reflex booster */
+    if (cs_has_unlock(ch, "kinetic")) d->pd += 1;   /* M42c kinetic absorbers */
     if (cs_geti(ch, "shield", 0) > 0) d->pd += 3;   /* M41a mana shield, timed */
     if (d->pd > 20) d->pd = 20;
     if (d->pd < 0) d->pd = 0;
@@ -237,6 +238,8 @@ cs_recalc(int ch, struct cs_derived *d)
     if (d->maxbp < 1) d->maxbp = 1;
     d->maxgrit = 3 + wd + cd;
     if (cs_has_unlock(ch, "vigor")) d->maxgrit += 3;  /* M36c vigor */
+    if (cs_has_unlock(ch, "kinetic")) d->maxgrit -= 1; /* M42c neural load */
+    if (d->maxgrit < 1) d->maxgrit = 1;
 }
 
 /* Passive Perception (chromesix.md): the always-on notice TN an ambusher's
@@ -1090,6 +1093,8 @@ static const struct cs_unlock cs_unlocks[] = {
     { "governor",  5, "cyber",    1, 0, UEF_PASSIVE },  /* reaction: cut a hit (M42a) */
     { "riposte",   5, "",         0, 0, UEF_PASSIVE },  /* reaction: strike a big miss (M42b) */
     { "defib",     5, "cyber",    1, 0, UEF_PASSIVE },  /* reaction: cheat death once (M42b) */
+    { "aegis",     5, "awakened", 0, 0, UEF_PASSIVE },  /* reaction: shield an ally (M42c) */
+    { "kinetic",   5, "cyber",    1, 0, UEF_PASSIVE },  /* +1 PD, -1 Max Grit (M42c) */
 };
 #define CS_NUNLOCKS ((int)(sizeof(cs_unlocks) / sizeof(cs_unlocks[0])))
 #define CS_GRAFT_CAP 2      /* cyberware graft slots (Cyber-Augmented hook) */
@@ -1166,7 +1171,8 @@ cs_range_check(int weapon, int band, int *pool_mod)
  * Returns the Net Damage dealt. */
 static int
 cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
-                  int allow_react, struct cs_out *o, int *out_down, int *out_edge)
+                  int allow_react, struct cs_out *o, int *out_down, int *out_edge,
+                  int room)
 {
     struct cs_derived dd;
     char an[32], dn[32], wn[24], skill[16], grade[12], skprop[40], stance[12];
@@ -1239,7 +1245,7 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
 
             cs_seti(def, "react_left", cs_geti(def, "react_left", 0) - 1);
             cs_s(o, " [riposte!] ");
-            cs_attack_resolve(def, atk, rw, 0, 0, 0, o, &rdown, 0);
+            cs_attack_resolve(def, atk, rw, 0, 0, 0, o, &rdown, 0, room);
         }
         return 0;
     }
@@ -1247,7 +1253,30 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
 
     dmgpts = cs_geti(weapon, "dmg", 6);
     droll = cs_roll(dmgpts, &dwild);
-    net = droll - dd.soak;
+    {
+        /* M42c: Empathic Aegis. A bystanding ally in the room may spend a
+         * reaction and 1 Grit to add its Charm dice to this hit's Soak. It reads
+         * only when reactions are allowed, so a reaction's own strike is exempt. */
+        int soak = dd.soak;
+
+        if (allow_react && room > 0) {
+            int a = 0;
+
+            while ((a = sys_next(room, a)) != 0) {
+                int ash = cs_sheet(a);
+
+                if (ash == def || ash == atk || cs_geti(ash, "downed", 0)) continue;
+                if (!cs_has_unlock(ash, "aegis")) continue;
+                if (cs_geti(ash, "react_left", 0) <= 0) continue;
+                if (cs_grit_spend(ash, 1) < 0) continue;
+                cs_seti(ash, "react_left", cs_geti(ash, "react_left", 0) - 1);
+                soak += cs_geti(ash, "cha", 0) / 3;
+                cs_s(o, " [aegis]");
+                break;                  /* one ally shields per hit */
+            }
+        }
+        net = droll - soak;
+    }
     if (net < 0) net = 0;
 
     /* M42a: Reflex Governor reaction. On a hit, the defender may spend a reaction
@@ -1336,7 +1365,7 @@ cs_free_strike(int foe, int target_sh, int room)
         cs_seti(fsh, "react_left", rl - 1);
         f.len = 0;
         cs_s(&f, "Free strike! ");
-        cs_attack_resolve(fsh, target_sh, fw, 0, 0, 0, &f, &down, 0);
+        cs_attack_resolve(fsh, target_sh, fw, 0, 0, 0, &f, &down, 0, room);
         sys_broadcast(room, cs_cstr(&f));
     }
 }

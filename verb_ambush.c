@@ -72,7 +72,7 @@ main(void)
         /* free surprise strike: target Exposed, no reaction allowed */
         weapon = cs_geti(atk, "wielded", 305);
         cs_s(&o, "You strike from hiding! ");
-        cs_attack_resolve(atk, defsh, weapon, 0, -2, 0, &o, &down, 0);
+        cs_attack_resolve(atk, defsh, weapon, 0, -2, 0, &o, &down, 0, room);
         cs_s(&o, "\n");
         sys_broadcast(room, cs_cstr(&o));
     }

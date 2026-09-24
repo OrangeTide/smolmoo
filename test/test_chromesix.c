@@ -566,7 +566,7 @@ t_attack_hit_wound(Test *t)
     basic_fighters();
     set_faces(faces, 8);
     o.len = 0;
-    net = cs_attack_resolve(A, D, W, 0, 0, 0, &o, &down, 0);
+    net = cs_attack_resolve(A, D, W, 0, 0, 0, &o, &down, 0, 0);
     TAP_CHECKF(t, net == 10, "net=%d", net);
     TAP_CHECK(t, down == 0);
     TAP_CHECKF(t, cs_geti(D, "bp", -1) == 8, "bp=%d", cs_geti(D, "bp", -1));
@@ -587,7 +587,7 @@ t_attack_miss(Test *t)
     seti(D, "cover", 6);               /* pd 4 + 6 = 10 */
     set_faces(faces, 4);
     o.len = 0;
-    net = cs_attack_resolve(A, D, W, 0, 0, 0, &o, &down, 0);
+    net = cs_attack_resolve(A, D, W, 0, 0, 0, &o, &down, 0, 0);
     TAP_CHECK(t, net == 0 && down == 0);
     TAP_CHECK(t, cs_geti(D, "bp", -1) == -1);   /* unhit: no bp written */
     TAP_CHECK(t, has(cs_cstr(&o), "misses"));
@@ -604,7 +604,7 @@ t_attack_soak(Test *t)
     basic_fighters();
     set_faces(faces, 8);
     o.len = 0;
-    net = cs_attack_resolve(A, D, W, 0, 0, 0, &o, &down, 0);
+    net = cs_attack_resolve(A, D, W, 0, 0, 0, &o, &down, 0, 0);
     TAP_CHECK(t, net == 0 && down == 0);
     TAP_CHECK(t, cs_geti(D, "downed", 0) == 0);
     TAP_CHECK(t, has(cs_cstr(&o), "armor turns it"));
@@ -621,7 +621,7 @@ t_attack_mook(Test *t)
     sys_setprop(D, "grade", "mook");
     set_faces(faces, 8);
     o.len = 0;
-    net = cs_attack_resolve(A, D, W, 0, 0, 0, &o, &down, 0);
+    net = cs_attack_resolve(A, D, W, 0, 0, 0, &o, &down, 0, 0);
     TAP_CHECK(t, net > 0 && down == 1);
     TAP_CHECK(t, cs_geti(D, "downed", 0) == 1);
     TAP_CHECK(t, has(cs_cstr(&o), "It drops"));
@@ -639,7 +639,7 @@ t_attack_guard(Test *t)
     seti(D, "react_left", 1);
     set_faces(faces, 4);
     o.len = 0;
-    net = cs_attack_resolve(A, D, W, 0, 0, 1, &o, &down, 0);   /* allow_react */
+    net = cs_attack_resolve(A, D, W, 0, 0, 1, &o, &down, 0, 0);   /* allow_react */
     TAP_CHECK(t, net == 0);
     TAP_CHECKF(t, cs_geti(D, "react_left", -1) == 0, "react=%d",
                cs_geti(D, "react_left", -1));            /* reaction spent */
@@ -659,7 +659,7 @@ t_attack_longshot_exposed(Test *t)
     basic_fighters();
     set_faces(faces, 7);
     o.len = 0;
-    net = cs_attack_resolve(A, D, W, -3, -2, 0, &o, &down, 0);
+    net = cs_attack_resolve(A, D, W, -3, -2, 0, &o, &down, 0, 0);
     TAP_CHECKF(t, net == 4, "net=%d", net);
     TAP_CHECK(t, cs_geti(D, "bp", -1) == 14);
     TAP_CHECK(t, has(cs_cstr(&o), "at long range"));

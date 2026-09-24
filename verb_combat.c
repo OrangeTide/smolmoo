@@ -305,7 +305,7 @@ npc_turn(int me, int player, int room)
 
     pm = (gap == 1) ? -3 : 0;
     pdb = (band > 0 && cs_geti(psh, "moved", 0)) ? 2 : 0;
-    cs_attack_resolve(sh, psh, wpn, pm, pdb, 1, &o, &down, 0);
+    cs_attack_resolve(sh, psh, wpn, pm, pdb, 1, &o, &down, 0, room);
     cs_s(&o, "\n");
     sys_broadcast(room, cs_cstr(&o));
 }

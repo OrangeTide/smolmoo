@@ -2521,6 +2521,69 @@ curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/de
 curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M42c: Empathic Aegis and Kinetic Absorbers ---
+# Kinetic Absorbers, deterministic: a passive +1 Passive Defense at the cost of
+# -1 Max Grit, read live by cs_recalc. Capture the baseline, then grant it.
+curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+DB=$(grep -oE 'Defense [0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
+GB=$(grep -oE 'Grit [0-9]+/[0-9]+' /tmp/smolmoo_p1.log | tail -1 | sed 's#.*/##')
+curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=kinetic" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+DA=$(grep -oE 'Defense [0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
+GA=$(grep -oE 'Grit [0-9]+/[0-9]+' /tmp/smolmoo_p1.log | tail -1 | sed 's#.*/##')
+[ "${DA:-0}" -eq "$(( ${DB:-0} + 1 ))" ] \
+	&& pass "Kinetic Absorbers raise Passive Defense by 1" \
+	|| fail "Kinetic Absorbers raise Passive Defense by 1 (base $DB, with $DA)"
+[ "${GA:-0}" -eq "$(( ${GB:-0} - 1 ))" ] \
+	&& pass "Kinetic Absorbers lower Max Grit by 1" \
+	|| fail "Kinetic Absorbers lower Max Grit by 1 (base $GB, with $GA)"
+# Empathic Aegis: when the player is hit, a bystanding ally holding the spell
+# spends a reaction and 1 Grit to add its Charm dice to the player's Soak for the
+# hit. Zero the player's Soak, station a high-Charm ally in the room, and send a
+# hard hitter; the ally's aegis softens each landing blow.
+curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.mig=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+SRA=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SRA.name=Warded Hall" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$SRA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+DA2=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$DA2.name=slayer" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DA2.grade=tough" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DA2.bp=9999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DA2.mig=30" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DA2.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DA2.location=#$SRA" http://localhost:$PORT/cmd >/dev/null
+# the bystanding ally: not in the fight, holds aegis, high Charm, reactions ready
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+GUARD=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$GUARD.name=guardian" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GUARD.maneuvers=aegis" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GUARD.cha=30" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GUARD.react_left=9" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GUARD.grit=30" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GUARD.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GUARD.location=#$SRA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack slayer" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+_i=0
+while [ $_i -lt 40 ]; do
+	grep -q 'aegis' /tmp/smolmoo_p1.log 2>/dev/null && break
+	curl -sf -X POST -d "$SID1 hold" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.3
+	_i=$((_i + 1))
+done
+check_log /tmp/smolmoo_p1.log 'aegis' "Empathic Aegis shields a hit from a bystanding ally"
+curl -sf -X POST -d "$SID1 @set #$DA2.downed=1" http://localhost:$PORT/cmd >/dev/null
+fight_over slayer || true
+curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.
