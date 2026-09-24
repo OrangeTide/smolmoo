@@ -2617,6 +2617,26 @@ check_log /tmp/smolmoo_p1.log 'push spends Grit' "a game-command help topic prin
 curl -sf -X POST -d "$SID1 help maneuvers" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'impose or clear a' "the maneuvers help topic prints in-game"
 
+# --- M43c: new-player onboarding ---
+# A fresh account has a bare sheet (chargen sets a hook; absence marks it unmade).
+# Log one in and confirm it is greeted with orientation, that status guides it to
+# chargen rather than printing a blank readout, and that the start topic exists.
+curl -sf -X POST -d "$SID1 @invite new" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'New code:' || true
+INVITE4=$(grep -o 'New code: [A-Z0-9-]*' /tmp/smolmoo_p1.log | tail -1 | sed 's/New code: //')
+curl -sN http://localhost:$PORT/events > /tmp/smolmoo_p4.log &
+P4=$!
+waitgrep /tmp/smolmoo_p4.log "^data: I" || true
+SID4=$(grep -m1 "^data: I" /tmp/smolmoo_p4.log | sed 's/^data: I//')
+curl -sf -X POST -d "$SID4 create TestPlayer4 pass4 $INVITE4" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p4.log 'data: +' "create acct 4"
+check_log /tmp/smolmoo_p4.log 'set up your character' "a fresh login is greeted with onboarding"
+curl -sf -X POST -d "$SID4 status" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p4.log "haven't set up your character" "status guides an uncreated character to chargen"
+curl -sf -X POST -d "$SID4 help start" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p4.log 'New here' "the start help topic orients a new player"
+kill $P4 2>/dev/null || true
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.

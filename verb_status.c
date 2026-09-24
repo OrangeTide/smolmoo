@@ -19,6 +19,13 @@ main(void)
         puts("You have no character sheet. Type 'chargen' to create one.");
         _exit(0);
     }
+    /* M43c: a sheet exists but chargen has not run (no `made` marker; the
+     * prototype supplies default stats, so guide rather than show a default
+     * readout as if it were the player's own character). */
+    if (!cs_geti(ch, "made", 0)) {
+        puts("You haven't set up your character yet. Type 'chargen' to begin.");
+        _exit(0);
+    }
 
     cs_rest(ch, vm_args->room);      /* pay out short-rest BP before the readout */
     cs_recalc(ch, &d);

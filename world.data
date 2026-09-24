@@ -403,6 +403,9 @@ jobs=jobs  |  accept <giver>  |  turnin  |  abandon  |  report  |  treat
     completes it. treat mends a wound at a clinic.
 social=command <foe>  |  negotiate <foe>  |  con <foe>  |  perform <foe>
     The four Charm approaches in a social scene, each pressing a target's Resolve.
+start=New here? Type 'chargen' to build a character (attributes, a hook, skills).
+    Then 'look' to see the room, 'status' for your vitals, and 'help commands'
+    for what you can do. Find work with 'jobs', and fight with 'attack <foe>'.
 
 #900 #0
 owner=#0

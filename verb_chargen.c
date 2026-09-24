@@ -187,6 +187,7 @@ main(void)
         cs_itoa(buf, d.maxbp); sys_setprop(ch, "bp", buf);
         cs_itoa(buf, d.maxgrit); sys_setprop(ch, "grit", buf);
         sys_setprop(ch, "cg_step", "0");
+        sys_setprop(ch, "made", "1");   /* M43c: chargen-complete marker */
 
         puts("Character complete. 300 creds, 3 stims, 10 CP; BP and Grit at maximum.");
         puts("Type 'sheet' to view it, or spend CP now with 'train' and 'learn'.");

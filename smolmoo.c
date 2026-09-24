@@ -6051,6 +6051,28 @@ cmd_feedback(int sid, const char *args)
     session_write(sid, "Thank you, your feedback has been noted.");
 }
 
+/* M43c: greet with orientation when the account's character has not been made
+ * yet (chargen sets a `made` marker on completion; the prototype defaults do not,
+ * so its absence marks an untouched sheet), otherwise the returning-player
+ * welcome. */
+static void
+login_welcome(int sid, struct obj *acct, const char *name)
+{
+    int cid = acct ? prop_objnum(acct, make_atom("character")) : OBJ_NONE;
+    struct obj *ch = (cid != OBJ_NONE) ? obj_find(cid) : NULL;
+    char msg[256];
+
+    if (ch && prop_str(ch, make_atom("made")))
+        snprintf(msg, sizeof(msg),
+            "Welcome back, %s. Type 'status' for vitals, 'help' for commands.",
+            name);
+    else
+        snprintf(msg, sizeof(msg),
+            "Welcome, %s! Type 'chargen' to set up your character, then "
+            "'help start' for what to do next.", name);
+    session_write(sid, msg);
+}
+
 static void
 cmd_connect(int sid, const char *args)
 {
@@ -6108,9 +6130,7 @@ cmd_connect(int sid, const char *args)
     out_flush(sid);
     snprintf(msg, sizeof(msg), "%s has connected.", name);
     room_broadcast(sid, 101, msg);
-    snprintf(msg, sizeof(msg),
-        "Welcome back, %s. Type 'help' for commands.", name);
-    session_write(sid, msg);
+    login_welcome(sid, acct, name);
     mob_enter(pid, 101, sid);   /* wake the lobby's reactive NPCs on login */
 }
 
@@ -6217,9 +6237,7 @@ cmd_create_acct(int sid, const char *args)
     out_flush(sid);
     snprintf(msg, sizeof(msg), "%s has connected.", name);
     room_broadcast(sid, 101, msg);
-    snprintf(msg, sizeof(msg),
-        "Welcome, %s! Type 'help' for commands.", name);
-    session_write(sid, msg);
+    login_welcome(sid, acct, name);
 }
 
 /* --- M25i: death and recovery (Section 11) -------------------------------- */
