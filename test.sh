@@ -2584,6 +2584,29 @@ fight_over slayer || true
 curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M43a: the one-line status readout ---
+# `status` prints the HP and Grit bars, the wound ladder, and any active
+# conditions, a glance without the full sheet. Deterministic: set known vitals in
+# the (unsafe) lobby so no short-rest payout changes them, then read the line.
+curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=9" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.wounds=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.prone=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.stunned=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.shaken=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bleed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.suppress=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 status" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'HP \[' "status shows the HP bar"
+check_log /tmp/smolmoo_p1.log 'WOUNDS o\.\.' "status shows the wound ladder"
+check_log /tmp/smolmoo_p1.log '(prone)' "status shows the active conditions"
+# the short alias resolves to the same readout
+curl -sf -X POST -d "$SID1 @set #$P1SH.prone=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 st" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'GRIT \[' "the st alias prints the status line"
+curl -sf -X POST -d "$SID1 @set #$P1SH.wounds=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.
