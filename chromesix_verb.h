@@ -1087,6 +1087,7 @@ static const struct cs_unlock cs_unlocks[] = {
     { "shock",     5, "awakened", 0, 1, UEF_SHOCK },    /* 4D spell attack (M41b) */
     { "suppress",  5, "",         0, 1, UEF_SUPPRESS }, /* suppress the foes (M41b) */
     { "inject",    5, "cyber",    1, 1, UEF_INJECT },   /* restore BP, self/ally (M41c) */
+    { "governor",  5, "cyber",    1, 0, UEF_PASSIVE },  /* reaction: cut a hit (M42a) */
 };
 #define CS_NUNLOCKS ((int)(sizeof(cs_unlocks) / sizeof(cs_unlocks[0])))
 #define CS_GRAFT_CAP 2      /* cyberware graft slots (Cyber-Augmented hook) */
@@ -1235,6 +1236,30 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
     droll = cs_roll(dmgpts, &dwild);
     net = droll - dd.soak;
     if (net < 0) net = 0;
+
+    /* M42a: Reflex Governor reaction. On a hit, the defender may spend a reaction
+     * and 2 Grit to roll Wit+Cybertech against the attack total, cutting this
+     * hit's Net Damage by its Wit dice on a success. Fires only when reactions
+     * are allowed, so a reaction's own strike cannot trigger it. */
+    if (allow_react && net > 0 && cs_has_unlock(def, "governor")
+        && cs_geti(def, "react_left", 0) > 0) {
+        int rp = cs_geti(def, "wit", 0) + cs_geti(def, "sk_cybertech", 0), rw, rr;
+
+        if (cs_grit_spend(def, 2) >= 0) {
+            cs_seti(def, "react_left", cs_geti(def, "react_left", 0) - 1);
+            if (rp < 1) rp = 1;
+            rr = cs_roll(rp, &rw);
+            if (rr >= aroll) {
+                int wd = cs_geti(def, "wit", 0) / 3;
+
+                net -= wd;
+                if (net < 0) net = 0;
+                cs_s(o, " [governor -"); cs_i(o, wd); cs_s(o, "]");
+            } else {
+                cs_s(o, " [governor failed]");
+            }
+        }
+    }
 
     cs_getstr(def, "grade", grade, sizeof(grade));
     if (cs_streq(grade, "mook") && net > 0) {
