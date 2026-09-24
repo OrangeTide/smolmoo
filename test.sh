@@ -2703,14 +2703,10 @@ curl -sf -X POST -d "$SID1 go cargobay" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'Cargo Bay' "the cargo bay is reachable from the hub"
 curl -sf -X POST -d "$SID1 attack scavenger" http://localhost:$PORT/cmd >/dev/null
 waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
-_i=0
-while [ $_i -lt 40 ]; do
-	JD=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=job_done&sid=$SID1")
-	[ "$JD" = "1" ] && break
-	curl -sf -X POST -d "$SID1 attack scavenger" http://localhost:$PORT/cmd >/dev/null
-	sleep 0.3
-	_i=$((_i + 1))
-done
+# fight_over drives the turn loop with attacks and holds until the scavenger is
+# down; downing the bounty target sets job_done through mark_job_done.
+fight_over scavenger || true
+JD=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=job_done&sid=$SID1")
 [ "$JD" = "1" ] && pass "defeating the bounty target completes the job" \
 	|| fail "defeating the bounty target completes the job (job_done '$JD')"
 # report back and collect the reward
@@ -2778,6 +2774,47 @@ check_log /tmp/smolmoo_p1.log 'guard turns on' "the seeded guard aggros a Hostil
 # tear the fight down, restore standing, and leave
 curl -sf -X POST -d "$SID1 @set #126.cb_active=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @standing TestPlayer1 dockers 1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
+# --- M45a: the initiative unlock (Wired Reflexes) ---
+# Wired Reflexes adds a flat bonus to the initiative roll, so its holder leads the
+# turn order. With both combatants at Wit 3 (one die each), the foe rolls 1-6 and
+# the wired player rolls 7-12, so the player always wins initiative. Have the FOE
+# open the fight (aggro), so the opening roster is foe-first; if the sort put the
+# wired player first, initiative reordered it. Read the written roster and check.
+curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=wired" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.wit=3" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.mig=20" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+IR=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$IR.name=Init Range" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+DI=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$DI.name=slowfoe" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DI.grade=tough" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DI.bp=9999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DI.wit=3" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DI.behavior=aggro" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DI.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DI.location=#$IR" http://localhost:$PORT/cmd >/dev/null
+# enter: the aggro foe opens the fight with roster "foe,player" (foe #DI first).
+# If initiative reorders it so the foe is last, the wired player won and leads.
+curl -sf -X POST -d "$SID1 @go #$IR" http://localhost:$PORT/cmd >/dev/null
+_i=0
+while [ $_i -lt 40 ]; do
+	ROST=$(curl -sf "http://localhost:$PORT/prop?obj=$IR&prop=cb_roster&sid=$SID1")
+	[ "${ROST##*,}" = "$DI" ] && break
+	sleep 0.1
+	_i=$((_i + 1))
+done
+[ "${ROST##*,}" = "$DI" ] && pass "Wired Reflexes leads the initiative order" \
+	|| fail "Wired Reflexes leads the initiative order (roster '$ROST', foe '$DI')"
+curl -sf -X POST -d "$SID1 @set #$DI.downed=1" http://localhost:$PORT/cmd >/dev/null
+fight_over slowfoe || true
+curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
 # --- M24: export / merge CLI ---

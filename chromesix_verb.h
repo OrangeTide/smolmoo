@@ -1095,6 +1095,7 @@ static const struct cs_unlock cs_unlocks[] = {
     { "defib",     5, "cyber",    1, 0, UEF_PASSIVE },  /* reaction: cheat death once (M42b) */
     { "aegis",     5, "awakened", 0, 0, UEF_PASSIVE },  /* reaction: shield an ally (M42c) */
     { "kinetic",   5, "cyber",    1, 0, UEF_PASSIVE },  /* +1 PD, -1 Max Grit (M42c) */
+    { "wired",     5, "cyber",    1, 0, UEF_PASSIVE },  /* +initiative bonus (M45a) */
 };
 #define CS_NUNLOCKS ((int)(sizeof(cs_unlocks) / sizeof(cs_unlocks[0])))
 #define CS_GRAFT_CAP 2      /* cyberware graft slots (Cyber-Augmented hook) */

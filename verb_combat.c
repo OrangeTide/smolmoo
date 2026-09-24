@@ -11,6 +11,7 @@
 #define TIMEOUT_MS  30000
 #define NPC_PACE_MS 400
 #define CP_AWARD_BASE 1     /* CP a defeated foe is worth without a cp_award */
+#define WIRED_INIT  6       /* flat initiative bonus from Wired Reflexes (M45a) */
 
 /* parse the "id,id,..." roster into ids[], returning the count */
 static int
@@ -349,10 +350,12 @@ main(void)
     if (n < 2) { sys_setprop(room, "cb_active", "0"); _exit(0); }
 
     /* initiative: a Wit pool per combatant, sorted descending, and written
-     * back so the roster order is the turn order for every round */
+     * back so the roster order is the turn order for every round. Wired Reflexes
+     * (M45a) adds a flat bonus to the roll, so its holder tends to act earlier. */
     for (i = 0; i < n; i++) {
-        int w;
-        init[i] = cs_roll(cs_geti(cs_sheet(ids[i]), "wit", 0), &w);
+        int w, s = cs_sheet(ids[i]);
+        init[i] = cs_roll(cs_geti(s, "wit", 0), &w);
+        if (cs_has_unlock(s, "wired")) init[i] += WIRED_INIT;
     }
     for (i = 1; i < n; i++) {
         int ki = init[i], kd = ids[i], j = i - 1;
