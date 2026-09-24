@@ -416,3 +416,137 @@ description=Parent of all area objects. An area groups rooms for shared ownershi
 owner=#0
 name=Reset Prototype
 description=Parent of all reset-rule objects. A rule names a room, a proto to clone, and a count.
+
+#120 #100
+owner=#0
+name=Waystation Concourse
+description=A scuffed transit concourse. Signs point to the bar, the med bay, supply, and the bunks; a lift stands open back to the lobby.
+
+#121 #100
+owner=#0
+name=The Long Haul
+description=A cramped bar for shift workers and freighter crews. A fixer usually holds the corner booth.
+
+#122 #100
+owner=#0
+name=Med Bay
+description=A clean-ish clinic with a battered autodoc bolted to the wall.
+
+#123 #100
+owner=#0
+name=Supply
+description=A supply counter behind wire mesh, stocked with gear for the outbound.
+vendor=220
+
+#124 #100
+owner=#0
+name=Bunks
+description=A quiet row of rented sleep pods, a safe place to catch a rest.
+safe=1
+
+#130 #100
+owner=#0
+name=waystation
+description=A lift up to the waystation concourse.
+location=#101
+dest=120
+
+#131 #100
+owner=#0
+name=lobby
+description=The lift back down to the lobby.
+location=#120
+dest=101
+
+#132 #100
+owner=#0
+name=bar
+description=The door into the bar.
+location=#120
+dest=121
+
+#133 #100
+owner=#0
+name=concourse
+description=Back out to the concourse.
+location=#121
+dest=120
+
+#134 #100
+owner=#0
+name=medbay
+description=The med bay entrance.
+location=#120
+dest=122
+
+#135 #100
+owner=#0
+name=concourse
+description=Back out to the concourse.
+location=#122
+dest=120
+
+#136 #100
+owner=#0
+name=supply
+description=The supply counter.
+location=#120
+dest=123
+
+#137 #100
+owner=#0
+name=concourse
+description=Back out to the concourse.
+location=#123
+dest=120
+
+#138 #100
+owner=#0
+name=bunks
+description=The way to the sleep pods.
+location=#120
+dest=124
+
+#139 #100
+owner=#0
+name=concourse
+description=Back out to the concourse.
+location=#124
+dest=120
+
+#220 #200
+owner=#0
+name=clerk
+description=A bored supply clerk behind the wire, chewing a stim stick.
+location=#123
+stim=75
+
+#320 #300
+owner=#0
+name=autodoc
+description=A wall-mounted autodoc, its arm folded and ready.
+location=#122
+clinic=1
+treat_fee=40
+weight=999
+
+#321 #300
+owner=#0
+name=vest
+description=A surplus armor vest.
+location=#220
+soak=2
+part=torso
+weight=3
+price=80
+
+#322 #300
+owner=#0
+name=blade
+description=A cheap monofilament blade.
+location=#220
+dmg=9
+range=engaged
+skill=melee
+weight=1
+price=60

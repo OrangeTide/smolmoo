@@ -2637,6 +2637,46 @@ curl -sf -X POST -d "$SID4 help start" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p4.log 'New here' "the start help topic orients a new player"
 kill $P4 2>/dev/null || true
 
+# --- M44a: the starter district hub and its services ---
+# Drive the seeded waystation (not test-built objects): travel in from the lobby,
+# buy from the seeded vendor, treat a wound at the seeded clinic, and rest in the
+# seeded safe bunk. This exercises the real seed ids end to end.
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+# earlier tests left Might at 0 (carry cap 0, so any load blocks movement) and a
+# thin Medicine pool; restore a workable build for the walkthrough.
+curl -sf -X POST -d "$SID1 @set #$P1SH.mig=20" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.sk_medicine=40" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.money=500" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.wounds=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go waystation" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Waystation Concourse' "the lobby connects to the seeded district"
+curl -sf -X POST -d "$SID1 go supply" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 list" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'vest -- 80 creds' "the seeded vendor lists priced stock"
+curl -sf -X POST -d "$SID1 buy vest" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'You buy the vest' "a player buys from the seeded vendor"
+curl -sf -X POST -d "$SID1 go concourse" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go medbay" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 treat" http://localhost:$PORT/cmd >/dev/null
+WD=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=wounds&sid=$SID1")
+[ "$WD" = "0" ] && pass "the seeded clinic treats a wound" \
+	|| fail "the seeded clinic treats a wound (wounds '$WD')"
+curl -sf -X POST -d "$SID1 go concourse" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go bunks" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #0.rest_secs=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=5" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.rest_since=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 status" http://localhost:$PORT/cmd >/dev/null
+sleep 3
+curl -sf -X POST -d "$SID1 status" http://localhost:$PORT/cmd >/dev/null
+RB=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=bp&sid=$SID1")
+[ "${RB:-0}" -gt 5 ] && pass "the seeded bunk is a safe room that restores BP" \
+	|| fail "the seeded bunk is a safe room that restores BP (bp '$RB')"
+curl -sf -X POST -d "$SID1 @set #0.rest_secs=7200" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.
