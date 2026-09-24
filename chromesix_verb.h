@@ -793,6 +793,8 @@ cs_cond_list(int sheet, struct cs_out *o)
     if (cs_geti(sheet, "suppress", 0)) cs_s(o, n++ ? ", suppressed" : "suppressed");
     if (cs_geti(sheet, "exposed", 0)) cs_s(o, n++ ? ", exposed" : "exposed");
     if (cs_geti(sheet, "marked_by", 0)) cs_s(o, n++ ? ", marked" : "marked");
+    if (cs_geti(sheet, "blind", 0) > 0) cs_s(o, n++ ? ", blinded" : "blinded");
+    if (cs_geti(sheet, "held", 0)) cs_s(o, n++ ? ", held" : "held");
 }
 
 /* Apply the start-of-turn ticks. Ongoing damage (`bleed`, M40c) deals its set
@@ -810,6 +812,8 @@ cs_cond_tick(int sheet, int room)
      * turn and lapse at zero. Their effect is read live in cs_recalc. */
     if ((v = cs_geti(sheet, "shield", 0)) > 0) cs_seti(sheet, "shield", v - 1);
     if ((v = cs_geti(sheet, "mesh", 0)) > 0)   cs_seti(sheet, "mesh", v - 1);
+    /* M45c: Blinded counts down like a timed buff, so a flash lasts one turn. */
+    if ((v = cs_geti(sheet, "blind", 0)) > 0)  cs_seti(sheet, "blind", v - 1);
 
     bleed = cs_geti(sheet, "bleed", 0);
     if (bleed <= 0) return;
@@ -1212,6 +1216,9 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
         /* M45b: Threat-Assessment Optics -- the marker gains +1D against a target
          * it has marked (the mark is stored on the target as the marker's sheet). */
         if (cs_geti(def, "marked_by", 0) == atk) apool += 3;
+        /* M45c: a Blinded attacker is at -3D, a Held one at -1D (Section 8). */
+        if (cs_geti(atk, "blind", 0) > 0) apool -= 9;
+        if (cs_geti(atk, "held", 0)) apool -= 3;
     }
     if (apool < 1) apool = 1;
     aroll = cs_roll(apool, &awild);
@@ -1246,6 +1253,8 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
     if (supp) cs_s(o, " (suppressed)");
     if (cs_geti(def, "exposed", 0)) cs_s(o, " (target exposed)");
     if (cs_geti(def, "marked_by", 0) == atk) cs_s(o, " (marked)");
+    if (cs_geti(atk, "blind", 0) > 0) cs_s(o, " (blinded)");
+    if (cs_geti(atk, "held", 0)) cs_s(o, " (held)");
 
     if (aroll < pd) {
         cs_s(o, " and misses.");

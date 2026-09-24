@@ -5,13 +5,18 @@
  * against the foe's Wit that, on a win, leaves it Shaken (-1D until it rallies).
  * `rend <foe>` (M40c) spends a Grit on a savage melee tear, opposed
  * Might-plus-Brawl, that on a win sets it Bleeding for REND_BLEED direct damage
- * each of its turns until it is staunched. All spend your action for the turn.
- * Setuid: they write the room and the foe's sheet. */
+ * each of its turns until it is staunched. `grapple <foe>` (M45c) spends a Grit
+ * on a melee Might-plus-Brawl hold that on a win leaves it Held (it cannot move
+ * until it breaks free). `flash <foe>` (M45c) spends a Grit on an Agility-plus-
+ * Firearms flash against the foe's best physical, at any range, that on a win
+ * leaves it Blinded (-3D on its attacks) for FLASH_BLIND rounds. All spend your
+ * action for the turn. Setuid: they write the room and the foe's sheet. */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
 #include "chromesix_verb.h"
 
 #define REND_BLEED 4            /* Ongoing damage a rend inflicts per turn */
+#define FLASH_BLIND 2           /* rounds a flash leaves the target Blinded (M45c) */
 
 /* is `foe` on the room's combat roster? */
 static int
@@ -44,7 +49,11 @@ main(void)
     char *foename = (char *)vm_args->dobjstr;
     int stun = cs_streq(verb, "stun");
     int rend = cs_streq(verb, "rend");
-    int melee = stun || rend;   /* the physical blows need the target in melee */
+    int grapple = cs_streq(verb, "grapple");
+    int flash = cs_streq(verb, "flash");
+    int phys = stun || rend || grapple;  /* melee Might+Brawl blows */
+    int melee = phys;           /* the physical blows need the target in melee */
+    int grit = phys || flash;   /* these spend a Grit; menace does not */
     int foe, defsh, apool, dpool, aroll, droll, awild, dwild;
     char an[32], dn[32];
 
@@ -52,7 +61,8 @@ main(void)
 
     while (foename && *foename == ' ') foename++;
     if (!foename || !*foename) {
-        puts(stun ? "Stun whom?" : rend ? "Rend whom?" : "Menace whom?");
+        puts(stun ? "Stun whom?" : rend ? "Rend whom?" : grapple ? "Grapple whom?"
+             : flash ? "Flash whom?" : "Menace whom?");
         _exit(0);
     }
     if (cs_wrong_mode(room, 0)) _exit(0);
@@ -75,17 +85,24 @@ main(void)
     if (!on_roster(room, foe)) { puts("They are not in this fight."); _exit(0); }
     if (melee && cs_geti(defsh, "band", 0) != 0) {
         puts(stun ? "You must be in melee to stun them."
-                  : "You must be in melee to rend them.");
+                  : rend ? "You must be in melee to rend them."
+                         : "You must be in melee to grapple them.");
         _exit(0);
     }
 
-    if (melee) {
-        if (cs_grit_spend(atk, 1) < 0) {
-            puts(stun ? "You lack the Grit for a stunning blow."
-                      : "You lack the Grit for a savage tear.");
-            _exit(0);
-        }
+    if (grit && cs_grit_spend(atk, 1) < 0) {
+        puts(stun ? "You lack the Grit for a stunning blow."
+             : rend ? "You lack the Grit for a savage tear."
+             : grapple ? "You lack the Grit to grapple."
+             : "You lack the Grit for a flash.");
+        _exit(0);
+    }
+    if (phys) {
         apool = cs_geti(atk, "mig", 0) + cs_geti(atk, "sk_brawl", 0)
+                - cs_crash_penalty(atk);
+        dpool = best_phys(defsh);
+    } else if (flash) {
+        apool = cs_geti(atk, "agi", 0) + cs_geti(atk, "sk_firearms", 0)
                 - cs_crash_penalty(atk);
         dpool = best_phys(defsh);
     } else {
@@ -112,6 +129,16 @@ main(void)
             cs_s(&o, " rends ");
             cs_s(&o, dn);
             cs_s(&o, "; it is bleeding.");
+        } else if (grapple) {
+            cs_seti(defsh, "held", 1);
+            cs_s(&o, " grapples ");
+            cs_s(&o, dn);
+            cs_s(&o, "; it is held fast.");
+        } else if (flash) {
+            cs_seti(defsh, "blind", FLASH_BLIND);
+            cs_s(&o, " flashes ");
+            cs_s(&o, dn);
+            cs_s(&o, "; it is blinded.");
         } else {
             cs_seti(defsh, "shaken", 1);
             cs_s(&o, " menaces ");
@@ -119,11 +146,14 @@ main(void)
             cs_s(&o, "; it is shaken.");
         }
     } else {
-        cs_s(&o, stun ? " swings to stun " : rend ? " tears at " : " menaces ");
+        cs_s(&o, stun ? " swings to stun " : rend ? " tears at "
+             : grapple ? " grabs at " : flash ? " flashes at " : " menaces ");
         cs_s(&o, dn);
         cs_s(&o, stun ? ", but it shrugs it off."
-                      : rend ? ", but the blow glances off."
-                             : ", but it holds its nerve.");
+             : rend ? ", but the blow glances off."
+             : grapple ? ", but it breaks the grip."
+             : flash ? ", but it shields its eyes."
+             : ", but it holds its nerve.");
     }
     sys_broadcast(room, cs_cstr(&o));
     cs_end_turn(room);

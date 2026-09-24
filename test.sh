@@ -2881,6 +2881,97 @@ fight_over dummy || true
 curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M45c: the remaining conditions (Blinded and Held) ---
+# Two inflictor maneuvers set a tracked condition on a foe: flash leaves it
+# Blinded (-3D on its attacks, wearing off after a round via cs_cond_tick) and
+# grapple leaves it Held (it cannot change bands or flee until it breaks free).
+# The reads live in cs_attack_resolve and the movement path; break clears Held.
+# Stack the player's pools so both maneuvers always win the opposed roll.
+curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.agi=20" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.mig=20" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.sk_firearms=40" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.sk_brawl=40" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.grit=30" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.blind=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.held=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+CR=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$CR.name=Cond Range" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$CR" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+DG=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$DG.name=goon" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DG.grade=tough" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DG.bp=9999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DG.mig=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DG.agi=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DG.band=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DG.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$DG.location=#$CR" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack goon" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+# flash Blinds the foe (poll: a maneuver off-turn is a no-op)
+_i=0
+while [ $_i -lt 40 ]; do
+	BL=$(curl -sf "http://localhost:$PORT/prop?obj=$DG&prop=blind&sid=$SID1" || true)
+	[ "${BL:-0}" -gt 0 ] 2>/dev/null && break
+	curl -sf -X POST -d "$SID1 flash goon" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.3
+	_i=$((_i + 1))
+done
+[ "${BL:-0}" -gt 0 ] 2>/dev/null && pass "flash leaves the foe Blinded" \
+	|| fail "flash leaves the foe Blinded (blind '$BL')"
+# grapple Holds the foe
+_i=0
+while [ $_i -lt 40 ]; do
+	HD=$(curl -sf "http://localhost:$PORT/prop?obj=$DG&prop=held&sid=$SID1" || true)
+	[ "$HD" = "1" ] && break
+	curl -sf -X POST -d "$SID1 grapple goon" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.3
+	_i=$((_i + 1))
+done
+[ "$HD" = "1" ] && pass "grapple leaves the foe Held" \
+	|| fail "grapple leaves the foe Held (held '$HD')"
+# a Blinded attacker's roll is penalized: blind the player and read the annotation
+curl -sf -X POST -d "$SID1 @set #$P1SH.blind=9" http://localhost:$PORT/cmd >/dev/null
+_i=0
+while [ $_i -lt 40 ]; do
+	grep -q '(blinded)' /tmp/smolmoo_p1.log 2>/dev/null && break
+	curl -sf -X POST -d "$SID1 attack goon" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.3
+	_i=$((_i + 1))
+done
+check_log /tmp/smolmoo_p1.log '(blinded)' "cs_attack_resolve penalizes a Blinded attacker"
+# a Held combatant cannot change bands; break frees it
+curl -sf -X POST -d "$SID1 @set #$P1SH.blind=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.held=1" http://localhost:$PORT/cmd >/dev/null
+_i=0
+while [ $_i -lt 40 ]; do
+	grep -q 'held fast' /tmp/smolmoo_p1.log 2>/dev/null && break
+	curl -sf -X POST -d "$SID1 retreat" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.3
+	_i=$((_i + 1))
+done
+check_log /tmp/smolmoo_p1.log 'held fast' "Held blocks a band change until it breaks free"
+_i=0
+while [ $_i -lt 40 ]; do
+	HP=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=held&sid=$SID1" || true)
+	[ "$HP" = "0" ] && break
+	curl -sf -X POST -d "$SID1 break" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.3
+	_i=$((_i + 1))
+done
+[ "$HP" = "0" ] && pass "break frees a Held combatant" \
+	|| fail "break frees a Held combatant (held '$HP')"
+curl -sf -X POST -d "$SID1 @set #$DG.downed=1" http://localhost:$PORT/cmd >/dev/null
+fight_over goon || true
+curl -sf -X POST -d "$SID1 @set #$P1SH.blind=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.held=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.

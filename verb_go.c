@@ -63,6 +63,11 @@ main(void)
             puts("You have already acted this turn.");
             _exit(0);
         }
+        /* M45c: a Held combatant cannot flee the room until it breaks free. */
+        if (cs_geti(sh, "held", 0)) {
+            puts("You are held fast; break free first.");
+            _exit(0);
+        }
 
         o.len = 0;
         cs_s(&o, nm);

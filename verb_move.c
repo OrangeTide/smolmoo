@@ -31,6 +31,11 @@ main(void)
         puts("You have already acted this turn.");
         _exit(0);
     }
+    /* M45c: a Held combatant cannot change bands until it breaks free. */
+    if (cs_geti(sh, "held", 0)) {
+        puts("You are held fast; break free first.");
+        _exit(0);
+    }
 
     k = cs_roster_foes(room, self, foes, 8);
     cs_getstr(sh, "name", nm, sizeof(nm));
