@@ -951,6 +951,52 @@ each step is locked until its predecessor is turned in and that the final payout
 lands. True branches, faction-forked outcomes, and repeatable arcs stay deferred as
 content; the flag model already admits them. The suite grew to 446 checks.
 
+## Milestone 48: Hermetic world history (re-base a foreign chain)
+
+Signed world history (M29-M31) is self-certifying: each version record embeds the
+signer's public key and a topic id, and a chain must stay one topic, since
+`cas_vchain_walk` checks that every link belongs to the same topic. Nothing stopped an
+instance from trying to build on a chain it did not sign, though. When a depot carried
+a head signed by a different key, the instance read that head and its first save
+appended a record under its own key whose predecessor was the foreign head, leaving a
+topic seam that dead-ended a later `@rewind`. This bit the isolated `@rewind` tests
+(which copy `depot/`, gitignored and able to carry a stale head) and any restored
+backup brought up under a new key. The M45 notes blamed the test symptom on the suite
+crossing `AUTOSAVE_MS`; that was the wrong cause. M48 makes history hermetic: an
+instance builds only on history in its own topic, re-basing a foreign chain to a fresh
+self-signed one at the current world root. The full plan is `M48.md`; this is the
+summary. It shipped in three slices (f33b2b1, 8522de7, 976c7b3).
+
+Slice a adds the core rule. `history_load_head` decodes the head record and compares
+its topic id to the local topic (`cas_sign_topic_id(server_pk)`); on a mismatch it
+stays at genesis and logs a re-base, so the next save starts seq 1 under the local key
+with an empty predecessor. The world root and object map are untouched, so only the
+history chain resets. A test signs a depot under one key with a throwaway server,
+brings a second instance up on a copy under a fresh key, and confirms it re-bases and
+that its `@save`/`@rewind` build and rewind a clean chain. Reverting the change was
+confirmed to break both checks.
+
+Slice b folds a head that will not open (a partial or damaged depot) or will not
+decode into the same path, and logs one reason per re-base ("head record is missing",
+"head record is unreadable", or "head belongs to a foreign key"), so a damaged head
+starts a fresh chain instead of the previous silent genesis. A test damages a head by
+pointing it at an absent object, keeping the depot's key so this is the damaged-depot
+path rather than slice a's foreign-key path, and confirms the instance re-bases,
+`@history` lists the fresh chain, and `@rewind` returns to its genesis. A validation
+walk of the adopted chain was considered and dropped, since `@rewind` already degrades
+gracefully on a broken chain and the harness cannot build a missing-predecessor case
+to test it.
+
+Slice c retires the debt. The `PLAN.md` M45 record is corrected (M48 fixed the
+fragility; the cause was a foreign-topic head, not the `AUTOSAVE_MS` margin), and
+`README.md` documents that a depot restored under a different key re-bases to a fresh
+self-signed chain while keeping the world, so the `<depot>.key` file must travel with
+its depot to preserve the full rewindable history. The harness now builds one
+foreign-signed head and plants it into the `@rewind`, agent-persistence, and `@gc`
+isolated instances before each starts, so all three prove they re-base the planted
+head and still pass their original assertions, which is the coupling gone. The suite
+grew to 454 checks.
+
 ---
 
 # Future Milestones
