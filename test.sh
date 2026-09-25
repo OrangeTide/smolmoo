@@ -3037,6 +3037,60 @@ done
 	|| fail "an autoreset area respawns its foe on its own (max sprout '$MX', was '$SPR')"
 curl -sf -X POST -d "$SID1 @set #$BA.autoreset=0" http://localhost:$PORT/cmd >/dev/null
 
+# --- M46c: respawn safety and the living loop ---
+# Respawn never pops a foe into a room with a fight in progress: a reconcile skips
+# such a room and fills it once the scene clears. Build an isolated area with a
+# rule, mark the room in a fight, and confirm nothing spawns until it clears.
+curl -sf -X POST -d "$SID1 @create #900" http://localhost:$PORT/cmd >/dev/null
+SA=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SA.name=Safe Area" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+SR=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SR.name=Safe Room" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+SP=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SP.name=creep" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SP.grade=tough" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #910" http://localhost:$PORT/cmd >/dev/null
+SRULE2=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SRULE2.room=#$SR" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SRULE2.proto=#$SP" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SRULE2.count=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SRULE2.area=#$SA" http://localhost:$PORT/cmd >/dev/null
+# a fight is running in the room: the reconcile must skip it
+curl -sf -X POST -d "$SID1 @set #$SR.cb_active=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @reset #$SA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @contents #$SR" http://localhost:$PORT/cmd >/dev/null
+if grep -qE "#[0-9]+  creep" /tmp/smolmoo_p1.log; then
+	fail "a reconcile skips a room with a fight in progress"
+else
+	pass "a reconcile skips a room with a fight in progress"
+fi
+# clear the scene; the next reconcile fills the room
+curl -sf -X POST -d "$SID1 @set #$SR.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @reset #$SA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @contents #$SR" http://localhost:$PORT/cmd >/dev/null
+if grep -qE "#[0-9]+  creep" /tmp/smolmoo_p1.log; then
+	pass "the reconcile fills the room once the scene clears"
+else
+	fail "the reconcile fills the room once the scene clears"
+fi
+
+# the living loop on the district: the scavenger is reset-managed, so downing it
+# and reconciling brings back a fresh one that is still the bounty target by name.
+curl -sf -X POST -d "$SID1 @reset #920" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @contents #125" http://localhost:$PORT/cmd >/dev/null
+SCV=$(grep -oE "#[0-9]+  scavenger" /tmp/smolmoo_p1.log | grep -oE '[0-9]+' | sort -n | tail -1)
+RSP=$(curl -sf "http://localhost:$PORT/prop?obj=$SCV&prop=reset_spawn&sid=$SID1" || true)
+[ "$RSP" = "1" ] && pass "the district foe is reset-managed" \
+	|| fail "the district foe is reset-managed (reset_spawn '$RSP')"
+curl -sf -X POST -d "$SID1 @set #$SCV.downed=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @reset #920" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @contents #125" http://localhost:$PORT/cmd >/dev/null
+FRESH=$(grep -oE "#[0-9]+  scavenger" /tmp/smolmoo_p1.log | grep -oE '[0-9]+' | sort -n | tail -1)
+[ "${FRESH:-0}" -gt "$SCV" ] 2>/dev/null && pass "a downed district foe respawns as a fresh bounty target" \
+	|| fail "a downed district foe respawns as a fresh bounty target (fresh '$FRESH', was '$SCV')"
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.

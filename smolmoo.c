@@ -1945,6 +1945,13 @@ world_reset(int filter, int *rules_out)
         if (rroom == OBJ_NONE || rproto == OBJ_NONE || rcount <= 0)
             continue;
         rules++;
+        /* M46c: never pop a foe into a room with a fight in progress; the rule is
+           counted but left for the next pass, once the scene has cleared. */
+        {
+            struct obj *ro = obj_find(rroom);
+            if (ro && prop_int(ro, "cb_active", 0))
+                continue;
+        }
 
         /* count live (non-downed) children of rproto already in rroom */
         live = 0;
