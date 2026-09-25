@@ -347,6 +347,12 @@ RULE=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*
 curl -sf -X POST -d "$SID1 @set #$RULE.room=#$RM" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$RULE.proto=#201" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$RULE.count=2" http://localhost:$PORT/cmd >/dev/null
+# a test area groups this rule (and the vending rule below) so an area-scoped
+# @reset counts only them, not the seeded district rule the world now ships (M46a)
+curl -sf -X POST -d "$SID1 @create #900" http://localhost:$PORT/cmd >/dev/null
+TA=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$TA.name=Test Area" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$RULE.area=#$TA" http://localhost:$PORT/cmd >/dev/null
 # first reconcile spawns the two missing raiders
 curl -sf -X POST -d "$SID1 @reset" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log '2 spawned' "@reset spawns missing instances"
@@ -946,8 +952,10 @@ SRULE=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]
 curl -sf -X POST -d "$SID1 @set #$SRULE.room=#$MACH" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$SRULE.proto=#$COLA" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$SRULE.count=2" http://localhost:$PORT/cmd >/dev/null
-# the raider rule from OLC-2 is still full, so this pass stocks only the colas
-curl -sf -X POST -d "$SID1 @reset" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$SRULE.area=#$TA" http://localhost:$PORT/cmd >/dev/null
+# the raider rule from OLC-2 is still full, so this area pass stocks only the
+# colas. Scope to the test area so the seeded district rule is not counted (M46a).
+curl -sf -X POST -d "$SID1 @reset #$TA" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log '2 rule(s), 2 spawned' "@reset stocks a vending machine"
 # list shows the store and its priced stock (no faction, so full price)
 curl -sf -X POST -d "$SID1 list from dispenser" http://localhost:$PORT/cmd >/dev/null
@@ -960,7 +968,7 @@ check_log /tmp/smolmoo_p1.log 'You buy the cola for 5 creds' "buy sells a stock 
 curl -sf -X POST -d "$SID1 buy widget from dispenser" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'no such thing for sale' "buy refuses an item not in stock"
 # the sold cola left the machine, so a reset pass restocks exactly one
-curl -sf -X POST -d "$SID1 @reset" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @reset #$TA" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log '2 rule(s), 1 spawned' "@reset restocks a sold item"
 # a non-admin can shop: buy is not setuid and writes only the buyer's own
 # (self-owned) sheet, so it runs at caller authority (admin masks perms, so
@@ -2971,6 +2979,18 @@ fight_over goon || true
 curl -sf -X POST -d "$SID1 @set #$P1SH.blind=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.held=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
+# --- M46a: boot reconcile and the seeded reset rule ---
+# The world ships reset rule #921 (proto #221, room #125, area #920) for the
+# cargo-bay scavenger, reconciled at boot so the bay starts populated with no
+# wizard @reset -- the M44b bounty fought that boot-spawned instance, which is
+# proof the boot pass ran. That fight left the scavenger downed; an area-scoped
+# reset counts only the district rule (not the OLC test rules) and respawns it.
+curl -sf -X POST -d "$SID1 @reset #920" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '1 rule(s), 1 spawned' "an area reset respawns the seeded district foe"
+# idempotent now the bay is full again
+curl -sf -X POST -d "$SID1 @reset #920" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '1 rule(s), 0 spawned' "the area reset is idempotent while full"
 
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running

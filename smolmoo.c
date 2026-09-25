@@ -1916,6 +1916,71 @@ world_bootstrap(void)
         sys->parent = OBJ_NONE;
 }
 
+/* Reconcile the reset rules (children of RESET_PARENT). With filter == OBJ_NONE it
+ * processes every rule; otherwise only the rules whose `area` matches. Each rule
+ * tops its room up to `count` live (non-downed) children of its proto, cloning the
+ * shortfall, and marks each clone `reset_spawn` so the corpse sweep may reclaim it.
+ * Idempotent: it spawns nothing once a room is full. Returns the number spawned and,
+ * when `rules_out` is non-NULL, the number of rules processed. This is the shared
+ * core of the @reset command, the boot reconcile, and the per-area auto-reset (M46). */
+static int
+world_reset(int filter, int *rules_out)
+{
+    const char *a_room = make_atom("room");
+    const char *a_proto = make_atom("proto");
+    const char *a_area = make_atom("area");
+    const char *a_loc = make_atom("location");
+    int rules = 0, spawned = 0;
+
+    for (int i = 0; i < MAX_OBJ; i++) {
+        int rroom, rproto, rcount, live;
+
+        if (objs[i].id == OBJ_NONE || objs[i].parent != RESET_PARENT)
+            continue;
+        if (filter != OBJ_NONE && prop_objnum(&objs[i], a_area) != filter)
+            continue;
+        rroom = prop_objnum(&objs[i], a_room);
+        rproto = prop_objnum(&objs[i], a_proto);
+        rcount = prop_int(&objs[i], "count", 0);
+        if (rroom == OBJ_NONE || rproto == OBJ_NONE || rcount <= 0)
+            continue;
+        rules++;
+
+        /* count live (non-downed) children of rproto already in rroom */
+        live = 0;
+        for (int j = 0; j < MAX_OBJ; j++) {
+            if (objs[j].id == OBJ_NONE || objs[j].parent != rproto)
+                continue;
+            if (prop_objnum(&objs[j], a_loc) != rroom)
+                continue;
+            if (prop_int(&objs[j], "downed", 0))
+                continue;
+            live++;
+        }
+        for (; live < rcount; live++) {
+            int nid = obj_next_id();
+            struct obj *nc, *pr;
+
+            if (nid == OBJ_NONE)
+                break;
+            nc = obj_create(nid, rproto);
+            if (!nc)
+                break;
+            pr = obj_find(rproto);
+            nc->owner = pr ? pr->owner : OBJ_NONE;
+            prop_set(nc, a_loc, val_obj(rroom));
+            spawn_clean(nc);        /* fresh instance, no inherited wounds */
+            /* mark it reset-managed so the corpse sweep may reclaim it once
+               it is defeated; hand-placed NPCs are left for their builder */
+            prop_set(nc, make_atom("reset_spawn"), val_str("1"));
+            spawned++;
+        }
+    }
+    if (rules_out)
+        *rules_out = rules;
+    return spawned;
+}
+
 static void
 invite_refresh_cb(void *arg)
 {
@@ -5689,11 +5754,7 @@ cmd_feedback(int sid, const char *args)
        is idempotent, so running it again spawns nothing until instances die.
        Wizard-only, since it populates rooms across the world. */
     if (strcmp(tag, "reset") == 0) {
-        const char *a_room = make_atom("room");
-        const char *a_proto = make_atom("proto");
-        const char *a_area = make_atom("area");
-        const char *a_loc = make_atom("location");
-        int filter = OBJ_NONE, rules = 0, spawned = 0;
+        int filter = OBJ_NONE, rules = 0, spawned;
         char b[96];
 
         if (!is_wizard(sid)) {
@@ -5703,51 +5764,7 @@ cmd_feedback(int sid, const char *args)
         if (*p == '#')
             filter = (int)strtol(p + 1, NULL, 10);
 
-        for (int i = 0; i < MAX_OBJ; i++) {
-            int rroom, rproto, rcount, live;
-
-            if (objs[i].id == OBJ_NONE || objs[i].parent != RESET_PARENT)
-                continue;
-            if (filter != OBJ_NONE &&
-                prop_objnum(&objs[i], a_area) != filter)
-                continue;
-            rroom = prop_objnum(&objs[i], a_room);
-            rproto = prop_objnum(&objs[i], a_proto);
-            rcount = prop_int(&objs[i], "count", 0);
-            if (rroom == OBJ_NONE || rproto == OBJ_NONE || rcount <= 0)
-                continue;
-            rules++;
-
-            /* count live (non-downed) children of rproto already in rroom */
-            live = 0;
-            for (int j = 0; j < MAX_OBJ; j++) {
-                if (objs[j].id == OBJ_NONE || objs[j].parent != rproto)
-                    continue;
-                if (prop_objnum(&objs[j], a_loc) != rroom)
-                    continue;
-                if (prop_int(&objs[j], "downed", 0))
-                    continue;
-                live++;
-            }
-            for (; live < rcount; live++) {
-                int nid = obj_next_id();
-                struct obj *nc, *pr;
-
-                if (nid == OBJ_NONE)
-                    break;
-                nc = obj_create(nid, rproto);
-                if (!nc)
-                    break;
-                pr = obj_find(rproto);
-                nc->owner = pr ? pr->owner : OBJ_NONE;
-                prop_set(nc, a_loc, val_obj(rroom));
-                spawn_clean(nc);        /* fresh instance, no inherited wounds */
-                /* mark it reset-managed so the corpse sweep may reclaim it once
-                   it is defeated; hand-placed NPCs are left for their builder */
-                prop_set(nc, make_atom("reset_spawn"), val_str("1"));
-                spawned++;
-            }
-        }
+        spawned = world_reset(filter, &rules);
         snprintf(b, sizeof(b), "Reset: %d rule(s), %d spawned.",
                  rules, spawned);
         session_write(sid, b);
@@ -7480,6 +7497,10 @@ main(int argc, char *argv[])
        (wandering mobs, running vehicles) resumes without a wizard re-running
        @wake after every restart (OLC-5 boot-scan). */
     agent_boot_scan();
+
+    /* Reconcile the seeded reset rules so the world starts populated without a
+       wizard running @reset (M46a). */
+    world_reset(OBJ_NONE, NULL);
 
     /* bootstrap admin invite on first boot or --bootstrap */
     {

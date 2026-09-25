@@ -587,7 +587,19 @@ name=scavenger
 description=A ragged scavenger picking through the freight.
 grade=tough
 mig=9
-location=#125
+
+#920 #900
+owner=#0
+name=Waystation District
+description=The waystation and its cargo bay.
+
+#921 #910
+owner=#0
+name=cargo bay reset
+room=#125
+proto=#221
+count=1
+area=#920
 
 #126 #100
 owner=#0
