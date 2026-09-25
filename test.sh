@@ -3240,15 +3240,54 @@ grep -q "^#$B2 #$B" /tmp/smolmoo_m2.txt \
 grep -q "dest=#0" /tmp/smolmoo_m2.txt \
 	&& pass "merge external ref" || fail "merge external ref"
 
+# M48c: a foreign-signed head to plant into the isolated history instances below.
+# The @rewind, agent-persistence, and @gc tests each copy depot/, which can carry a
+# head signed by a different key (a stale depot, or a restored backup). Planting one
+# here proves those instances re-base it to a fresh chain at boot and still pass,
+# rather than dead-ending as they once did (the coupling the AUTOSAVE_MS caveat
+# wrongly blamed on suite runtime). Build the foreign head once, under its own key.
+FDEP=$(mktemp -d)
+cp -a depot/* "$FDEP/" 2>/dev/null || true
+SMOLMOO_PORT=7781 SMOLMOO_DEPOT="$FDEP" _build/smolmoo serve --bootstrap \
+	2>/tmp/smolmoo_f.log &
+FSRV=$!
+waitgrep /tmp/smolmoo_f.log 'world signing on' || true
+FINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_f.log \
+	| head -1 | cut -d' ' -f3)
+curl -sN http://localhost:7781/events > /tmp/smolmoo_f_p.log &
+FP=$!
+waitgrep /tmp/smolmoo_f_p.log "^data: I" || true
+FSID=$(grep -m1 "^data: I" /tmp/smolmoo_f_p.log | sed 's/^data: I//')
+curl -sf -X POST -d "$FSID create FWiz fpass $FINV" http://localhost:7781/cmd >/dev/null
+curl -sf -X POST -d "$FSID @create #1" http://localhost:7781/cmd >/dev/null
+curl -sf -X POST -d "$FSID @save" http://localhost:7781/cmd >/dev/null
+kill $FSRV $FP 2>/dev/null || true
+wait $FSRV 2>/dev/null || true
+FHEAD=$(cat "$FDEP/head" 2>/dev/null)
+FSHARD=$(printf '%s' "$FHEAD" | cut -c1-2)
+# plant_foreign_head <depot>: give an isolated instance a head (and its record)
+# signed by FDEP's key, so it must re-base to a fresh chain of its own at boot. Only
+# the head pointer and its record are copied, not FDEP's world, so the instance keeps
+# its own pristine root after re-basing.
+plant_foreign_head() {
+	cp "$FDEP/head" "$1/head" 2>/dev/null || true
+	mkdir -p "$1/$FSHARD" 2>/dev/null || true
+	cp "$FDEP/$FSHARD/$FHEAD" "$1/$FSHARD/$FHEAD" 2>/dev/null || true
+}
+
 # --- M29: signed world history (@history / @rewind) ---
 # Isolated instance on its own port and depot: @rewind disconnects every
-# session, so it cannot run against the shared sessions used above.
+# session, so it cannot run against the shared sessions used above. A foreign head is
+# planted first (M48c), so this also proves @rewind is hermetic to a stale depot.
 HDEP=$(mktemp -d)
 cp -a depot/* "$HDEP/" 2>/dev/null || true
+plant_foreign_head "$HDEP"
 SMOLMOO_PORT=7779 SMOLMOO_DEPOT="$HDEP" _build/smolmoo serve --bootstrap \
 	2>/tmp/smolmoo_h.log &
 HSRV=$!
 waitgrep /tmp/smolmoo_h.log 'world signing on' || true
+check_log /tmp/smolmoo_h.log 'foreign key' \
+	"the @rewind instance re-bases a planted foreign head"
 HINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_h.log \
 	| head -1 | cut -d' ' -f3)
 curl -sN http://localhost:7779/events > /tmp/smolmoo_h_p.log &
@@ -3400,10 +3439,13 @@ rm -rf "$DCA" "$DCA.key" "$DCB" "$DCB.key" \
 # that revives the living world after a server restart.
 ADEP=$(mktemp -d)
 cp -a depot/* "$ADEP/" 2>/dev/null || true
+plant_foreign_head "$ADEP"
 SMOLMOO_PORT=7783 SMOLMOO_DEPOT="$ADEP" _build/smolmoo serve --bootstrap \
 	2>/tmp/smolmoo_a.log &
 ASRV=$!
 waitgrep /tmp/smolmoo_a.log 'world signing on' || true
+check_log /tmp/smolmoo_a.log 'foreign key' \
+	"the agent-persistence instance re-bases a planted foreign head"
 AINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_a.log \
 	| head -1 | cut -d' ' -f3)
 curl -sN http://localhost:7783/events > /tmp/smolmoo_a_p.log &
@@ -3433,10 +3475,13 @@ rm -rf "$ADEP" "$ADEP.key" /tmp/smolmoo_a.log /tmp/smolmoo_a_p.log
 # then collect it down to the newest version and confirm the world survives.
 GDEP=$(mktemp -d)
 cp -a depot/* "$GDEP/" 2>/dev/null || true
+plant_foreign_head "$GDEP"
 SMOLMOO_PORT=7780 SMOLMOO_DEPOT="$GDEP" _build/smolmoo serve --bootstrap \
 	2>/tmp/smolmoo_g.log &
 GSRV=$!
 waitgrep /tmp/smolmoo_g.log 'world signing on' || true
+check_log /tmp/smolmoo_g.log 'foreign key' \
+	"the @gc instance re-bases a planted foreign head"
 GINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_g.log \
 	| head -1 | cut -d' ' -f3)
 curl -sN http://localhost:7780/events > /tmp/smolmoo_g_p.log &
@@ -3474,6 +3519,7 @@ check_log /tmp/smolmoo_g_p.log '[1-9] corrupt\|[1-9] unreadable' \
 
 kill $GSRV $GP1 2>/dev/null || true
 rm -rf "$GDEP" "$GDEP.key" /tmp/smolmoo_g.log /tmp/smolmoo_g_p.log
+rm -rf "$FDEP" "$FDEP.key" /tmp/smolmoo_f.log /tmp/smolmoo_f_p.log
 
 echo "---"
 echo "$PASS passed, $FAIL failed"

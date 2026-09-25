@@ -873,12 +873,10 @@ the combat catalog is now substantially whole; the remaining Section 11 rows add
 new family and stay as content. The suite grew to 423 checks.
 
 A note the milestone surfaced: the M29 `@rewind` tests copy the main depot and
-generate their own signing key, so they can only rewind to roots they signed. If
-total suite runtime crosses the five-minute `AUTOSAVE_MS`, the main server autosaves
-one root under its own key, and the copied root then fails the isolated rewind. The
-suite runs well under that in a normal pass, but its growth narrows the margin, so a
-later milestone should make the isolated instances hermetic (start at their own
-genesis).
+generate their own signing key, so they broke when the depot carried a head signed by
+a different key. M48 fixed this by re-basing a foreign chain at load, and corrected
+the cause (a foreign-topic head in the copied depot, not the suite crossing
+`AUTOSAVE_MS`), so the isolated instances are now hermetic. See the M48 record.
 
 ## Milestone 46: The living district (NPC respawn)
 

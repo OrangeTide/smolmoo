@@ -331,6 +331,16 @@ never written into the depot, since the depot is the part that gets
 served. If no key can be loaded, saves still work but are not recorded
 in the history.
 
+Because a chain is signed, an instance extends only history in its own
+topic. If a depot is restored from a backup, or otherwise brought up
+under a different key than the one that signed its history, the server
+re-bases: it keeps the restored world exactly as saved, but starts a
+fresh, self-signed history chain from that point rather than a broken one
+it could not extend. The prior versions are no longer rewindable under
+the new key, which is the honest result of not holding the key that
+signed them. Keep the `<depot>.key` file with its depot to preserve the
+full rewindable history across a move.
+
 ### Commands
 
     @history         list saved versions, newest first
