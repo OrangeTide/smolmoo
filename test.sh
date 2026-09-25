@@ -2992,6 +2992,51 @@ check_log /tmp/smolmoo_p1.log '1 rule(s), 1 spawned' "an area reset respawns the
 curl -sf -X POST -d "$SID1 @reset #920" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log '1 rule(s), 0 spawned' "the area reset is idempotent while full"
 
+# --- M46b: periodic auto-reset (the living district) ---
+# An area carrying an `autoreset` interval (seconds) repopulates its rooms on its
+# own, no wizard @reset. The seeded district #920 is wired for it; the mechanism
+# is proven on an isolated area with a short interval so the test runs in seconds.
+AR=$(curl -sf "http://localhost:$PORT/prop?obj=920&prop=autoreset&sid=$SID1" || true)
+[ "$AR" = "300" ] && pass "the seeded district is wired for auto-reset" \
+	|| fail "the seeded district is wired for auto-reset (autoreset '$AR')"
+# an isolated auto-reset area: a short interval, one room, one proto, one rule
+curl -sf -X POST -d "$SID1 @create #900" http://localhost:$PORT/cmd >/dev/null
+BA=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$BA.name=Bloom Area" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BA.autoreset=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+BR=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$BR.name=Bloom Room" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+BP=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$BP.name=sprout" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BP.grade=tough" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #910" http://localhost:$PORT/cmd >/dev/null
+BRULE=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$BRULE.room=#$BR" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BRULE.proto=#$BP" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BRULE.count=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BRULE.area=#$BA" http://localhost:$PORT/cmd >/dev/null
+# populate once, then down the instance so the room is short a live sprout
+curl -sf -X POST -d "$SID1 @reset #$BA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @contents #$BR" http://localhost:$PORT/cmd >/dev/null
+SPR=$(grep -oE "#[0-9]+  sprout" /tmp/smolmoo_p1.log | grep -oE '[0-9]+' | sort -n | tail -1)
+curl -sf -X POST -d "$SID1 @set #$SPR.downed=1" http://localhost:$PORT/cmd >/dev/null
+# No command drives it: the periodic sweep reconciles the area on its own and
+# spawns a replacement, which gets a fresh (higher) id than the downed one. Poll
+# @contents for a sprout id above SPR -- proof the timer, not a manual @reset, ran.
+_i=0
+while [ $_i -lt 15 ]; do
+	sleep 1
+	curl -sf -X POST -d "$SID1 @contents #$BR" http://localhost:$PORT/cmd >/dev/null
+	MX=$(grep -oE "#[0-9]+  sprout" /tmp/smolmoo_p1.log | grep -oE '[0-9]+' | sort -n | tail -1)
+	[ "${MX:-0}" -gt "$SPR" ] 2>/dev/null && break
+	_i=$((_i + 1))
+done
+[ "${MX:-0}" -gt "$SPR" ] 2>/dev/null && pass "an autoreset area respawns its foe on its own" \
+	|| fail "an autoreset area respawns its foe on its own (max sprout '$MX', was '$SPR')"
+curl -sf -X POST -d "$SID1 @set #$BA.autoreset=0" http://localhost:$PORT/cmd >/dev/null
+
 # --- M24: export / merge CLI ---
 # Use an isolated depot copy so the CLI tools do not race the running
 # server on $DEPOT.

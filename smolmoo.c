@@ -6393,6 +6393,46 @@ corpse_sweep_cb(void *arg)
     timer_add(CORPSE_SWEEP_MS, corpse_sweep_cb, NULL);
 }
 
+#define RESET_SWEEP_MS 2000               /* how often auto-reset areas are checked */
+
+/* Periodic auto-reset (M46b). An area (child of AREA_PARENT) that carries an
+ * `autoreset` interval in seconds repopulates its rooms on its own, so a cleared
+ * district comes back with no wizard @reset. Each area counts its interval down in
+ * `reset_tick` (ms) and, when it elapses, reconciles just that area through
+ * world_reset and re-arms. An area with no `autoreset` (or 0) is manual-only, so
+ * test-created rules, which belong to no such area, are never swept. */
+static void
+reset_sweep_cb(void *arg)
+{
+    (void)arg;
+    for (int i = 0; i < MAX_OBJ; i++) {
+        struct obj *o = &objs[i];
+        int interval, rem;
+        char b[16];
+
+        if (o->id == OBJ_NONE || o->parent != AREA_PARENT) continue;
+        interval = prop_int(o, "autoreset", 0);    /* seconds; 0 = manual only */
+        if (interval <= 0) continue;
+        rem = prop_int(o, "reset_tick", 0);
+        if (rem <= 0) {                             /* arm the clock */
+            snprintf(b, sizeof(b), "%d", interval * 1000);
+            prop_set(o, make_atom("reset_tick"), val_str(b));
+            continue;
+        }
+        rem -= RESET_SWEEP_MS;
+        if (rem > 0) {                              /* still counting down */
+            snprintf(b, sizeof(b), "%d", rem);
+            prop_set(o, make_atom("reset_tick"), val_str(b));
+            continue;
+        }
+        /* interval elapsed: reconcile this area and re-arm */
+        world_reset(o->id, NULL);
+        snprintf(b, sizeof(b), "%d", interval * 1000);
+        prop_set(o, make_atom("reset_tick"), val_str(b));
+    }
+    timer_add(RESET_SWEEP_MS, reset_sweep_cb, NULL);
+}
+
 /* The paid clinic path (Section 11): a dead player revives at once for a fee in
  * creds, priced by standing with the clinic faction like any vendor. */
 static void
@@ -7492,6 +7532,7 @@ main(int argc, char *argv[])
     timer_add(INVITE_REFRESH_MS, invite_refresh_cb, NULL);
     timer_add(DEATH_SWEEP_MS, death_sweep_cb, NULL);
     timer_add(CORPSE_SWEEP_MS, corpse_sweep_cb, NULL);
+    timer_add(RESET_SWEEP_MS, reset_sweep_cb, NULL);
 
     /* Re-wake agents the persistent world marks awake, so the living world
        (wandering mobs, running vehicles) resumes without a wizard re-running

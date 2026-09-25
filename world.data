@@ -592,6 +592,7 @@ mig=9
 owner=#0
 name=Waystation District
 description=The waystation and its cargo bay.
+autoreset=300
 
 #921 #910
 owner=#0
