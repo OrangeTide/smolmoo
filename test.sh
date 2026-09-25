@@ -3333,6 +3333,66 @@ rm -rf "$RBA" "$RBA.key" "$RBB" "$RBB.key" \
 	/tmp/smolmoo_rba.log /tmp/smolmoo_rba_p.log \
 	/tmp/smolmoo_rbb.log /tmp/smolmoo_rbb_p.log
 
+# --- M48b: a damaged history head re-bases, and @history stays coherent ---
+# A depot copied without all its objects names a head that will not open. An instance
+# re-bases such a head to a fresh chain under its own key rather than dead-ending,
+# then @history and @rewind report a clean chain. Build a chain, then point its head
+# at an object that is not there. The key is kept, so this is the damaged-depot path,
+# not the foreign-key path of M48a.
+DCA=$(mktemp -d)
+cp -a depot/* "$DCA/" 2>/dev/null || true
+SMOLMOO_PORT=7781 SMOLMOO_DEPOT="$DCA" _build/smolmoo serve --bootstrap \
+	2>/tmp/smolmoo_dca.log &
+DCASRV=$!
+waitgrep /tmp/smolmoo_dca.log 'world signing on' || true
+DCAINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_dca.log \
+	| head -1 | cut -d' ' -f3)
+curl -sN http://localhost:7781/events > /tmp/smolmoo_dca_p.log &
+DCAP=$!
+waitgrep /tmp/smolmoo_dca_p.log "^data: I" || true
+DCASID=$(grep -m1 "^data: I" /tmp/smolmoo_dca_p.log | sed 's/^data: I//')
+curl -sf -X POST -d "$DCASID create CWiz cpass $DCAINV" \
+	http://localhost:7781/cmd >/dev/null
+curl -sf -X POST -d "$DCASID @create #1" http://localhost:7781/cmd >/dev/null
+curl -sf -X POST -d "$DCASID @save" http://localhost:7781/cmd >/dev/null
+kill $DCASRV $DCAP 2>/dev/null || true
+wait $DCASRV 2>/dev/null || true
+# Copy the depot and its key (same instance, own topic), then damage the head so it
+# names an object that is not present.
+DCB=$(mktemp -d)
+cp -a "$DCA"/* "$DCB/" 2>/dev/null || true
+cp -a "$DCA.key" "$DCB.key" 2>/dev/null || true
+printf '%s\n' '0000000000000000000000000000000000000000000000000000000000000000' \
+	> "$DCB/head"
+SMOLMOO_PORT=7782 SMOLMOO_DEPOT="$DCB" _build/smolmoo serve --bootstrap \
+	2>/tmp/smolmoo_dcb.log &
+DCBSRV=$!
+waitgrep /tmp/smolmoo_dcb.log 'world signing on' || true
+check_log /tmp/smolmoo_dcb.log 'head record is missing' \
+	"a damaged history head re-bases to a fresh chain"
+DCBINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_dcb.log \
+	| head -1 | cut -d' ' -f3)
+curl -sN http://localhost:7782/events > /tmp/smolmoo_dcb_p.log &
+DCBP=$!
+waitgrep /tmp/smolmoo_dcb_p.log "^data: I" || true
+DCBSID=$(grep -m1 "^data: I" /tmp/smolmoo_dcb_p.log | sed 's/^data: I//')
+curl -sf -X POST -d "$DCBSID create DWiz dpass $DCBINV" \
+	http://localhost:7782/cmd >/dev/null
+curl -sf -X POST -d "$DCBSID @create #1" http://localhost:7782/cmd >/dev/null
+curl -sf -X POST -d "$DCBSID @save" http://localhost:7782/cmd >/dev/null
+curl -sf -X POST -d "$DCBSID @create #1" http://localhost:7782/cmd >/dev/null
+curl -sf -X POST -d "$DCBSID @save" http://localhost:7782/cmd >/dev/null
+curl -sf -X POST -d "$DCBSID @history" http://localhost:7782/cmd >/dev/null
+check_log /tmp/smolmoo_dcb_p.log 'World history' \
+	"@history lists the re-based chain"
+curl -sf -X POST -d "$DCBSID @rewind 1" http://localhost:7782/cmd >/dev/null || true
+check_log /tmp/smolmoo_dcb.log 'rewound to seq 1' \
+	"@rewind returns to the re-based genesis"
+kill $DCBSRV $DCBP 2>/dev/null || true
+rm -rf "$DCA" "$DCA.key" "$DCB" "$DCB.key" \
+	/tmp/smolmoo_dca.log /tmp/smolmoo_dca_p.log \
+	/tmp/smolmoo_dcb.log /tmp/smolmoo_dcb_p.log
+
 # --- OLC-5: agent persistence across a world reload (boot-scan) ---
 # Isolated instance, like the @rewind test. An awake agent is saved into the
 # first version; the world is then changed and rewound back to it. On reload the

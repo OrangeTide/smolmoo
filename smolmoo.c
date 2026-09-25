@@ -1498,15 +1498,18 @@ world_save_async(void)
 }
 
 /* Load the current history head from head_file and set head_addr/head_seq.
-   A missing or unreadable head is a fresh chain (seq 0), not an error. So is
-   a head naming a chain this server did not sign: an instance builds only on
-   history in its own topic, so a foreign head re-bases to a fresh chain at
-   the current world root (M48a). The server key must be loaded first. */
+   A missing head is a fresh chain (seq 0), not an error. So is any head this
+   server cannot build on: an instance extends only history in its own topic,
+   so a head that will not open (a partial or damaged depot), one that will
+   not decode, or one signed by a different key re-bases to a fresh chain at
+   the current world root (M48a, M48b). The world data is untouched; only the
+   history chain resets. The server key must be loaded first. */
 static void
 history_load_head(void)
 {
     FILE *f;
     char line[CAS_HASH_HEX + 2];
+    const char *why = NULL;
 
     head_addr[0] = '\0';
     head_seq = 0;
@@ -1519,22 +1522,18 @@ history_load_head(void)
         struct cas_file cf;
         char type[CAS_TYPE_MAX];
         if (cas_open_object(cas_store, &cf, line, type,
-                            sizeof(type)) == CAS_OK) {
+                            sizeof(type)) != CAS_OK) {
+            why = "head record is missing";
+        } else {
             struct cas_vrec v;
             unsigned char mine[CAS_HASH_LEN];
             if (cas_vrec_decode((const unsigned char *)cf.data, cf.len,
                                 &v) != CAS_OK) {
-                /* a head we cannot decode: start fresh rather than dead-end */
-                fprintf(stderr, "[history] head record unreadable; "
-                                "starting a fresh chain\n");
+                why = "head record is unreadable";
             } else {
                 cas_sign_topic_id(mine, server_pk);
                 if (memcmp(mine, v.topic_id, CAS_HASH_LEN) != 0) {
-                    /* the depot names a chain signed by a different key: do
-                       not extend a chain we cannot continue, re-base to a
-                       fresh self-signed chain at the current world root */
-                    fprintf(stderr, "[history] head belongs to a foreign key; "
-                                    "re-basing to a fresh chain\n");
+                    why = "head belongs to a foreign key";
                 } else {
                     memcpy(head_addr, line, CAS_HASH_HEX + 1);
                     head_seq = v.seq;
@@ -1544,6 +1543,9 @@ history_load_head(void)
         }
     }
     fclose(f);
+
+    if (why)
+        fprintf(stderr, "[history] %s; re-basing to a fresh chain\n", why);
 }
 
 /* Prepare signed world history for the serve loop: load the server's
