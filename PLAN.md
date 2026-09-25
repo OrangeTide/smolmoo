@@ -917,6 +917,42 @@ the M37 bounty resolves against it by name. Respawn variety (a second encounter,
 respawning guard, scaling counts, timed waves) stays deferred as content. The suite
 grew to 431 checks.
 
+## Milestone 47: A branching job chain (campaign arc)
+
+M37 built jobs and M44 seeded a district's worth of them, but every contract stood
+alone: gated only by standing and a cooldown, with nothing on the sheet recording
+which jobs a character had finished, so no contract could require another. M47 adds a
+named-flag primitive so a contract can require an earlier one and grant a token on
+completion, then wires a short campaign arc into the district from it. It is
+content-light in code, building on the existing gate-and-turnin seams. The full plan
+is `M47.md`; this is the summary. It shipped in three slices (bd94cd8, 9630996,
+ba01f81).
+
+Slice a adds the prerequisite gate. `cs_has_unlock` was refactored into a shared
+`cs_list_has(sheet, prop, item)` membership reader, and `cs_has_flag` reads the
+sheet's `flags` list through it. A giver's optional `job_need=<flag>` is read in the
+two seams that already read `job_min`: `show_offer` marks the contract locked and
+`accept` refuses it while the flag is absent. It is proven on non-admin TestPlayer3,
+since a flag gate is not masked by admin but a player meets it only by carrying the
+flag.
+
+Slice b adds the completion grant, closing the loop. `cs_flag_add(sheet, flag)`, the
+granting mirror of `cs_standing_add`, appends a flag to the `flags` list once, so a
+repeated turnin never doubles it. `turnin` reads the giver's optional `job_grant`
+beside the `job_standing` payout and, when set, grants the flag. A test drives two
+lobby givers where one grants the flag the other needs, confirming the flag lands on
+the sheet and the gated follow-up then accepts.
+
+Slice c wires the primitive into playable content: a three-step dockers-union arc in
+the waystation, escalating in pay, with no new geography. The fixer's scavenger
+bounty grants `vetted`; a new dispatcher in the bar offers a courier run gated on
+`vetted` and grants `trusted`; a new foreman in the office offers a bounty on the
+respawning scavenger gated on `trusted` for the best reward. A test walks non-admin
+TestPlayer3 through the district the way a player does (it cannot `@go`), confirming
+each step is locked until its predecessor is turned in and that the final payout
+lands. True branches, faction-forked outcomes, and repeatable arcs stay deferred as
+content; the flag model already admits them. The suite grew to 446 checks.
+
 ---
 
 # Future Milestones
