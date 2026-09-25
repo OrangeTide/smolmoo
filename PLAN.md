@@ -880,6 +880,43 @@ suite runs well under that in a normal pass, but its growth narrows the margin, 
 later milestone should make the isolated instances hermetic (start at their own
 genesis).
 
+## Milestone 46: The living district (NPC respawn)
+
+M44 seeded a playable district but left it a one-shot: its foes did not repopulate,
+because the reset machinery had no automatic driver and a seeded `#910` rule would
+have perturbed the global `@reset` counts the OLC tests assert. M46 makes the
+district live: seeded encounters respawn on their own, on a timer, without breaking
+those tests. It is mostly wiring on machinery that already exists, plus a
+test-hygiene fix, and it unblocks respawn for every future district. The full plan
+is `M46.md`; this is the summary. It shipped in three slices (e9ece5e, 73ab9a5,
+36cb0c3).
+
+Slice a factors the `@reset` reconcile loop into a reusable `world_reset(filter,
+rules_out)` and runs it once at boot after `agent_boot_scan`, so the world starts
+populated with no wizard action. It seeds the district area `#920` and rule `#921`
+(proto `#221`, room `#125`, count 1) and drops `#221`'s location to make it a pure
+proto the rule clones. Because a seeded rule is processed by every global `@reset`,
+the OLC-2 raider rule and the vending-machine rules were grouped into a shared test
+area and their count-asserting resets scoped to it; spawn-count-only checks stay
+global, since a full district rule adds zero.
+
+Slice b adds `reset_sweep_cb`, a host timer in the shape of the corpse sweep: for
+each area carrying an `autoreset` interval in seconds it counts down a `reset_tick`
+and, when it elapses, reconciles just that area through `world_reset` and re-arms.
+The district `#920` carries `autoreset=300`, a production interval that never fires
+inside the test window, so the district repopulates on its own in play. Areas
+without `autoreset` are manual-only, so test-created rules are never swept.
+
+Slice c makes respawn a good citizen: `world_reset` skips any rule whose room has
+`cb_active` set, so no reconcile ever pops a foe into an open fight, mirroring the
+corpse sweep. The corpse-sweep interplay needs no new code, since `world_reset`
+counts only live instances, so a reaped or downed body is a shortfall the next pass
+fills. The living loop is proven end to end: downing the reset-managed cargo-bay
+scavenger and reconciling brings back a fresh instance still named `scavenger`, so
+the M37 bounty resolves against it by name. Respawn variety (a second encounter, a
+respawning guard, scaling counts, timed waves) stays deferred as content. The suite
+grew to 431 checks.
+
 ---
 
 # Future Milestones
