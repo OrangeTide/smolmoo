@@ -1497,9 +1497,11 @@ world_save_async(void)
     pthread_mutex_unlock(&saver.mtx);
 }
 
-/* Load the current history head from head_file, verifying the record it
-   names, and set head_addr/head_seq. A missing or unreadable head is a
-   fresh chain (seq 0), not an error. */
+/* Load the current history head from head_file and set head_addr/head_seq.
+   A missing or unreadable head is a fresh chain (seq 0), not an error. So is
+   a head naming a chain this server did not sign: an instance builds only on
+   history in its own topic, so a foreign head re-bases to a fresh chain at
+   the current world root (M48a). The server key must be loaded first. */
 static void
 history_load_head(void)
 {
@@ -1519,10 +1521,24 @@ history_load_head(void)
         if (cas_open_object(cas_store, &cf, line, type,
                             sizeof(type)) == CAS_OK) {
             struct cas_vrec v;
+            unsigned char mine[CAS_HASH_LEN];
             if (cas_vrec_decode((const unsigned char *)cf.data, cf.len,
-                                &v) == CAS_OK) {
-                memcpy(head_addr, line, CAS_HASH_HEX + 1);
-                head_seq = v.seq;
+                                &v) != CAS_OK) {
+                /* a head we cannot decode: start fresh rather than dead-end */
+                fprintf(stderr, "[history] head record unreadable; "
+                                "starting a fresh chain\n");
+            } else {
+                cas_sign_topic_id(mine, server_pk);
+                if (memcmp(mine, v.topic_id, CAS_HASH_LEN) != 0) {
+                    /* the depot names a chain signed by a different key: do
+                       not extend a chain we cannot continue, re-base to a
+                       fresh self-signed chain at the current world root */
+                    fprintf(stderr, "[history] head belongs to a foreign key; "
+                                    "re-basing to a fresh chain\n");
+                } else {
+                    memcpy(head_addr, line, CAS_HASH_HEX + 1);
+                    head_seq = v.seq;
+                }
             }
             cas_close(&cf);
         }

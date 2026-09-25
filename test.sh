@@ -3276,6 +3276,63 @@ check_log /tmp/smolmoo_h.log 'rewound to seq 1' \
 kill $HSRV $HP1 2>/dev/null || true
 rm -rf "$HDEP" "$HDEP.key" /tmp/smolmoo_h.log /tmp/smolmoo_h_p.log
 
+# --- M48a: an instance re-bases a history chain it did not sign ---
+# A depot can carry a history head signed by a different key (a stale depot from an
+# earlier run, or a restored backup). An instance builds only on history in its own
+# topic, so it re-bases such a head to a fresh self-signed chain rather than appending
+# across a topic seam that would dead-end @rewind. First, sign a depot under one key:
+# a throwaway server builds a two-version chain, which writes a key-A head into it.
+RBA=$(mktemp -d)
+cp -a depot/* "$RBA/" 2>/dev/null || true
+SMOLMOO_PORT=7781 SMOLMOO_DEPOT="$RBA" _build/smolmoo serve --bootstrap \
+	2>/tmp/smolmoo_rba.log &
+RBASRV=$!
+waitgrep /tmp/smolmoo_rba.log 'world signing on' || true
+RBAINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_rba.log \
+	| head -1 | cut -d' ' -f3)
+curl -sN http://localhost:7781/events > /tmp/smolmoo_rba_p.log &
+RBAP=$!
+waitgrep /tmp/smolmoo_rba_p.log "^data: I" || true
+RBASID=$(grep -m1 "^data: I" /tmp/smolmoo_rba_p.log | sed 's/^data: I//')
+curl -sf -X POST -d "$RBASID create AWiz apass $RBAINV" \
+	http://localhost:7781/cmd >/dev/null
+curl -sf -X POST -d "$RBASID @create #1" http://localhost:7781/cmd >/dev/null
+curl -sf -X POST -d "$RBASID @save" http://localhost:7781/cmd >/dev/null
+curl -sf -X POST -d "$RBASID @create #1" http://localhost:7781/cmd >/dev/null
+curl -sf -X POST -d "$RBASID @save" http://localhost:7781/cmd >/dev/null
+kill $RBASRV $RBAP 2>/dev/null || true
+wait $RBASRV 2>/dev/null || true
+# Bring a second instance up on a copy of that depot with no key of its own: it
+# generates a fresh key, sees the foreign head, and re-bases to a clean chain.
+RBB=$(mktemp -d)
+cp -a "$RBA"/* "$RBB/" 2>/dev/null || true
+SMOLMOO_PORT=7782 SMOLMOO_DEPOT="$RBB" _build/smolmoo serve --bootstrap \
+	2>/tmp/smolmoo_rbb.log &
+RBBSRV=$!
+waitgrep /tmp/smolmoo_rbb.log 'world signing on' || true
+check_log /tmp/smolmoo_rbb.log 'foreign key' \
+	"an instance re-bases a chain signed by a different key"
+RBBINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_rbb.log \
+	| head -1 | cut -d' ' -f3)
+curl -sN http://localhost:7782/events > /tmp/smolmoo_rbb_p.log &
+RBBP=$!
+waitgrep /tmp/smolmoo_rbb_p.log "^data: I" || true
+RBBSID=$(grep -m1 "^data: I" /tmp/smolmoo_rbb_p.log | sed 's/^data: I//')
+curl -sf -X POST -d "$RBBSID create BWiz bpass $RBBINV" \
+	http://localhost:7782/cmd >/dev/null
+# build a fresh self-signed chain and prove it rewinds to its own genesis
+curl -sf -X POST -d "$RBBSID @create #1" http://localhost:7782/cmd >/dev/null
+curl -sf -X POST -d "$RBBSID @save" http://localhost:7782/cmd >/dev/null
+curl -sf -X POST -d "$RBBSID @create #1" http://localhost:7782/cmd >/dev/null
+curl -sf -X POST -d "$RBBSID @save" http://localhost:7782/cmd >/dev/null
+curl -sf -X POST -d "$RBBSID @rewind 1" http://localhost:7782/cmd >/dev/null || true
+check_log /tmp/smolmoo_rbb.log 'rewound to seq 1' \
+	"the re-based chain rewinds to its own genesis"
+kill $RBBSRV $RBBP 2>/dev/null || true
+rm -rf "$RBA" "$RBA.key" "$RBB" "$RBB.key" \
+	/tmp/smolmoo_rba.log /tmp/smolmoo_rba_p.log \
+	/tmp/smolmoo_rbb.log /tmp/smolmoo_rbb_p.log
+
 # --- OLC-5: agent persistence across a world reload (boot-scan) ---
 # Isolated instance, like the @rewind test. An awake agent is saved into the
 # first version; the world is then changed and rewound back to it. On reload the
