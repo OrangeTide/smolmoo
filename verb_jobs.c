@@ -5,7 +5,10 @@
  * "faction:step"). An optional `job_min` "faction:step" gates the contract behind
  * a minimum standing, read through the giver's disposition so its `disp` offset
  * can vouch for you (M38a, M38c). An optional `job_cd` cooldown in seconds keeps
- * a contract from being farmed back to back (M39c). A player holds one
+ * a contract from being farmed back to back (M39c). An optional `job_need`
+ * names a campaign flag the character must carry on the sheet's `flags` list
+ * before the contract is offered or accepted, so one contract can gate behind an
+ * earlier one (M47a). A player holds one
  * job at a time, stored on the sheet as `job_giver` (the giver's id, 0 for none)
  * and `job_done` (the completion flag, set in M37b). `jobs` lists what is offered
  * here and your active contract, marking a gated one locked; `accept` takes one
@@ -62,6 +65,17 @@ show_offer(struct cs_out *o, int giver, int ch)
         cs_s(o, cs_standing_word(need));
         cs_s(o, ")");
     }
+    /* M47a: a chain contract is locked until an earlier one grants its flag */
+    {
+        char pre[32];
+
+        cs_getstr(giver, "job_need", pre, sizeof(pre));
+        if (pre[0] && !cs_has_flag(ch, pre)) {
+            cs_s(o, " (locked: requires ");
+            cs_s(o, pre);
+            cs_s(o, ")");
+        }
+    }
     cs_s(o, "\n");
 }
 
@@ -116,6 +130,19 @@ main(void)
             cs_s(&o, ").\n");
             cs_flush(&o);
             _exit(0);
+        }
+        /* M47a: refuse a chain contract until an earlier one grants its flag */
+        {
+            char pre[32];
+
+            cs_getstr(giver, "job_need", pre, sizeof(pre));
+            if (pre[0] && !cs_has_flag(ch, pre)) {
+                cs_s(&o, "You are not cleared for that job yet (requires ");
+                cs_s(&o, pre);
+                cs_s(&o, ").\n");
+                cs_flush(&o);
+                _exit(0);
+            }
         }
         cs_seti(ch, "job_giver", giver);
         cs_seti(ch, "job_done", 0);

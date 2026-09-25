@@ -1044,13 +1044,14 @@ cs_grit_spend(int sheet, int n)
     return 0;
 }
 
-/* Is unlock `name` present in the sheet's comma-separated `maneuvers` list?
- * Matches a whole token so "smart" never matches "smartlink". */
+/* Is `item` a whole token in the sheet's comma-separated `prop` list? Matches a
+ * whole token so "smart" never matches "smartlink". Shared by the maneuvers and
+ * campaign-flag membership readers. */
 static int
-cs_has_unlock(int sheet, const char *name)
+cs_list_has(int sheet, const char *prop, const char *item)
 {
     char list[128];
-    int n = sys_getprop(sheet, "maneuvers", list, sizeof(list) - 1);
+    int n = sys_getprop(sheet, prop, list, sizeof(list) - 1);
     const char *p;
     int i;
 
@@ -1058,13 +1059,27 @@ cs_has_unlock(int sheet, const char *name)
     list[n] = '\0';
     for (p = list; *p; ) {
         while (*p == ',' || *p == ' ') p++;
-        for (i = 0; name[i] && p[i] && p[i] != ',' && name[i] == p[i]; i++)
+        for (i = 0; item[i] && p[i] && p[i] != ',' && item[i] == p[i]; i++)
             ;
-        if (name[i] == '\0' && (p[i] == '\0' || p[i] == ','))
+        if (item[i] == '\0' && (p[i] == '\0' || p[i] == ','))
             return 1;
         while (*p && *p != ',') p++;
     }
     return 0;
+}
+
+/* Is unlock `name` present in the sheet's `maneuvers` list? */
+static int
+cs_has_unlock(int sheet, const char *name)
+{
+    return cs_list_has(sheet, "maneuvers", name);
+}
+
+/* Is campaign flag `flag` present in the sheet's `flags` list (M47a)? */
+static int
+cs_has_flag(int sheet, const char *flag)
+{
+    return cs_list_has(sheet, "flags", flag);
 }
 
 /* An unlock's active effect (M36b), the tag `verb_use` switches on to apply it.

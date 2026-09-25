@@ -1199,6 +1199,32 @@ curl -sf -X POST -d "$SID1 accept handler" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'take the job from handler' "accept takes a gated job once standing is met"
 curl -sf -X POST -d "$SID1 abandon" http://localhost:$PORT/cmd >/dev/null
 
+# --- M47a: a job giver can gate a contract behind a campaign flag (job_need) ---
+# An optional job_need names a flag the character must carry on the sheet's flags
+# list before the contract is offered or accepted, so one contract gates behind an
+# earlier one. Proven on non-admin TestPlayer3: the flag gate is not masked by
+# admin, but a player meets it by carrying the flag, so jobs marks it locked and
+# accept refuses while the flag is absent, and both open once it is set.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+RECR=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$RECR.name=recruiter" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$RECR.job=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$RECR.job_desc=A cleared-only run." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$RECR.job_cp=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$RECR.job_creds=20" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$RECR.job_need=arctoken" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$RECR.location=#101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 @go #101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'locked: requires arctoken' "jobs marks a chain contract locked without its flag"
+curl -sf -X POST -d "$SID3 accept recruiter" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'not cleared for that job yet' "accept refuses a chain contract without its flag"
+# grant the flag, then both the offer and the accept open
+curl -sf -X POST -d "$SID1 @set #$P3SH.flags=arctoken" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 accept recruiter" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'take the job from recruiter' "accept takes a chain contract once the flag is set"
+curl -sf -X POST -d "$SID3 abandon" http://localhost:$PORT/cmd >/dev/null
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.
