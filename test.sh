@@ -1225,6 +1225,48 @@ curl -sf -X POST -d "$SID3 accept recruiter" http://localhost:$PORT/cmd >/dev/nu
 check_log /tmp/smolmoo_p3.log 'take the job from recruiter' "accept takes a chain contract once the flag is set"
 curl -sf -X POST -d "$SID3 abandon" http://localhost:$PORT/cmd >/dev/null
 
+# --- M47b: turnin grants a campaign flag (job_grant), closing the chain loop ---
+# A giver's job_grant names a flag that turnin adds to the sheet's flags list, so a
+# later job_need contract opens. Build two givers in the lobby (the room a non-admin
+# can reach): courierA grants keycard, courierB needs it. Before turnin courierB is
+# locked; after, the flag lands (appended to the arctoken already there) and courierB
+# accepts. Completion itself is M37b's concern, so admin sets job_done to isolate the
+# grant. Proven on non-admin TestPlayer3, whose sheet the grant must reach.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+GA=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$GA.name=courierA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GA.job=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GA.job_desc=A run that vouches for you." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GA.job_cp=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GA.job_creds=10" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GA.job_grant=keycard" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GA.location=#101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+GB=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$GB.name=courierB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GB.job=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GB.job_desc=A run only the cleared may take." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GB.job_creds=40" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GB.job_need=keycard" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GB.location=#101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 @go #101" http://localhost:$PORT/cmd >/dev/null
+# courierB is locked before the grant lands
+curl -sf -X POST -d "$SID3 accept courierB" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'not cleared for that job yet' "the follow-up is locked before the grant"
+# take courierA, mark it done (completion is M37b's concern), and turn it in
+curl -sf -X POST -d "$SID3 accept courierA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P3SH.job_done=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'cleared as keycard' "turnin grants the campaign flag"
+FLG=$(curl -s "http://localhost:$PORT/prop?obj=$P3SH&prop=flags&sid=$SID3" || true)
+echo "$FLG" | grep -q 'keycard' && pass "the granted flag lands on the sheet" || fail "the granted flag lands on the sheet ($FLG)"
+echo "$FLG" | grep -q 'arctoken' && pass "the grant appends without dropping an earlier flag" || fail "the grant appends ($FLG)"
+# with the flag in hand, the follow-up now accepts
+curl -sf -X POST -d "$SID3 accept courierB" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'take the job from courierB' "the follow-up accepts once the grant lands"
+curl -sf -X POST -d "$SID3 abandon" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.

@@ -1082,6 +1082,27 @@ cs_has_flag(int sheet, const char *flag)
     return cs_list_has(sheet, "flags", flag);
 }
 
+/* Add campaign flag `flag` to the sheet's `flags` list once (M47b), the granting
+ * mirror of cs_standing_add. A flag already present is left as is, so a repeated
+ * turnin never doubles it. The player owns the sheet, so the caller writes it. */
+static void
+cs_flag_add(int sheet, const char *flag)
+{
+    char list[128];
+    struct cs_out o;
+    int n;
+
+    if (cs_has_flag(sheet, flag)) return;
+    n = sys_getprop(sheet, "flags", list, sizeof(list) - 1);
+    if (n < 0) n = 0;
+    list[n] = '\0';
+    o.len = 0;
+    cs_s(&o, list);
+    if (o.len) cs_s(&o, ",");
+    cs_s(&o, flag);
+    sys_setprop(sheet, "flags", cs_cstr(&o));
+}
+
 /* An unlock's active effect (M36b), the tag `verb_use` switches on to apply it.
  * UEF_PASSIVE means it is not activated as an action; its effect is read where
  * its stat applies (dermal in cs_recalc), so `use` refuses it. */

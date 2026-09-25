@@ -8,7 +8,9 @@
  * a contract from being farmed back to back (M39c). An optional `job_need`
  * names a campaign flag the character must carry on the sheet's `flags` list
  * before the contract is offered or accepted, so one contract can gate behind an
- * earlier one (M47a). A player holds one
+ * earlier one (M47a). An optional `job_grant` names a flag that `turnin` adds to
+ * the sheet's `flags` list, the token that opens a later `job_need` contract
+ * (M47b). A player holds one
  * job at a time, stored on the sheet as `job_giver` (the giver's id, 0 for none)
  * and `job_done` (the completion flag, set in M37b). `jobs` lists what is offered
  * here and your active contract, marking a gated one locked; `accept` takes one
@@ -189,6 +191,19 @@ main(void)
                 cs_s(&o, " Your standing with ");
                 cs_s(&o, fac);
                 cs_s(&o, " shifts.");
+            }
+        }
+        /* an optional campaign-flag grant, the chain token this contract hands
+         * on (M47b); a later contract's job_need gates on it */
+        {
+            char grant[32];
+
+            cs_getstr(giver, "job_grant", grant, sizeof(grant));
+            if (grant[0]) {
+                cs_flag_add(ch, grant);
+                cs_s(&o, " You are now cleared as ");
+                cs_s(&o, grant);
+                cs_s(&o, ".");
             }
         }
         cs_s(&o, "\n");
