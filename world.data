@@ -577,6 +577,7 @@ location=#121
 job=1
 job_desc=Clear the scavenger out of the cargo bay.
 job_target=scavenger
+job_grant=vetted
 job_creds=120
 job_cp=2
 job_standing=dockers:1
@@ -647,3 +648,32 @@ greeting=The guard sizes you up and grunts.
 brain=#453
 route=126,120
 dwell=600000
+
+#225 #200
+owner=#0
+name=dispatcher
+description=A dockers dispatcher juggling manifests, always short a runner she can trust.
+location=#121
+faction=dockers
+job=1
+job_desc=Carry the bonded cargo down to the bay, no questions.
+job_dest=125
+job_creds=220
+job_cp=3
+job_standing=dockers:1
+job_need=vetted
+job_grant=trusted
+
+#226 #200
+owner=#0
+name=foreman
+description=A dockers foreman who hands the real money only to people the union already trusts.
+location=#126
+faction=dockers
+job=1
+job_desc=The scavengers keep coming back. Clear the bay again for top pay.
+job_target=scavenger
+job_creds=400
+job_cp=5
+job_standing=dockers:2
+job_need=trusted

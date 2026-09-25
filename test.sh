@@ -1267,6 +1267,50 @@ check_log /tmp/smolmoo_p3.log 'take the job from courierB' "the follow-up accept
 curl -sf -X POST -d "$SID3 abandon" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID3 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M47c: the seeded campaign chain in the waystation district ---
+# The seeded fixer's scavenger bounty (#222) is step one, granting "vetted". A
+# dispatcher (#225) in the bar offers a follow-up gated on vetted, granting
+# "trusted" for more pay. A foreman (#226) in the office offers the payoff gated on
+# trusted, targeting the respawning scavenger for the best reward. Drive the arc on
+# non-admin TestPlayer3, whose sheet, standing, and flags are independent of the
+# TestPlayer1 assertions the later M44b bounty makes on the same seeded fixer.
+# Completion of each step is proven elsewhere (M37b bounty, M37c courier), so
+# job_done is set to isolate the chain: the point here is that each step is locked
+# until its predecessor is turned in, and the arc's final reward lands.
+# TestPlayer3 (non-admin) cannot @go, so it walks the district through the seeded
+# exits, the way a player does. It starts in the lobby (#101). Check each follow-up
+# is locked before its prerequisite is earned: visit the office first (foreman needs
+# trusted), then the bar (dispatcher needs vetted), before completing any step.
+curl -sf -X POST -d "$SID3 go waystation" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 go office" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'locked: requires trusted' "the payoff is locked before the follow-up run"
+curl -sf -X POST -d "$SID3 go concourse" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 go bar" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'locked: requires vetted' "the follow-up run is locked before the entry bounty"
+# step one: the fixer's scavenger bounty grants the first flag
+curl -sf -X POST -d "$SID3 accept fixer" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P3SH.job_done=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'cleared as vetted' "the entry bounty grants the first chain flag"
+# step two: with vetted, the dispatcher's run opens and grants the second flag
+curl -sf -X POST -d "$SID3 accept dispatcher" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'take the job from dispatcher' "the follow-up opens once the entry bounty is done"
+curl -sf -X POST -d "$SID1 @set #$P3SH.job_done=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'cleared as trusted' "the follow-up run grants the second chain flag"
+# step three: with trusted, the foreman's payoff opens and pays the best reward
+curl -sf -X POST -d "$SID3 go concourse" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 go office" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 accept foreman" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'take the job from foreman' "the payoff opens once the follow-up is done"
+curl -sf -X POST -d "$SID1 @set #$P3SH.job_done=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'foreman pays you 400 creds and 5 CP' "the arc's final reward lands"
+curl -sf -X POST -d "$SID3 go concourse" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 go lobby" http://localhost:$PORT/cmd >/dev/null
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.
