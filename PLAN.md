@@ -997,6 +997,44 @@ isolated instances before each starts, so all three prove they re-base the plant
 head and still pass their original assertions, which is the coupling gone. The suite
 grew to 454 checks.
 
+## Milestone 49: Test determinism (robust readiness and outcome waits)
+
+The smoke suite grew to 454 checks across dozens of milestones, and M48 was itself a
+milestone to fix a flaky test. The harness had two kinds of wait, both capped at three
+seconds: a readiness gate for a server to boot and a session to connect, and an outcome
+check for a game result to appear. A readiness gate that gave up proceeded anyway with
+an empty session id, so every command in that block failed, turning one slow boot into
+a cluster of false failures; an outcome check that gave up failed a result that was
+merely late. M49 makes the waits robust so a loaded machine no longer fails a correct
+run. The full plan is `M49.md`; this is the summary. It shipped in three slices
+(ce08e23, 724e01b, 74444e3).
+
+Slice a removes the empty-id cascade. Two helpers in `test.sh` use a generous ceiling
+(`READY_TRIES`, about 20s): `wait_ready` replaces the nine boot-marker gates (silent on
+success, one named fail on a true timeout), and `wait_sid` replaces the twelve SSE
+capture pairs (it echoes a non-empty session id from inside the command substitution,
+where it cannot touch the counters, and returns nonzero on timeout). The main and
+player-3 blocks keep their non-empty checks; the eight isolated captures gained a loud
+single fail. A poll returns the instant its condition holds, so a healthy run is
+unchanged; the helper logic was unit-tested, and reverting was confirmed to matter.
+
+Slice b factors every wait onto one primitive, `poll FILE PATTERN TRIES`, with three
+named ceilings: `WAITGREP_TRIES` (about 3s, best-effort sync before an action),
+`OUTCOME_TRIES` (about 10s, an asserted result), and `READY_TRIES` (about 20s, boot and
+session id). `check_log`'s ceiling rose from 3s to 10s, so a late-but-correct outcome
+under load is no longer a false failure, with its pass/fail contract unchanged. A match
+returns at once, so a healthy run neither slows (245 to 254 seconds, in line with
+before) nor changes its check count.
+
+Slice c adds a `make stress` target that runs the suite `STRESS_N` times (default 10)
+against one build and fails on the first failing run, so a flaky window shows up as a
+failed iteration. The harness timing model is documented in `README.md` (three
+ceilings, a poll returns on the first match, do not reintroduce a fixed `sleep`), since
+the project `CLAUDE.md` is a local gitignored file. The determinism evidence is the
+accumulated clean runs since the fix plus a `make stress` streak, where the flake that
+motivated the milestone appeared about once in a dozen runs before. The suite stayed at
+454 checks, since this milestone hardened the harness rather than adding features.
+
 ---
 
 # Future Milestones
