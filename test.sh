@@ -133,6 +133,19 @@ social_drive() {
 	return 1
 }
 
+# drain : settle P1's SSE stream before a `grep ... | tail -1` scrapes a read.
+# A `sheet` or `status` line can still be in flight when the scrape runs, so
+# tail -1 can pick up a line from an earlier scene instead. Emit a unique marker
+# with `say` after the read and poll for it; the marker is written after the
+# read's own lines, so once it lands the last matching line is the one just read.
+_DRAINSEQ=0
+drain() {
+	_DRAINSEQ=$((_DRAINSEQ + 1))
+	_dmark="drainmark${_DRAINSEQ}"
+	curl -sf -X POST -d "$SID1 say $_dmark" http://localhost:$PORT/cmd >/dev/null
+	poll /tmp/smolmoo_p1.log "$_dmark" $OUTCOME_TRIES
+}
+
 DEPOT=$(mktemp -d)
 cp -a depot/* "$DEPOT/" 2>/dev/null || true
 
@@ -2475,24 +2488,16 @@ curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/
 curl -sf -X POST -d "$SID1 @set #$P1SH.grit=30" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 attack wraith" http://localhost:$PORT/cmd >/dev/null
 waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
-# suppressive fire pins the foes; the suppressed foe then attacks at -1D
-_i=0
-while [ $_i -lt 40 ]; do
-	curl -sf -X POST -d "$SID1 use suppress" http://localhost:$PORT/cmd >/dev/null
-	grep -q 'the enemy is pinned' /tmp/smolmoo_p1.log 2>/dev/null && break
-	sleep 0.2
-	_i=$((_i + 1))
-done
+# Suppressive fire pins the foe; the suppressed foe then attacks at -1D. Drive
+# `use suppress` until the pin lands, then keep suppressing so the foe's next
+# attack is taken while suppressed. Each social_drive send-then-polls for a fresh
+# outcome, so a turn that resolves slowly under load is waited out, not missed.
+social_drive "use suppress" 'the enemy is pinned' || true
 check_log /tmp/smolmoo_p1.log 'the enemy is pinned' "suppressive fire pins the foes"
+social_drive "use suppress" 'fists (suppressed)' || true
 check_log /tmp/smolmoo_p1.log 'fists (suppressed)' "a suppressed foe's attack notes the condition"
 # static shock is a Wit+Spellcasting spell attack for 4D
-_i=0
-while [ $_i -lt 40 ]; do
-	curl -sf -X POST -d "$SID1 use shock wraith" http://localhost:$PORT/cmd >/dev/null
-	grep -q 'with static shock for' /tmp/smolmoo_p1.log 2>/dev/null && break
-	sleep 0.2
-	_i=$((_i + 1))
-done
+social_drive "use shock wraith" 'with static shock for' || true
 check_log /tmp/smolmoo_p1.log 'with static shock for' "static shock lands a spell attack for damage"
 curl -sf -X POST -d "$SID1 @set #$D5.downed=1" http://localhost:$PORT/cmd >/dev/null
 fight_over wraith || true
@@ -2691,10 +2696,12 @@ curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 # -1 Max Grit, read live by cs_recalc. Capture the baseline, then grant it.
 curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+drain
 DB=$(grep -oE 'Defense [0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
 GB=$(grep -oE 'Grit [0-9]+/[0-9]+' /tmp/smolmoo_p1.log | tail -1 | sed 's#.*/##')
 curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=kinetic" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+drain
 DA=$(grep -oE 'Defense [0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
 GA=$(grep -oE 'Grit [0-9]+/[0-9]+' /tmp/smolmoo_p1.log | tail -1 | sed 's#.*/##')
 [ "${DA:-0}" -eq "$(( ${DB:-0} + 1 ))" ] \
