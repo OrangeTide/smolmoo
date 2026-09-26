@@ -1007,7 +1007,7 @@ an empty session id, so every command in that block failed, turning one slow boo
 a cluster of false failures; an outcome check that gave up failed a result that was
 merely late. M49 makes the waits robust so a loaded machine no longer fails a correct
 run. The full plan is `M49.md`; this is the summary. It shipped in three slices
-(ce08e23, 724e01b, 74444e3).
+(ce08e23, 724e01b, 74444e3), with a follow-up slice d (370bfb6).
 
 Slice a removes the empty-id cascade. Two helpers in `test.sh` use a generous ceiling
 (`READY_TRIES`, about 20s): `wait_ready` replaces the nine boot-marker gates (silent on
@@ -1034,6 +1034,20 @@ the project `CLAUDE.md` is a local gitignored file. The determinism evidence is 
 accumulated clean runs since the fix plus a `make stress` streak, where the flake that
 motivated the milestone appeared about once in a dozen runs before. The suite stayed at
 454 checks, since this milestone hardened the harness rather than adding features.
+
+Slice d, a follow-up (370bfb6), fixes two isolated flakes the stress streak still
+caught. The Kinetic Absorbers check scraped Passive Defense from the SSE log with
+`grep ... | tail -1` right after a `sheet` command, so it could read a still-in-flight
+or stale line; a `drain` helper emits a unique `say` marker after the read and polls for
+it, so the scrape sees the sheet just requested. The suppressive-fire and static-shock
+checks waited passively for a foe's suppressed attack and a landed spell, which need the
+turn to advance; they now drive the scene with `social_drive`, polling for a fresh
+outcome. Both scenes stand alone, so the suite still passes 454 checks. A frontage check
+in the chained M25c multi-foe section was attempted and pulled back out: its scene shares
+the `cb_active` teardown with an ambush, a flee, and a social block, so a point fix that
+drove the fight differently cascaded into the whole chain. That scene and the broader
+M25c scene-start and mid-scene teardown races are deferred to a separate driver-rework
+milestone, since a point fix there perturbs its neighbours.
 
 ---
 
