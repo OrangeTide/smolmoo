@@ -105,7 +105,19 @@ test: install ctest
 	./test.sh
 smoke: install
 	./test.sh
+# stress: run the smoke suite STRESS_N times (default 10) against one build,
+# failing on the first run that fails. A determinism check for the harness: a
+# flaky timing window shows up here as a failed iteration, where a single run
+# would usually miss it (M49c).
+STRESS_N ?= 10
+stress: install ctest
+	@n=0; while [ $$n -lt $(STRESS_N) ]; do \
+		n=$$((n + 1)); \
+		echo "=== stress run $$n/$(STRESS_N) ==="; \
+		./test.sh || { echo "stress: run $$n FAILED"; exit 1; }; \
+	done; \
+	echo "stress: $(STRESS_N) runs all passed"
 run: $(B)/smolmoo
 	$(B)/smolmoo serve
-.PHONY: clean clean-all test smoke run sdk install bundle ctest
+.PHONY: clean clean-all test smoke run sdk install bundle ctest stress
 -include $(OBJS:.o=.dep)

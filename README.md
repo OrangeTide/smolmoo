@@ -144,6 +144,21 @@ re-bootstrap the world, though: with a `depot/` already present the world
 loads from it, not from `world.data`. After changing the world seed, or when
 results look stale, rebuild from a clean baseline with `rm -rf depot _build`.
 
+    make stress            # run the suite 10 times, fail on any run
+    make stress STRESS_N=20 # a longer streak
+
+`make stress` runs the suite repeatedly against one build to catch timing
+flakiness that a single run usually misses. The harness never waits with a
+fixed `sleep`; it polls for a condition against a ceiling, and a poll returns
+the instant the condition holds, so a ceiling only bounds a genuine miss and
+never slows a healthy run. There are three ceilings, longest to shortest need:
+a readiness wait for server boot and the session id (`wait_ready`, `wait_sid`),
+a generous asserted-outcome wait (`check_log`), and a short best-effort sync
+before an action (`waitgrep`). A readiness gate that truly times out fails once
+and names the instance, rather than letting the block run against an empty
+session id and fail every check in it. Do not reintroduce a fixed `sleep` or a
+short fixed count in the harness: that is what made the suite flake under load.
+
 ## Command-Line Tools
 
 The `smolmoo` binary is a single executable with several subcommands.
