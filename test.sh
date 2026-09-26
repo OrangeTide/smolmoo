@@ -11,12 +11,14 @@ fail() { echo "FAIL: $1"; FAIL=$((FAIL + 1)); }
 pass() { echo "ok: $1"; PASS=$((PASS + 1)); }
 check() { if "$@"; then pass "$1"; else fail "$1"; fi; }
 
-# waitgrep FILE PATTERN : poll FILE for PATTERN up to ~3s.
-# SSE output is asynchronous, so a fixed sleep races the stream. Retry
-# instead: return as soon as the line appears, give up after the timeout.
-waitgrep() {
+# poll FILE PATTERN TRIES : return 0 as soon as PATTERN appears in FILE, else 1
+# after TRIES polls at 50ms. The one polling primitive; each caller picks its own
+# ceiling. SSE output is asynchronous, so a fixed sleep races the stream; polling
+# returns the instant the line appears and only spends the ceiling on a genuine
+# miss (M49b).
+poll() {
 	_i=0
-	while [ $_i -lt 60 ]; do
+	while [ $_i -lt "$3" ]; do
 		grep -q "$2" "$1" 2>/dev/null && return 0
 		sleep 0.05
 		_i=$((_i + 1))
@@ -24,30 +26,37 @@ waitgrep() {
 	return 1
 }
 
-# check_log FILE PATTERN LABEL : waitgrep then report pass/fail.
+# The three ceilings. A match returns at once, so a higher ceiling never slows a
+# healthy run; it only bounds how long a genuine miss waits before it is called a
+# miss. WAITGREP_TRIES is the short best-effort sync before an action; OUTCOME_TRIES
+# is an asserted result, kept generous so a slow-but-correct outcome under load is
+# not a false failure; READY_TRIES is server boot and session id (M49a).
+WAITGREP_TRIES=60	# ~3s
+OUTCOME_TRIES=200	# ~10s
+READY_TRIES=400		# ~20s
+
+# waitgrep FILE PATTERN : best-effort sync, short ceiling.
+waitgrep() {
+	poll "$1" "$2" $WAITGREP_TRIES
+}
+
+# check_log FILE PATTERN LABEL : wait for an asserted outcome, then pass/fail. Its
+# generous ceiling (M49b) keeps a late-but-correct result from reading as a failure.
 check_log() {
-	if waitgrep "$1" "$2"; then pass "$3"; else fail "$3"; fi
+	if poll "$1" "$2" $OUTCOME_TRIES; then pass "$3"; else fail "$3"; fi
 }
 
 # Readiness waits (M49a). A readiness gate is not an outcome check: if it gives
 # up, the block that follows runs against an unbooted server or an empty session
 # id and every check in it fails, so one slow boot looks like a cluster of
-# failures. These waits use a generous ceiling instead of waitgrep's short one.
-# A poll returns the moment its condition holds, so the higher ceiling only helps
-# a slow boot and costs a healthy run nothing; a real timeout is a genuine
-# failure, reported once and named, not swallowed by `|| true`.
-READY_TRIES=400		# 400 * 0.05s = 20s ceiling
+# failures. A real timeout is a genuine failure, reported once and named, not
+# swallowed by `|| true`.
 
 # wait_ready FILE PATTERN : wait for a boot marker. Silent on success (adds no
 # check), one named FAIL on a true timeout. Use in place of `waitgrep ... || true`
 # for server-boot markers.
 wait_ready() {
-	_i=0
-	while [ $_i -lt $READY_TRIES ]; do
-		grep -q "$2" "$1" 2>/dev/null && return 0
-		sleep 0.05
-		_i=$((_i + 1))
-	done
+	if poll "$1" "$2" $READY_TRIES; then return 0; fi
 	fail "not ready: $1 lacks '$2'"
 	return 1
 }
