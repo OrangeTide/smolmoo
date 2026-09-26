@@ -29,6 +29,45 @@ check_log() {
 	if waitgrep "$1" "$2"; then pass "$3"; else fail "$3"; fi
 }
 
+# Readiness waits (M49a). A readiness gate is not an outcome check: if it gives
+# up, the block that follows runs against an unbooted server or an empty session
+# id and every check in it fails, so one slow boot looks like a cluster of
+# failures. These waits use a generous ceiling instead of waitgrep's short one.
+# A poll returns the moment its condition holds, so the higher ceiling only helps
+# a slow boot and costs a healthy run nothing; a real timeout is a genuine
+# failure, reported once and named, not swallowed by `|| true`.
+READY_TRIES=400		# 400 * 0.05s = 20s ceiling
+
+# wait_ready FILE PATTERN : wait for a boot marker. Silent on success (adds no
+# check), one named FAIL on a true timeout. Use in place of `waitgrep ... || true`
+# for server-boot markers.
+wait_ready() {
+	_i=0
+	while [ $_i -lt $READY_TRIES ]; do
+		grep -q "$2" "$1" 2>/dev/null && return 0
+		sleep 0.05
+		_i=$((_i + 1))
+	done
+	fail "not ready: $1 lacks '$2'"
+	return 1
+}
+
+# wait_sid PLAYER_LOG : wait for the SSE session-id line and echo the id, on the
+# generous ceiling. Runs inside $(...), so it never calls pass/fail (a subshell
+# cannot update the counters); it echoes the id on stdout, or nothing plus a
+# stderr note and a nonzero return on timeout. The caller reports pass/fail.
+wait_sid() {
+	_i=0
+	while [ $_i -lt $READY_TRIES ]; do
+		_s=$(grep -m1 "^data: I" "$1" 2>/dev/null | sed 's/^data: I//')
+		if [ -n "$_s" ]; then printf '%s' "$_s"; return 0; fi
+		sleep 0.05
+		_i=$((_i + 1))
+	done
+	echo "wait_sid: no session id in $1" >&2
+	return 1
+}
+
 # fight_over FOE... : drive the current room fight to a confirmed teardown.
 # Attacks the named foes to Down them, then probes with `hold`, which replies
 # "not in a fight" only once __combat has cleared cb_active. Loops until that
@@ -103,7 +142,7 @@ SMOLMOO_PORT=$PORT SMOLMOO_DEPOT="$DEPOT" SMOLMOO_DEATH_MS=6000 _build/smolmoo s
 SPID=$!
 
 # extract admin invite code from bootstrap output (waits for server boot)
-waitgrep /tmp/smolmoo_err.log 'admin invite:' || true
+wait_ready /tmp/smolmoo_err.log 'admin invite:'
 INVITE=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_err.log | head -1 | cut -d' ' -f3)
 [ -n "$INVITE" ] && pass "bootstrap invite" || fail "bootstrap invite"
 
@@ -116,12 +155,10 @@ curl -sN http://localhost:$PORT/events > /tmp/smolmoo_p1.log &
 P1=$!
 curl -sN http://localhost:$PORT/events > /tmp/smolmoo_p2.log &
 P2=$!
-waitgrep /tmp/smolmoo_p1.log "^data: I" || true
-waitgrep /tmp/smolmoo_p2.log "^data: I" || true
 
 # extract session IDs
-SID1=$(grep -m1 "^data: I" /tmp/smolmoo_p1.log | sed 's/^data: I//')
-SID2=$(grep -m1 "^data: I" /tmp/smolmoo_p2.log | sed 's/^data: I//')
+SID1=$(wait_sid /tmp/smolmoo_p1.log)
+SID2=$(wait_sid /tmp/smolmoo_p2.log)
 [ -n "$SID1" ] && pass "session 1 ($SID1)" || fail "session 1"
 [ -n "$SID2" ] && pass "session 2 ($SID2)" || fail "session 2"
 
@@ -234,8 +271,7 @@ INVITE2=$(grep -o 'New code: [A-Z0-9-]*' /tmp/smolmoo_p1.log | tail -1 | sed 's/
 
 curl -sN http://localhost:$PORT/events > /tmp/smolmoo_p3.log &
 P3=$!
-waitgrep /tmp/smolmoo_p3.log "^data: I" || true
-SID3=$(grep -m1 "^data: I" /tmp/smolmoo_p3.log | sed 's/^data: I//')
+SID3=$(wait_sid /tmp/smolmoo_p3.log)
 [ -n "$SID3" ] && pass "session 3 ($SID3)" || fail "session 3"
 
 curl -sf -X POST -d "$SID3 create TestPlayer3 pass3 $INVITE2" http://localhost:$PORT/cmd >/dev/null
@@ -2746,8 +2782,7 @@ waitgrep /tmp/smolmoo_p1.log 'New code:' || true
 INVITE4=$(grep -o 'New code: [A-Z0-9-]*' /tmp/smolmoo_p1.log | tail -1 | sed 's/New code: //')
 curl -sN http://localhost:$PORT/events > /tmp/smolmoo_p4.log &
 P4=$!
-waitgrep /tmp/smolmoo_p4.log "^data: I" || true
-SID4=$(grep -m1 "^data: I" /tmp/smolmoo_p4.log | sed 's/^data: I//')
+SID4=$(wait_sid /tmp/smolmoo_p4.log)
 curl -sf -X POST -d "$SID4 create TestPlayer4 pass4 $INVITE4" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p4.log 'data: +' "create acct 4"
 check_log /tmp/smolmoo_p4.log 'set up your character' "a fresh login is greeted with onboarding"
@@ -3251,13 +3286,12 @@ cp -a depot/* "$FDEP/" 2>/dev/null || true
 SMOLMOO_PORT=7781 SMOLMOO_DEPOT="$FDEP" _build/smolmoo serve --bootstrap \
 	2>/tmp/smolmoo_f.log &
 FSRV=$!
-waitgrep /tmp/smolmoo_f.log 'world signing on' || true
+wait_ready /tmp/smolmoo_f.log 'world signing on'
 FINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_f.log \
 	| head -1 | cut -d' ' -f3)
 curl -sN http://localhost:7781/events > /tmp/smolmoo_f_p.log &
 FP=$!
-waitgrep /tmp/smolmoo_f_p.log "^data: I" || true
-FSID=$(grep -m1 "^data: I" /tmp/smolmoo_f_p.log | sed 's/^data: I//')
+FSID=$(wait_sid /tmp/smolmoo_f_p.log) || fail "no session id: /tmp/smolmoo_f_p.log"
 curl -sf -X POST -d "$FSID create FWiz fpass $FINV" http://localhost:7781/cmd >/dev/null
 curl -sf -X POST -d "$FSID @create #1" http://localhost:7781/cmd >/dev/null
 curl -sf -X POST -d "$FSID @save" http://localhost:7781/cmd >/dev/null
@@ -3285,15 +3319,14 @@ plant_foreign_head "$HDEP"
 SMOLMOO_PORT=7779 SMOLMOO_DEPOT="$HDEP" _build/smolmoo serve --bootstrap \
 	2>/tmp/smolmoo_h.log &
 HSRV=$!
-waitgrep /tmp/smolmoo_h.log 'world signing on' || true
+wait_ready /tmp/smolmoo_h.log 'world signing on'
 check_log /tmp/smolmoo_h.log 'foreign key' \
 	"the @rewind instance re-bases a planted foreign head"
 HINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_h.log \
 	| head -1 | cut -d' ' -f3)
 curl -sN http://localhost:7779/events > /tmp/smolmoo_h_p.log &
 HP1=$!
-waitgrep /tmp/smolmoo_h_p.log "^data: I" || true
-HSID=$(grep -m1 "^data: I" /tmp/smolmoo_h_p.log | sed 's/^data: I//')
+HSID=$(wait_sid /tmp/smolmoo_h_p.log) || fail "no session id: /tmp/smolmoo_h_p.log"
 curl -sf -X POST -d "$HSID create HWiz hpass $HINV" \
 	http://localhost:7779/cmd >/dev/null
 # Build two versions: create an object and save, twice.
@@ -3326,13 +3359,12 @@ cp -a depot/* "$RBA/" 2>/dev/null || true
 SMOLMOO_PORT=7781 SMOLMOO_DEPOT="$RBA" _build/smolmoo serve --bootstrap \
 	2>/tmp/smolmoo_rba.log &
 RBASRV=$!
-waitgrep /tmp/smolmoo_rba.log 'world signing on' || true
+wait_ready /tmp/smolmoo_rba.log 'world signing on'
 RBAINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_rba.log \
 	| head -1 | cut -d' ' -f3)
 curl -sN http://localhost:7781/events > /tmp/smolmoo_rba_p.log &
 RBAP=$!
-waitgrep /tmp/smolmoo_rba_p.log "^data: I" || true
-RBASID=$(grep -m1 "^data: I" /tmp/smolmoo_rba_p.log | sed 's/^data: I//')
+RBASID=$(wait_sid /tmp/smolmoo_rba_p.log) || fail "no session id: /tmp/smolmoo_rba_p.log"
 curl -sf -X POST -d "$RBASID create AWiz apass $RBAINV" \
 	http://localhost:7781/cmd >/dev/null
 curl -sf -X POST -d "$RBASID @create #1" http://localhost:7781/cmd >/dev/null
@@ -3348,15 +3380,14 @@ cp -a "$RBA"/* "$RBB/" 2>/dev/null || true
 SMOLMOO_PORT=7782 SMOLMOO_DEPOT="$RBB" _build/smolmoo serve --bootstrap \
 	2>/tmp/smolmoo_rbb.log &
 RBBSRV=$!
-waitgrep /tmp/smolmoo_rbb.log 'world signing on' || true
+wait_ready /tmp/smolmoo_rbb.log 'world signing on'
 check_log /tmp/smolmoo_rbb.log 'foreign key' \
 	"an instance re-bases a chain signed by a different key"
 RBBINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_rbb.log \
 	| head -1 | cut -d' ' -f3)
 curl -sN http://localhost:7782/events > /tmp/smolmoo_rbb_p.log &
 RBBP=$!
-waitgrep /tmp/smolmoo_rbb_p.log "^data: I" || true
-RBBSID=$(grep -m1 "^data: I" /tmp/smolmoo_rbb_p.log | sed 's/^data: I//')
+RBBSID=$(wait_sid /tmp/smolmoo_rbb_p.log) || fail "no session id: /tmp/smolmoo_rbb_p.log"
 curl -sf -X POST -d "$RBBSID create BWiz bpass $RBBINV" \
 	http://localhost:7782/cmd >/dev/null
 # build a fresh self-signed chain and prove it rewinds to its own genesis
@@ -3383,13 +3414,12 @@ cp -a depot/* "$DCA/" 2>/dev/null || true
 SMOLMOO_PORT=7781 SMOLMOO_DEPOT="$DCA" _build/smolmoo serve --bootstrap \
 	2>/tmp/smolmoo_dca.log &
 DCASRV=$!
-waitgrep /tmp/smolmoo_dca.log 'world signing on' || true
+wait_ready /tmp/smolmoo_dca.log 'world signing on'
 DCAINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_dca.log \
 	| head -1 | cut -d' ' -f3)
 curl -sN http://localhost:7781/events > /tmp/smolmoo_dca_p.log &
 DCAP=$!
-waitgrep /tmp/smolmoo_dca_p.log "^data: I" || true
-DCASID=$(grep -m1 "^data: I" /tmp/smolmoo_dca_p.log | sed 's/^data: I//')
+DCASID=$(wait_sid /tmp/smolmoo_dca_p.log) || fail "no session id: /tmp/smolmoo_dca_p.log"
 curl -sf -X POST -d "$DCASID create CWiz cpass $DCAINV" \
 	http://localhost:7781/cmd >/dev/null
 curl -sf -X POST -d "$DCASID @create #1" http://localhost:7781/cmd >/dev/null
@@ -3406,15 +3436,14 @@ printf '%s\n' '0000000000000000000000000000000000000000000000000000000000000000'
 SMOLMOO_PORT=7782 SMOLMOO_DEPOT="$DCB" _build/smolmoo serve --bootstrap \
 	2>/tmp/smolmoo_dcb.log &
 DCBSRV=$!
-waitgrep /tmp/smolmoo_dcb.log 'world signing on' || true
+wait_ready /tmp/smolmoo_dcb.log 'world signing on'
 check_log /tmp/smolmoo_dcb.log 'head record is missing' \
 	"a damaged history head re-bases to a fresh chain"
 DCBINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_dcb.log \
 	| head -1 | cut -d' ' -f3)
 curl -sN http://localhost:7782/events > /tmp/smolmoo_dcb_p.log &
 DCBP=$!
-waitgrep /tmp/smolmoo_dcb_p.log "^data: I" || true
-DCBSID=$(grep -m1 "^data: I" /tmp/smolmoo_dcb_p.log | sed 's/^data: I//')
+DCBSID=$(wait_sid /tmp/smolmoo_dcb_p.log) || fail "no session id: /tmp/smolmoo_dcb_p.log"
 curl -sf -X POST -d "$DCBSID create DWiz dpass $DCBINV" \
 	http://localhost:7782/cmd >/dev/null
 curl -sf -X POST -d "$DCBSID @create #1" http://localhost:7782/cmd >/dev/null
@@ -3443,15 +3472,14 @@ plant_foreign_head "$ADEP"
 SMOLMOO_PORT=7783 SMOLMOO_DEPOT="$ADEP" _build/smolmoo serve --bootstrap \
 	2>/tmp/smolmoo_a.log &
 ASRV=$!
-waitgrep /tmp/smolmoo_a.log 'world signing on' || true
+wait_ready /tmp/smolmoo_a.log 'world signing on'
 check_log /tmp/smolmoo_a.log 'foreign key' \
 	"the agent-persistence instance re-bases a planted foreign head"
 AINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_a.log \
 	| head -1 | cut -d' ' -f3)
 curl -sN http://localhost:7783/events > /tmp/smolmoo_a_p.log &
 AP1=$!
-waitgrep /tmp/smolmoo_a_p.log "^data: I" || true
-ASID=$(grep -m1 "^data: I" /tmp/smolmoo_a_p.log | sed 's/^data: I//')
+ASID=$(wait_sid /tmp/smolmoo_a_p.log) || fail "no session id: /tmp/smolmoo_a_p.log"
 curl -sf -X POST -d "$ASID create AWiz apass $AINV" \
 	http://localhost:7783/cmd >/dev/null
 # Version 1 carries an awake agent (a beacon with the __ticker brain).
@@ -3479,15 +3507,14 @@ plant_foreign_head "$GDEP"
 SMOLMOO_PORT=7780 SMOLMOO_DEPOT="$GDEP" _build/smolmoo serve --bootstrap \
 	2>/tmp/smolmoo_g.log &
 GSRV=$!
-waitgrep /tmp/smolmoo_g.log 'world signing on' || true
+wait_ready /tmp/smolmoo_g.log 'world signing on'
 check_log /tmp/smolmoo_g.log 'foreign key' \
 	"the @gc instance re-bases a planted foreign head"
 GINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_g.log \
 	| head -1 | cut -d' ' -f3)
 curl -sN http://localhost:7780/events > /tmp/smolmoo_g_p.log &
 GP1=$!
-waitgrep /tmp/smolmoo_g_p.log "^data: I" || true
-GSID=$(grep -m1 "^data: I" /tmp/smolmoo_g_p.log | sed 's/^data: I//')
+GSID=$(wait_sid /tmp/smolmoo_g_p.log) || fail "no session id: /tmp/smolmoo_g_p.log"
 curl -sf -X POST -d "$GSID create GWiz gpass $GINV" \
 	http://localhost:7780/cmd >/dev/null || true
 for _n in 1 2 3 4; do
