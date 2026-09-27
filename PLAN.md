@@ -1049,6 +1049,17 @@ drove the fight differently cascaded into the whole chain. That scene and the br
 M25c scene-start and mid-scene teardown races are deferred to a separate driver-rework
 milestone, since a point fix there perturbs its neighbours.
 
+M50 attempted that driver-rework and was reverted. It replaced the ad-hoc M25c/M25e loops
+with turn-aware primitives that read engine state through `GET /prop` (an idle gate before
+each scene, an act-on-turn driver, a social grind driver). Head-to-head stress testing
+showed the primitives made the section flakier than the loops they replaced: the passive
+idle gate could not recover a scene that was slow to tear down (the original openers
+actively drained a lingering foe), the slower per-turn cadence let the multi-foe fight down
+the player, and the busier poll loops widened races even in untouched scenes. The work was
+reverted to the pre-M50 drivers and the suite returned to 454 clean. The number 50 stays
+retired to this attempt (see M50.md for the full finding). The teardown races remain open
+for a later attempt that makes teardown itself guaranteed and keeps openers self-healing.
+
 ---
 
 # Future Milestones
