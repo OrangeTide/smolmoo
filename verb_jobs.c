@@ -247,12 +247,48 @@ main(void)
             cs_s(&o, "  none\n");
         active = cs_geti(ch, "job_giver", 0);
         if (active > 0) {
+            char tgt[32], dst[16];
+
             cs_getstr(active, "name", nm, sizeof(nm));
             cs_s(&o, "Your job: ");
             cs_s(&o, nm);
             cs_s(&o, cs_geti(ch, "job_done", 0)
                      ? " (done; report back)" : " (in progress)");
             cs_s(&o, "\n");
+            /* M51b: the objective, a bounty target creature or a courier
+             * destination room (job_dest holds the room id as a string). */
+            cs_getstr(active, "job_target", tgt, sizeof(tgt));
+            cs_getstr(active, "job_dest", dst, sizeof(dst));
+            if (tgt[0]) {
+                cs_s(&o, "  Objective: defeat "); cs_s(&o, tgt); cs_s(&o, "\n");
+            } else if (dst[0]) {
+                char rn[32];
+
+                cs_getstr(cs_atoi(dst), "name", rn, sizeof(rn));
+                cs_s(&o, "  Objective: reach ");
+                cs_s(&o, rn[0] ? rn : dst);
+                cs_s(&o, "\n");
+            }
+            /* the reward: creds, CP, an optional standing step, and any
+             * campaign-flag clearance this contract grants on turnin. */
+            cs_s(&o, "  Reward: ");
+            cs_i(&o, cs_geti(active, "job_creds", 0));
+            cs_s(&o, " creds, ");
+            cs_i(&o, cs_geti(active, "job_cp", 0));
+            cs_s(&o, " CP");
+            {
+                char st[64], fac[32], grant[32];
+                int step;
+
+                cs_getstr(active, "job_standing", st, sizeof(st));
+                if (job_fac_step(st, fac, sizeof(fac), &step)) {
+                    cs_s(&o, ", standing with "); cs_s(&o, fac);
+                }
+                cs_getstr(active, "job_grant", grant, sizeof(grant));
+                if (grant[0]) { cs_s(&o, ", clearance "); cs_s(&o, grant); }
+            }
+            cs_s(&o, "\n");
+            cs_s(&o, "  Report to "); cs_s(&o, nm); cs_s(&o, ".\n");
         }
         cs_flush(&o);
         _exit(0);

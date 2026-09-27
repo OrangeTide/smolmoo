@@ -1192,6 +1192,11 @@ curl -sf -X POST -d "$SID1 @set #$RD.wounds=0" http://localhost:$PORT/cmd >/dev/
 curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.bp=21" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 accept fixer" http://localhost:$PORT/cmd >/dev/null
+# M51b: the active-contract briefing shows the objective and the reward, not just
+# the name and status.
+curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Objective: defeat raider' "the active contract shows its objective"
+check_log /tmp/smolmoo_p1.log 'Reward: 50 creds, 2 CP' "the active contract shows its reward"
 # reporting before the target is down is refused
 curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'not done yet' "turnin refuses an unfinished job"
@@ -1230,6 +1235,11 @@ curl -sf -X POST -d "$SID1 @set #$BRK.job_creds=30" http://localhost:$PORT/cmd >
 curl -sf -X POST -d "$SID1 @set #$BRK.job_standing=couriers:2" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$BRK.location=#$CA" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 accept broker" http://localhost:$PORT/cmd >/dev/null
+# M51b: a courier briefing names the destination objective and the full reward,
+# including the standing step.
+curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Objective: reach Destination' "a courier briefing names the destination"
+check_log /tmp/smolmoo_p1.log 'Reward: 30 creds, 1 CP, standing with couriers' "the briefing shows the full reward"
 # travel to the destination: arriving there completes the courier goal
 curl -sf -X POST -d "$SID1 go north" http://localhost:$PORT/cmd >/dev/null
 # report back at the origin: pays creds, CP, and a standing step
