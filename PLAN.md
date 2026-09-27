@@ -1049,16 +1049,46 @@ drove the fight differently cascaded into the whole chain. That scene and the br
 M25c scene-start and mid-scene teardown races are deferred to a separate driver-rework
 milestone, since a point fix there perturbs its neighbours.
 
-M50 attempted that driver-rework and was reverted. It replaced the ad-hoc M25c/M25e loops
-with turn-aware primitives that read engine state through `GET /prop` (an idle gate before
-each scene, an act-on-turn driver, a social grind driver). Head-to-head stress testing
-showed the primitives made the section flakier than the loops they replaced: the passive
-idle gate could not recover a scene that was slow to tear down (the original openers
-actively drained a lingering foe), the slower per-turn cadence let the multi-foe fight down
-the player, and the busier poll loops widened races even in untouched scenes. The work was
-reverted to the pre-M50 drivers and the suite returned to 454 clean. The number 50 stays
-retired to this attempt (see M50.md for the full finding). The teardown races remain open
-for a later attempt that makes teardown itself guaranteed and keeps openers self-healing.
+## Milestone 50: M25c/M25e test-driver rework (reverted)
+
+M50 attempted the driver-rework deferred from M49d and was reverted. It replaced the
+ad-hoc M25c/M25e loops with turn-aware primitives that read engine state through
+`GET /prop` (an idle gate before each scene, an act-on-turn driver, a social grind
+driver). Head-to-head stress testing showed the primitives made the section flakier than
+the loops they replaced: the passive idle gate could not recover a scene that was slow to
+tear down (the original openers actively drained a lingering foe), the slower per-turn
+cadence let the multi-foe fight down the player, and the busier poll loops widened races
+even in untouched scenes. The work was reverted to the pre-M50 drivers (9534b29) and the
+suite returned to 454 clean. The number 50 stays retired to this attempt (see M50.md for
+the full finding). The teardown races remain open for a later attempt that makes teardown
+itself guaranteed and keeps openers self-healing.
+
+## Milestone 51: Arc and quest visibility (7ae4641, 627987e, 7ee570b)
+
+M37 built jobs and M47 turned them into a chain gated by earned campaign flags, but
+nothing showed a player what they were working on or what they had unlocked: the flags
+were invisible and the active contract appeared as a bare name. M51 surfaces that state,
+reading what already lives on the sheet and the giver objects, so it is content-light in
+code and adds no new mechanics. The full plan is `M51.md`; this is the summary. It shipped
+in three slices, all driven on non-admin TestPlayer3 since these are own-sheet reads. The
+suite grew from 454 to 465 checks.
+
+Slice a renders the sheet's earned campaign flags as a Clearances line in `verb_sheet.c`,
+after the Standing block and shaped like the Maneuvers line, and prints nothing when no
+flags are held.
+
+Slice b grows the `jobs` active-contract line into a briefing: the objective (a bounty
+target from `job_target`, or a courier destination resolved from the `job_dest` room id),
+the reward (creds, CP, an optional standing step, and any `job_grant` clearance), and
+where to report. It reads only the giver the sheet already points to.
+
+Slice c adds a `contracts` verb (routed through `verb_jobs.c`, object #478) that
+consolidates the active briefing, the earned clearances, and a one-line standing summary
+into one view callable from anywhere, with a clear empty state when no contract is held.
+The shared rendering was factored to avoid duplication: `cs_clearances_line` and
+`cs_standing_line` moved into the header (used by both the sheet and contracts), and the
+briefing became `show_briefing` in `verb_jobs.c`, reused by `jobs`. The sheet's output is
+unchanged.
 
 ---
 
