@@ -595,6 +595,13 @@ check_log /tmp/smolmoo_p1.log 'Grit: 6/6' "status bar shows the Grit gauge"
 # then a target-lowering attack) is exercised in the enforcer fight below.
 curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'Maneuvers: smartlink' "sheet lists learned maneuvers"
+# A sheet with no earned campaign flags shows no Clearances line (M51a). drain
+# settles the sheet's SSE stream first; TestPlayer1 has earned no flags yet, so
+# none appears anywhere in the log at this point.
+drain
+grep -q 'Clearances:' /tmp/smolmoo_p1.log \
+	&& fail "a sheet with no flags shows no Clearances line" \
+	|| pass "a sheet with no flags shows no Clearances line"
 curl -sf -X POST -d "$SID1 use smartlink" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'not in a fight' "a maneuver needs a fight"
 
@@ -1368,6 +1375,11 @@ curl -sf -X POST -d "$SID3 turnin" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'foreman pays you 400 creds and 5 CP' "the arc's final reward lands"
 curl -sf -X POST -d "$SID3 go concourse" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID3 go lobby" http://localhost:$PORT/cmd >/dev/null
+# M51a: the flags earned across the arc render as a Clearances line on the
+# non-admin's own sheet, beside standing. TestPlayer3 now carries vetted (among
+# others), so the line lists it.
+curl -sf -X POST -d "$SID3 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'Clearances:.*vetted' "earned flags show as Clearances on the sheet"
 
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default

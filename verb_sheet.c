@@ -126,6 +126,15 @@ main(void)
         }
     }
 
+    {                           /* earned campaign flags as clearances (M51a) */
+        char fl[128];
+        int fn = sys_getprop(ch, "flags", fl, sizeof(fl) - 1);
+        if (fn > 0) {
+            fl[fn] = '\0';
+            cs_s(&o, "Clearances: "); cs_s(&o, fl); cs_s(&o, "\n");
+        }
+    }
+
     cs_flush(&o);
     _exit(0);
 }
