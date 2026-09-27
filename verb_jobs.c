@@ -91,6 +91,56 @@ cd_name(char *dst, int giver)
     cs_itoa(dst + 2, giver);
 }
 
+/* M51b: print the active contract's briefing under a "Your job:" line -- its
+ * objective (a bounty target, or a courier destination resolved from the
+ * job_dest room id), its reward (creds, CP, an optional standing step, and any
+ * job_grant clearance), and where to report. Reads only the giver the sheet
+ * points to. Returns 1 when a contract is active and rendered, 0 when none. */
+static int
+show_briefing(struct cs_out *o, int ch)
+{
+    int active = cs_geti(ch, "job_giver", 0);
+    char nm[32], tgt[32], dst[16];
+
+    if (active <= 0) return 0;
+    cs_getstr(active, "name", nm, sizeof(nm));
+    cs_s(o, "Your job: ");
+    cs_s(o, nm);
+    cs_s(o, cs_geti(ch, "job_done", 0) ? " (done; report back)" : " (in progress)");
+    cs_s(o, "\n");
+    cs_getstr(active, "job_target", tgt, sizeof(tgt));
+    cs_getstr(active, "job_dest", dst, sizeof(dst));
+    if (tgt[0]) {
+        cs_s(o, "  Objective: defeat "); cs_s(o, tgt); cs_s(o, "\n");
+    } else if (dst[0]) {
+        char rn[32];
+
+        cs_getstr(cs_atoi(dst), "name", rn, sizeof(rn));
+        cs_s(o, "  Objective: reach ");
+        cs_s(o, rn[0] ? rn : dst);
+        cs_s(o, "\n");
+    }
+    cs_s(o, "  Reward: ");
+    cs_i(o, cs_geti(active, "job_creds", 0));
+    cs_s(o, " creds, ");
+    cs_i(o, cs_geti(active, "job_cp", 0));
+    cs_s(o, " CP");
+    {
+        char st[64], fac[32], grant[32];
+        int step;
+
+        cs_getstr(active, "job_standing", st, sizeof(st));
+        if (job_fac_step(st, fac, sizeof(fac), &step)) {
+            cs_s(o, ", standing with "); cs_s(o, fac);
+        }
+        cs_getstr(active, "job_grant", grant, sizeof(grant));
+        if (grant[0]) { cs_s(o, ", clearance "); cs_s(o, grant); }
+    }
+    cs_s(o, "\n");
+    cs_s(o, "  Report to "); cs_s(o, nm); cs_s(o, ".\n");
+    return 1;
+}
+
 int
 main(void)
 {
@@ -235,9 +285,22 @@ main(void)
         _exit(0);
     }
 
+    /* M51c: contracts -- a consolidated "what am I working on" view a player can
+     * call from anywhere: the active briefing, the earned clearances, and a
+     * one-line standing summary, reading only the caller's own sheet. */
+    if (cs_streq(verb, "contracts")) {
+        if (!show_briefing(&o, ch))
+            cs_s(&o, "No active contract.\n");
+        cs_clearances_line(ch, &o);
+        cs_decay(ch);           /* fade idle standing first, as the sheet does */
+        cs_standing_line(ch, &o);
+        cs_flush(&o);
+        _exit(0);
+    }
+
     /* jobs : what is offered here, and your active contract */
     {
-        int e = 0, any = 0, active;
+        int e = 0, any = 0;
 
         cs_s(&o, "Jobs offered here:\n");
         while ((e = sys_next(room, e)) != 0) {
@@ -245,51 +308,7 @@ main(void)
         }
         if (!any)
             cs_s(&o, "  none\n");
-        active = cs_geti(ch, "job_giver", 0);
-        if (active > 0) {
-            char tgt[32], dst[16];
-
-            cs_getstr(active, "name", nm, sizeof(nm));
-            cs_s(&o, "Your job: ");
-            cs_s(&o, nm);
-            cs_s(&o, cs_geti(ch, "job_done", 0)
-                     ? " (done; report back)" : " (in progress)");
-            cs_s(&o, "\n");
-            /* M51b: the objective, a bounty target creature or a courier
-             * destination room (job_dest holds the room id as a string). */
-            cs_getstr(active, "job_target", tgt, sizeof(tgt));
-            cs_getstr(active, "job_dest", dst, sizeof(dst));
-            if (tgt[0]) {
-                cs_s(&o, "  Objective: defeat "); cs_s(&o, tgt); cs_s(&o, "\n");
-            } else if (dst[0]) {
-                char rn[32];
-
-                cs_getstr(cs_atoi(dst), "name", rn, sizeof(rn));
-                cs_s(&o, "  Objective: reach ");
-                cs_s(&o, rn[0] ? rn : dst);
-                cs_s(&o, "\n");
-            }
-            /* the reward: creds, CP, an optional standing step, and any
-             * campaign-flag clearance this contract grants on turnin. */
-            cs_s(&o, "  Reward: ");
-            cs_i(&o, cs_geti(active, "job_creds", 0));
-            cs_s(&o, " creds, ");
-            cs_i(&o, cs_geti(active, "job_cp", 0));
-            cs_s(&o, " CP");
-            {
-                char st[64], fac[32], grant[32];
-                int step;
-
-                cs_getstr(active, "job_standing", st, sizeof(st));
-                if (job_fac_step(st, fac, sizeof(fac), &step)) {
-                    cs_s(&o, ", standing with "); cs_s(&o, fac);
-                }
-                cs_getstr(active, "job_grant", grant, sizeof(grant));
-                if (grant[0]) { cs_s(&o, ", clearance "); cs_s(&o, grant); }
-            }
-            cs_s(&o, "\n");
-            cs_s(&o, "  Report to "); cs_s(&o, nm); cs_s(&o, ".\n");
-        }
+        show_briefing(&o, ch);
         cs_flush(&o);
         _exit(0);
     }

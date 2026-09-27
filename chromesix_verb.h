@@ -527,6 +527,55 @@ cs_decay(int sheet)
     cs_seti(sheet, "decay_tick", tick + steps * period);
 }
 
+/* M51a: append the sheet's earned campaign flags as a "Clearances:" line, or
+ * nothing when none are held. Shared by the sheet and the contracts view. */
+static void
+cs_clearances_line(int ch, struct cs_out *o)
+{
+    char fl[128];
+    int fn = sys_getprop(ch, "flags", fl, sizeof(fl) - 1);
+
+    if (fn > 0) {
+        fl[fn] = '\0';
+        cs_s(o, "Clearances: "); cs_s(o, fl); cs_s(o, "\n");
+    }
+}
+
+/* Append a one-line "Standing:" summary, each faction as its id plus a band
+ * word, or nothing when the sheet carries no standing. The caller runs cs_decay
+ * first if it wants idle standing faded. Shared by the sheet and contracts. */
+static void
+cs_standing_line(int ch, struct cs_out *o)
+{
+    char st[128];
+    int sn = sys_getprop(ch, "standing", st, sizeof(st) - 1);
+    int i = 0;
+
+    if (sn <= 0) return;
+    st[sn] = '\0';
+    cs_s(o, "Standing:");
+    while (st[i]) {
+        char fac[32];
+        int fj = 0, sign = 1, v = 0;
+
+        while (st[i] && st[i] != ':' && st[i] != ',' && fj < 31)
+            fac[fj++] = st[i++];
+        fac[fj] = '\0';
+        if (st[i] == ':') {
+            i++;
+            if (st[i] == '-') { sign = -1; i++; }
+            while (st[i] >= '0' && st[i] <= '9') { v = v * 10 + (st[i] - '0'); i++; }
+        }
+        if (fj > 0) {
+            cs_s(o, "  "); cs_s(o, fac); cs_s(o, " ");
+            cs_s(o, cs_standing_word(sign * v));
+        }
+        while (st[i] && st[i] != ',') i++;
+        if (st[i] == ',') i++;
+    }
+    cs_s(o, "\n");
+}
+
 /* The sheet holding a combatant's stats: a player object points at its
  * persistent sheet through `charid`; an NPC object is its own sheet. */
 static int

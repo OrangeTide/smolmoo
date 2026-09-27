@@ -1391,6 +1391,34 @@ curl -sf -X POST -d "$SID3 go lobby" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID3 sheet" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'Clearances:.*vetted' "earned flags show as Clearances on the sheet"
 
+# --- M51c: the consolidated contracts view (own-sheet, non-admin) ---
+# One command shows the active briefing, the earned clearances, and a standing
+# summary. TestPlayer3 finished the arc carrying clearances and holding no active
+# contract; give it a known standing so the summary line is deterministic.
+curl -sf -X POST -d "$SID1 @set #$P3SH.standing=couriers:2" http://localhost:$PORT/cmd >/dev/null
+# Empty case: no active contract, but clearances and standing still show.
+curl -sf -X POST -d "$SID3 contracts" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'No active contract' "contracts shows a clear empty state"
+check_log /tmp/smolmoo_p3.log 'Clearances:.*vetted' "contracts lists earned clearances"
+check_log /tmp/smolmoo_p3.log 'Standing:.*couriers Friendly' "contracts shows the standing summary"
+# Active case: accept a fresh contract in the lobby, then contracts briefs it too.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+CJ=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$CJ.name=runner" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CJ.job=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CJ.job_desc=A quick errand." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CJ.job_target=courier" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CJ.job_cp=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CJ.job_creds=15" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CJ.location=#101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 accept runner" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 contracts" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'Your job: runner' "contracts briefs the active contract"
+check_log /tmp/smolmoo_p3.log 'Objective: defeat courier' "contracts shows the active objective"
+# clean up: drop the job and retire the throwaway giver so it leaves no offer
+curl -sf -X POST -d "$SID3 abandon" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$CJ.job=0" http://localhost:$PORT/cmd >/dev/null
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.
