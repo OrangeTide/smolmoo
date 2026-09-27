@@ -181,16 +181,24 @@ scene_idle() {
 		2>/dev/null)" != "1" ]
 }
 
+# wait_idle ROOM : poll until ROOM reports no active scene, so a fresh scene is
+# never opened into one still tearing down (the cascade M50 removes). Returns 0
+# once idle, 1 on timeout; safe under set -e via the caller's || true.
+wait_idle() {
+	_i=0
+	while [ $_i -lt $OUTCOME_TRIES ]; do
+		scene_idle "$1" && return 0
+		sleep 0.1
+		_i=$((_i + 1))
+	done
+	return 1
+}
+
 # open_fight FOE ROOM : open a fresh fight on FOE, first waiting for ROOM to go
 # idle so FOE is not drawn into a scene still tearing down (the cascade M50
 # removes). Then attack until combat begins ("on the FOE"). Returns 0 on open.
 open_fight() {
-	_i=0
-	while [ $_i -lt $OUTCOME_TRIES ]; do
-		scene_idle "$2" && break
-		sleep 0.1
-		_i=$((_i + 1))
-	done
+	wait_idle "$2" || true
 	_i=0
 	while [ $_i -lt 40 ]; do
 		curl -sf -X POST -d "$SID1 attack $1" http://localhost:$PORT/cmd >/dev/null
@@ -201,33 +209,44 @@ open_fight() {
 	return 1
 }
 
-# on_turn CMD OUTCOME : perform a turn-bound action and wait for OUTCOME. An
-# action is refused off the player's turn, so send CMD, and if OUTCOME does not
-# follow, wait for a fresh "your turn" prompt (the turn then blocks about 30s, so
-# the resend lands on-turn) and send again. OUTCOME is a delta so a stale line
-# never trips it. CMD may be the action itself or a `hold` that yields to a foe's
-# turn. Returns 0 on OUTCOME, 1 if the budget runs out.
+# on_turn CMD OUTCOME : perform a turn-bound action and wait for a fresh OUTCOME.
+# An action is refused off the player's turn, so send CMD, then poll the outcome
+# ceiling: if OUTCOME lands, return 0; if the server replies "not your turn" the
+# send was off-turn, so wait for the next "your turn" prompt (the turn then blocks
+# about 30s, so the resend lands on-turn) and send again, up to a few times. If
+# the ceiling elapses with neither OUTCOME nor a refusal, the command was accepted
+# on-turn but produced nothing matching, so stop rather than resend: OUTCOME must
+# be a line the action itself reliably yields (a move's own confirmation, a new
+# band on the very next prompt), never a later or one-shot event that may never
+# recur, which would otherwise burn the whole budget. Assert those by presence
+# with check_log instead. OUTCOME and the refusal are deltas so a stale line never
+# trips them. Returns 0 on OUTCOME, 1 otherwise; safe under set -e via || true.
 on_turn() {
 	_ob=$(grep -c "$2" /tmp/smolmoo_p1.log 2>/dev/null || true)
-	_k=0
-	while [ $_k -lt 40 ]; do
+	_t=0
+	while [ $_t -lt 8 ]; do
+		_rb=$(grep -c 'not your turn' /tmp/smolmoo_p1.log 2>/dev/null || true)
 		curl -sf -X POST -d "$SID1 $1" http://localhost:$PORT/cmd >/dev/null
 		_j=0
-		while [ $_j -lt 20 ]; do
+		_off=0
+		while [ $_j -lt $OUTCOME_TRIES ]; do
 			_a=$(grep -c "$2" /tmp/smolmoo_p1.log 2>/dev/null || true)
 			[ "${_a:-0}" -gt "${_ob:-0}" ] && return 0
+			_r=$(grep -c 'not your turn' /tmp/smolmoo_p1.log 2>/dev/null || true)
+			if [ "${_r:-0}" -gt "${_rb:-0}" ]; then _off=1; break; fi
 			sleep 0.05
 			_j=$((_j + 1))
 		done
+		[ $_off -eq 0 ] && return 1
 		_tb=$(grep -c 'your turn' /tmp/smolmoo_p1.log 2>/dev/null || true)
 		_j=0
-		while [ $_j -lt $WAITGREP_TRIES ]; do
+		while [ $_j -lt $READY_TRIES ]; do
 			_tn=$(grep -c 'your turn' /tmp/smolmoo_p1.log 2>/dev/null || true)
 			[ "${_tn:-0}" -gt "${_tb:-0}" ] && break
 			sleep 0.05
 			_j=$((_j + 1))
 		done
-		_k=$((_k + 1))
+		_t=$((_t + 1))
 	done
 	return 1
 }
@@ -716,117 +735,70 @@ curl -sf -X POST -d "$SID1 cover enforcer" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'not in a fight' "cover needs a fight"
 # Positional cover (2) lifts the enforcer's Passive Defense 6 to 8, so its
 # difficulty word reads "fair" rather than the raider's "trivial".
-curl -sf -X POST -d "$SID1 attack enforcer" http://localhost:$PORT/cmd >/dev/null
+open_fight enforcer 101 || true
 check_log /tmp/smolmoo_p1.log 'on the enforcer' "enforcer fight starts"
 check_log /tmp/smolmoo_p1.log 'enforcer at engaged range (unhurt, fair to hit)' "cover raises foe difficulty"
 # Take cover on our turn; the next prompt reflects the positional tier.
-curl -sf -X POST -d "$SID1 takecover" http://localhost:$PORT/cmd >/dev/null
+on_turn "takecover" 'ducks into cover' || true
 check_log /tmp/smolmoo_p1.log 'ducks into cover' "takecover action"
 check_log /tmp/smolmoo_p1.log 'in light cover' "positional cover shown"
 # Smartlink (M25d-4): spend the action to aim, then the next attack ignores the
-# enforcer's cover and drops its Passive Defense by 2, tagged [aimed]. Retry
-# off-turn attempts are refused harmlessly until it is our turn.
-_i=0
-while [ $_i -lt 24 ]; do
-	curl -sf -X POST -d "$SID1 use smartlink" http://localhost:$PORT/cmd >/dev/null
-	grep -q 'takes aim' /tmp/smolmoo_p1.log 2>/dev/null && break
-	sleep 0.3
-	_i=$((_i + 1))
-done
+# enforcer's cover and drops its Passive Defense by 2, tagged [aimed].
+on_turn "use smartlink" 'takes aim' || true
 check_log /tmp/smolmoo_p1.log 'takes aim' "smartlink spends the action to aim"
-_i=0
-while [ $_i -lt 24 ]; do
-	curl -sf -X POST -d "$SID1 attack enforcer" http://localhost:$PORT/cmd >/dev/null
-	grep -q '\[aimed\]' /tmp/smolmoo_p1.log 2>/dev/null && break
-	sleep 0.3
-	_i=$((_i + 1))
-done
+on_turn "attack enforcer" '\[aimed\]' || true
 check_log /tmp/smolmoo_p1.log '\[aimed\]' "the aimed attack fires with the smartlink bonus"
 # A tough runs the full BP path: several hits to Down (never a mook's one-shot
-# drop). "Downed!" is unique to the BP path, so it also proves the grade split.
-_i=0
-while [ $_i -lt 20 ]; do
-	curl -sf -X POST -d "$SID1 attack enforcer" http://localhost:$PORT/cmd >/dev/null
-	grep -q 'Downed!' /tmp/smolmoo_p1.log 2>/dev/null && break
-	sleep 0.4
-	_i=$((_i + 1))
-done
-check_log /tmp/smolmoo_p1.log 'Downed!' "tough downed via BP path"
-# Confirm the enforcer fight has fully torn down (cb_active cleared) before the
-# next fight opens; downing a foe alone does not, so an unconfirmed handoff let
-# the next attack draw its foe into the dying scene instead of starting fresh.
+# drop). fight_over drives the repeated attacks and confirms teardown; "Downed!"
+# is unique to the BP path, so the check also proves the grade split.
 fight_over enforcer || true
+check_log /tmp/smolmoo_p1.log 'Downed!' "tough downed via BP path"
 
 # --- M25c-3: range bands and movement (the gunner hangs back at range) ---
-# Retry until the previous fight has fully torn down (cb_active clears a poll
-# after the Downed line) and this fight actually starts.
-_i=0
-while [ $_i -lt 20 ]; do
-	curl -sf -X POST -d "$SID1 attack gunner" http://localhost:$PORT/cmd >/dev/null
-	grep -q 'on the gunner' /tmp/smolmoo_p1.log 2>/dev/null && break
-	sleep 0.3
-	_i=$((_i + 1))
-done
+# open_fight waits for the previous fight to go idle, then opens fresh.
+open_fight gunner 101 || true
 check_log /tmp/smolmoo_p1.log 'on the gunner' "gunner fight starts"
 # Fights open Engaged; leave melee, then open to Long over two turns.
 waitgrep /tmp/smolmoo_p1.log 'gunner at ' || true
-curl -sf -X POST -d "$SID1 disengage" http://localhost:$PORT/cmd >/dev/null
+on_turn "disengage" 'gunner at short range' || true
 check_log /tmp/smolmoo_p1.log 'gunner at short range' "disengage opens to short"
-curl -sf -X POST -d "$SID1 retreat" http://localhost:$PORT/cmd >/dev/null
+on_turn "retreat" 'gunner at long range' || true
 check_log /tmp/smolmoo_p1.log 'gunner at long range' "retreat opens to long"
 # A pistol (short reach) firing at Long is a long shot; it still Downs the mook.
-curl -sf -X POST -d "$SID1 attack gunner" http://localhost:$PORT/cmd >/dev/null
+on_turn "attack gunner" 'at long range' || true
 check_log /tmp/smolmoo_p1.log 'at long range' "long shot penalty applied"
 check_log /tmp/smolmoo_p1.log 'It drops' "gunner downed at range"
-# Confirm teardown before the brute fight opens (see the enforcer note above).
+# Confirm teardown before the brute fight opens.
 fight_over gunner || true
 
 # --- M25c-4: reactions (free Strike and guard), vs a tough brute ---
-_i=0
-while [ $_i -lt 20 ]; do
-	curl -sf -X POST -d "$SID1 attack brute" http://localhost:$PORT/cmd >/dev/null
-	grep -q 'on the brute' /tmp/smolmoo_p1.log 2>/dev/null && break
-	sleep 0.3
-	_i=$((_i + 1))
-done
+open_fight brute 101 || true
 check_log /tmp/smolmoo_p1.log 'on the brute' "brute fight starts"
 # Leaving melee with a normal Move draws the foe's free Strike.
 waitgrep /tmp/smolmoo_p1.log 'brute at ' || true
-curl -sf -X POST -d "$SID1 retreat" http://localhost:$PORT/cmd >/dev/null
+on_turn "retreat" 'Free strike' || true
 check_log /tmp/smolmoo_p1.log 'Free strike' "retreat draws a free strike"
 # Ready guard: the next attack on us is braced (+2 PD, tagged "guarded").
-_i=0
-while [ $_i -lt 15 ]; do
-	curl -sf -X POST -d "$SID1 guard" http://localhost:$PORT/cmd >/dev/null
-	curl -sf -X POST -d "$SID1 attack brute" http://localhost:$PORT/cmd >/dev/null
-	grep -q 'guarded' /tmp/smolmoo_p1.log 2>/dev/null && break
-	sleep 0.4
-	_i=$((_i + 1))
-done
+on_turn "guard" 'set yourself to guard' || true
+on_turn "attack brute" 'guarded' || true
 check_log /tmp/smolmoo_p1.log 'set yourself to guard' "guard readied free"
 check_log /tmp/smolmoo_p1.log 'guarded' "guard braces the incoming hit"
 # Finish the brute so the fight tears down before later tests.
 fight_over brute || true
 
 # --- M25c-5: multi-foe fights and frontage (three gangers) ---
-_i=0
-while [ $_i -lt 20 ]; do
-	curl -sf -X POST -d "$SID1 attack sentry" http://localhost:$PORT/cmd >/dev/null
-	grep -q 'on the sentry' /tmp/smolmoo_p1.log 2>/dev/null && break
-	sleep 0.3
-	_i=$((_i + 1))
-done
+open_fight sentry 101 || true
 check_log /tmp/smolmoo_p1.log 'on the sentry' "multi-foe fight starts"
-# Draw a second and third ganger into the fight, one per turn.
-waitgrep /tmp/smolmoo_p1.log 'sentry at engaged' || true
-curl -sf -X POST -d "$SID1 attack picket" http://localhost:$PORT/cmd >/dev/null
+# Draw the second ganger on our turn; it joins the melee at Engaged.
+on_turn "attack picket" 'picket at engaged range' || true
 check_log /tmp/smolmoo_p1.log 'picket at engaged range' "second foe joins the melee"
+# Draw the third; frontage caps the melee at two, so it is held at Short and its
+# band shows only in a later round's prompt. Draw it, then hold each turn (a
+# harmless action that only fires on our turn) until that prompt appears. The
+# rounds this spends also give the two engaged foes their turns against us, so
+# their attacks are asserted by presence below, not driven (a downed foe would
+# never attack again). Presence, not a fresh delta, so on_turn is not used here.
 curl -sf -X POST -d "$SID1 attack straggler" http://localhost:$PORT/cmd >/dev/null
-# Frontage caps the melee at two, so the third foe is held at Short. It first
-# shows in the next round's prompt. Drawing it may not spend the turn (a foe out
-# of reach), so drive the fight to that prompt with a deliberate hold each turn
-# rather than waiting out the turn timeout, which can outlast a fixed poll. A
-# hold only fires on the player's turn and is harmless otherwise.
 _i=0
 while [ $_i -lt 20 ]; do
 	grep -q 'straggler at short range' /tmp/smolmoo_p1.log 2>/dev/null && break
@@ -835,7 +807,6 @@ while [ $_i -lt 20 ]; do
 	_i=$((_i + 1))
 done
 check_log /tmp/smolmoo_p1.log 'straggler at short range' "frontage holds the third at short"
-# Both engaged foes take their turns against the player.
 check_log /tmp/smolmoo_p1.log 'sentry attacks' "first foe acts"
 check_log /tmp/smolmoo_p1.log 'picket attacks' "second foe acts"
 # Clear the fight before later tests.
@@ -851,30 +822,26 @@ cg "cyber"
 cg "stealth:6 firearms:6"
 check_log /tmp/smolmoo_p1.log 'Character complete' "stealth build for ambush"
 curl -sf -X POST -d "$SID1 wield pistol" http://localhost:$PORT/cmd >/dev/null
-# Open from hiding: the strike lands before initiative, target Exposed. The
-# ambush refuses while the previous multi-foe fight is still tearing down, so
-# retry, draining any leftover gangers, until it actually fires.
+# Open from hiding: the strike lands before initiative, target Exposed. Gate on a
+# confirmed idle so the previous multi-foe fight has torn down first, then a light
+# retry covers the opener (the stealth build always beats the lookout's Passive
+# Perception, so no leftover-ganger draining is needed).
+wait_idle 101 || true
 _i=0
 while [ $_i -lt 30 ]; do
 	curl -sf -X POST -d "$SID1 ambush lookout" http://localhost:$PORT/cmd >/dev/null
 	grep -q 'strike from hiding' /tmp/smolmoo_p1.log 2>/dev/null && break
-	curl -sf -X POST -d "$SID1 attack sentry" http://localhost:$PORT/cmd >/dev/null
-	curl -sf -X POST -d "$SID1 attack picket" http://localhost:$PORT/cmd >/dev/null
-	curl -sf -X POST -d "$SID1 attack straggler" http://localhost:$PORT/cmd >/dev/null
 	sleep 0.3
 	_i=$((_i + 1))
 done
 check_log /tmp/smolmoo_p1.log 'strike from hiding' "surprise strike lands"
 # The ambushed foe loses its first round to being caught flat-footed. Advance
 # our own turn with a harmless action (not another attack, which could drop the
-# already-wounded foe before its skipped turn is reached).
-_i=0
-while [ $_i -lt 12 ]; do
-	waitgrep /tmp/smolmoo_p1.log 'caught flat-footed' && break
-	curl -sf -X POST -d "$SID1 takecover" http://localhost:$PORT/cmd >/dev/null
-	sleep 0.3
-	_i=$((_i + 1))
-done
+# already-wounded foe before its skipped turn is reached). Key the turn on
+# takecover's own confirmation, a fresh line each time; the flat-footed skip is a
+# one-shot event that may already be logged, so assert it by presence below rather
+# than as a fresh delta (which would never arrive and burn the turn budget).
+on_turn "takecover" 'ducks into cover' || true
 check_log /tmp/smolmoo_p1.log 'caught flat-footed' "surprised foe loses the round"
 # Stealth is impossible once the fight is joined.
 curl -sf -X POST -d "$SID1 ambush lookout" http://localhost:$PORT/cmd >/dev/null
@@ -892,27 +859,14 @@ cg "6 9 6 3"
 cg "cyber"
 cg "stealth:6 firearms:6"
 curl -sf -X POST -d "$SID1 wield pistol" http://localhost:$PORT/cmd >/dev/null
-# Start the fight, then POLL for it to open rather than re-attacking: a second
-# attack would land damage and could drop the tough thug before we flee, which
-# needs it alive. (No stale 'on the thug' precedes this first thug fight.)
-_i=0
-while [ $_i -lt 10 ]; do
-	curl -sf -X POST -d "$SID1 attack thug" http://localhost:$PORT/cmd >/dev/null
-	waitgrep /tmp/smolmoo_p1.log 'on the thug' && break
-	_i=$((_i + 1))
-done
+# Open the fight on a confirmed idle. open_fight returns the moment combat begins,
+# on the first attack, so it lands one opening hit and no more, leaving the tough
+# thug alive for the flee below.
+open_fight thug 101 || true
 check_log /tmp/smolmoo_p1.log 'on the thug' "flee fight starts"
-# settle for the first prompt; the flee loop below retries regardless
-waitgrep /tmp/smolmoo_p1.log 'thug at ' || true
 # Flee through the exit on our turn: it draws the engaged foe's parting strike
 # and ends our part in the fight, leaving us in the adjacent room.
-_i=0
-while [ $_i -lt 15 ]; do
-	curl -sf -X POST -d "$SID1 flee alley" http://localhost:$PORT/cmd >/dev/null
-	grep -q 'slip away from the fight' /tmp/smolmoo_p1.log 2>/dev/null && break
-	sleep 0.4
-	_i=$((_i + 1))
-done
+on_turn "flee alley" 'slip away from the fight' || true
 check_log /tmp/smolmoo_p1.log 'breaks for the alley' "flee announced"
 check_log /tmp/smolmoo_p1.log 'Free strike' "flight draws a parting strike"
 check_log /tmp/smolmoo_p1.log 'slip away from the fight' "flee leaves the room"
@@ -936,17 +890,14 @@ check_log /tmp/smolmoo_p1.log '=== The Lobby ===' "go shows the destination"
 # span 0, a box with no ground to give.
 curl -sf -X POST -d "$SID1 go vault" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log '=== The Vault ===' "enter the span-0 vault"
-_i=0
-while [ $_i -lt 10 ]; do
-	curl -sf -X POST -d "$SID1 attack drone" http://localhost:$PORT/cmd >/dev/null
-	waitgrep /tmp/smolmoo_p1.log 'on the drone' && break
-	_i=$((_i + 1))
-done
+# Capture the vault's id so the fight opens on that room's confirmed idle.
+VROOM=$(scene_room) || true
+open_fight drone "$VROOM" || true
 check_log /tmp/smolmoo_p1.log 'on the drone' "vault fight starts"
-social_drive "retreat" 'no room to fall back' || true
+on_turn "retreat" 'no room to fall back' || true
 check_log /tmp/smolmoo_p1.log 'no room to fall back here' "span 0 refuses a retreat"
 # Break off (still our turn after the refused move) and return to the lobby.
-social_drive "go out" '=== The Lobby ===' || true
+on_turn "go out" '=== The Lobby ===' || true
 check_log /tmp/smolmoo_p1.log 'The Lobby' "return from the vault"
 
 # --- M25c-8: command-set finish (hold, remove, prompt actions) ---
@@ -964,22 +915,10 @@ curl -sf -X POST -d "$SID1 remove vest" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'take off the vest' "remove unwears armor"
 # hold in a fight passes the turn cleanly, and the prompt lists the actions.
 curl -sf -X POST -d "$SID1 wield pistol" http://localhost:$PORT/cmd >/dev/null
-_i=0
-while [ $_i -lt 20 ]; do
-	curl -sf -X POST -d "$SID1 attack thug" http://localhost:$PORT/cmd >/dev/null
-	grep -q 'on the thug' /tmp/smolmoo_p1.log 2>/dev/null && break
-	sleep 0.3
-	_i=$((_i + 1))
-done
+open_fight thug 101 || true
 check_log /tmp/smolmoo_p1.log 'on the thug' "hold fight starts"
 check_log /tmp/smolmoo_p1.log 'Actions: attack, cover' "turn prompt lists actions"
-_i=0
-while [ $_i -lt 15 ]; do
-	curl -sf -X POST -d "$SID1 hold" http://localhost:$PORT/cmd >/dev/null
-	grep -q 'holds, watching' /tmp/smolmoo_p1.log 2>/dev/null && break
-	sleep 0.4
-	_i=$((_i + 1))
-done
+on_turn "hold" 'holds, watching' || true
 check_log /tmp/smolmoo_p1.log 'holds, watching' "hold passes the turn"
 # Down the thug so the fight tears down before the CLI tests.
 fight_over thug || true
