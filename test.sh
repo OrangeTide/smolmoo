@@ -146,6 +146,92 @@ drain() {
 	poll /tmp/smolmoo_p1.log "$_dmark" $OUTCOME_TRIES
 }
 
+# --- M50: turn-aware scene drivers ---
+# These read the engine's own state instead of guessing at timing, so a scene
+# opens only once the previous one has torn down and an action lands only on the
+# player's turn. They replace the ad-hoc per-scene loops in the M25c/M25e chain,
+# where one flaky turn cascaded through the shared cb_active state.
+
+# scene_room : echo the id of the player's current room, for the prop reads
+# below. `@examine` with no argument examines the room and prints its id on its
+# first line ("#N (parent: ...)"). Counted as a delta so a stale line is not
+# scraped. Echoes the numeric id and returns 0, or returns 1 on timeout.
+scene_room() {
+	_b=$(grep -c '(parent:' /tmp/smolmoo_p1.log 2>/dev/null || true)
+	curl -sf -X POST -d "$SID1 @examine" http://localhost:$PORT/cmd >/dev/null
+	_i=0
+	while [ $_i -lt $OUTCOME_TRIES ]; do
+		_n=$(grep -c '(parent:' /tmp/smolmoo_p1.log 2>/dev/null || true)
+		if [ "${_n:-0}" -gt "${_b:-0}" ]; then
+			grep '(parent:' /tmp/smolmoo_p1.log | tail -1 \
+				| grep -oE '#[0-9]+' | head -1 | tr -d '#'
+			return 0
+		fi
+		sleep 0.05
+		_i=$((_i + 1))
+	done
+	return 1
+}
+
+# scene_idle ROOM : succeed when ROOM has no active combat or social scene, read
+# passively as cb_active != "1" through GET /prop. Unlike a hold probe it does not
+# perturb the scene. A missing prop (a room that never fought) reads as idle.
+scene_idle() {
+	[ "$(curl -sf "http://localhost:$PORT/prop?obj=$1&prop=cb_active&sid=$SID1" \
+		2>/dev/null)" != "1" ]
+}
+
+# open_fight FOE ROOM : open a fresh fight on FOE, first waiting for ROOM to go
+# idle so FOE is not drawn into a scene still tearing down (the cascade M50
+# removes). Then attack until combat begins ("on the FOE"). Returns 0 on open.
+open_fight() {
+	_i=0
+	while [ $_i -lt $OUTCOME_TRIES ]; do
+		scene_idle "$2" && break
+		sleep 0.1
+		_i=$((_i + 1))
+	done
+	_i=0
+	while [ $_i -lt 40 ]; do
+		curl -sf -X POST -d "$SID1 attack $1" http://localhost:$PORT/cmd >/dev/null
+		grep -q "on the $1" /tmp/smolmoo_p1.log 2>/dev/null && return 0
+		sleep 0.3
+		_i=$((_i + 1))
+	done
+	return 1
+}
+
+# on_turn CMD OUTCOME : perform a turn-bound action and wait for OUTCOME. An
+# action is refused off the player's turn, so send CMD, and if OUTCOME does not
+# follow, wait for a fresh "your turn" prompt (the turn then blocks about 30s, so
+# the resend lands on-turn) and send again. OUTCOME is a delta so a stale line
+# never trips it. CMD may be the action itself or a `hold` that yields to a foe's
+# turn. Returns 0 on OUTCOME, 1 if the budget runs out.
+on_turn() {
+	_ob=$(grep -c "$2" /tmp/smolmoo_p1.log 2>/dev/null || true)
+	_k=0
+	while [ $_k -lt 40 ]; do
+		curl -sf -X POST -d "$SID1 $1" http://localhost:$PORT/cmd >/dev/null
+		_j=0
+		while [ $_j -lt 20 ]; do
+			_a=$(grep -c "$2" /tmp/smolmoo_p1.log 2>/dev/null || true)
+			[ "${_a:-0}" -gt "${_ob:-0}" ] && return 0
+			sleep 0.05
+			_j=$((_j + 1))
+		done
+		_tb=$(grep -c 'your turn' /tmp/smolmoo_p1.log 2>/dev/null || true)
+		_j=0
+		while [ $_j -lt $WAITGREP_TRIES ]; do
+			_tn=$(grep -c 'your turn' /tmp/smolmoo_p1.log 2>/dev/null || true)
+			[ "${_tn:-0}" -gt "${_tb:-0}" ] && break
+			sleep 0.05
+			_j=$((_j + 1))
+		done
+		_k=$((_k + 1))
+	done
+	return 1
+}
+
 DEPOT=$(mktemp -d)
 cp -a depot/* "$DEPOT/" 2>/dev/null || true
 
@@ -2501,6 +2587,49 @@ social_drive "use shock wraith" 'with static shock for' || true
 check_log /tmp/smolmoo_p1.log 'with static shock for' "static shock lands a spell attack for damage"
 curl -sf -X POST -d "$SID1 @set #$D5.downed=1" http://localhost:$PORT/cmd >/dev/null
 fight_over wraith || true
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
+# --- M50a: turn-aware scene-driver primitives (unit test) ---
+# Exercise scene_room, scene_idle, open_fight, and on_turn against a throwaway
+# foe in a throwaway room, so the check stands alone and does not chain to any
+# other scene. This proves the primitives before the M25c/M25e conversion uses
+# them.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+SR50=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$SR50.name=Proving Ground" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+D50=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$D50.name=trainer" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D50.grade=tough" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D50.bp=40" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D50.mig=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D50.agi=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D50.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$D50.location=#$SR50" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$SR50" http://localhost:$PORT/cmd >/dev/null
+# scene_room reports the room the player is in.
+RM50=$(scene_room)
+[ "$RM50" = "$SR50" ] && pass "scene_room reports the current room" \
+	|| fail "scene_room reports the current room (got '$RM50', want $SR50)"
+# scene_idle is true before any fight opens in the room.
+if scene_idle "$SR50"; then pass "scene_idle is true before a fight"; \
+	else fail "scene_idle is true before a fight"; fi
+# open_fight opens a fresh fight on the idle room.
+open_fight trainer "$SR50" || true
+check_log /tmp/smolmoo_p1.log 'on the trainer' "open_fight opens a fresh fight"
+# scene_idle reads the active scene, so it is false during the fight.
+if scene_idle "$SR50"; then fail "scene_idle is false during a fight"; \
+	else pass "scene_idle is false during a fight"; fi
+# on_turn lands an action on the player's turn (a bare send can be off-turn).
+on_turn "attack trainer" "attacks trainer" || true
+check_log /tmp/smolmoo_p1.log 'attacks trainer' "on_turn lands an action on the player's turn"
+# after a confirmed teardown, scene_idle is true again.
+curl -sf -X POST -d "$SID1 @set #$D50.downed=1" http://localhost:$PORT/cmd >/dev/null
+fight_over trainer || true
+if scene_idle "$SR50"; then pass "scene_idle is true after teardown"; \
+	else fail "scene_idle is true after teardown"; fi
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
 # --- M41c: the aid action (biomedical injector) ---
