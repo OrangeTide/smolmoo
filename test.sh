@@ -3349,6 +3349,21 @@ curl -sf -X POST -d "$SID1 @set #$P1SH.shaken=0" http://localhost:$PORT/cmd >/de
 curl -sf -X POST -d "$SID1 @set #$P1SH.fear_source=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M53c: a negative dice pool resolves instead of hanging ---
+# A Crashed, low-skill character can drive a check's pool below zero. cs_divmod
+# casts to unsigned, so before the clamp that turned into a huge dice count and
+# spun cs_roll (a VM gas kill, no output). The clamp floors the pool at zero, so
+# the check resolves at once with the minimum one die and shows a sane 0D pool.
+curl -sf -X POST -d "$SID1 @set #$P1SH.crash=5" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.mig=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.sk_brawl=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 check brawl" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'CHECK brawl: pool 0D roll' \
+	"a negative check pool floors at zero and resolves"
+curl -sf -X POST -d "$SID1 @set #$P1SH.crash=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.mig=20" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.sk_brawl=40" http://localhost:$PORT/cmd >/dev/null
+
 # --- M46a: boot reconcile and the seeded reset rule ---
 # The world ships reset rule #921 (proto #221, room #125, area #920) for the
 # cargo-bay scavenger, reconciled at boot so the bay starts populated with no

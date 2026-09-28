@@ -118,8 +118,11 @@ cs_i(struct cs_out *o, int v)
 static void
 cs_dice(struct cs_out *o, int pts)
 {
-    int pips, dice = cs_divmod(pts, 3, &pips);
+    int pips, dice;
 
+    if (pts < 0) pts = 0;   /* M53c: match cs_roll's clamp, so a negative pool
+                             * shows as 0D rather than a huge unsigned count */
+    dice = cs_divmod(pts, 3, &pips);
     cs_i(o, dice);
     cs_s(o, "D");
     if (pips) { cs_s(o, "+"); cs_i(o, pips); }
@@ -155,9 +158,15 @@ cs_d6(void)
 static int
 cs_roll(int points, int *wild)
 {
-    int pips, dice = cs_divmod(points, 3, &pips);
-    int n = dice > 0 ? dice : 1;
-    int total = pips;
+    int pips, dice, n, total;
+
+    /* M53c: clamp a negative pool. cs_divmod casts to unsigned, so a negative
+     * numerator would become a huge dice count and spin the loop below; the
+     * dice > 0 guard cannot catch it. Zero yields the minimum one die. */
+    if (points < 0) points = 0;
+    dice = cs_divmod(points, 3, &pips);
+    n = dice > 0 ? dice : 1;
+    total = pips;
 
     *wild = 0;
     for (int i = 0; i < n; i++) {
