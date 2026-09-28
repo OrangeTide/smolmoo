@@ -1128,6 +1128,36 @@ from the system object and falls back to the raw token when no label is set. The
 line and the `job_need` locked marker now render each flag through its label, so earned
 clearances read as titles while an unlabelled flag still shows its token.
 
+## Milestone 53: Combat condition lifecycle (6cb6077, 91e35b3, 08bd7f3)
+
+The M33-M52 review found three defects in how combat conditions begin, end, and roll.
+M40 built the condition set and M42 and M45 added more, but nothing tore them down when a
+scene ended, Shaken was only half built, and a shared dice helper could hang on a
+malformed pool. M53 makes the condition set consistent from application to teardown,
+adding no new conditions or maneuvers. The full plan is `M53.md`; this is the summary. It
+shipped in three slices, and grew the suite from 479 to 485 checks.
+
+Slice a adds `cs_clear_conditions(sheet)` and calls it per combatant in the `verb_combat.c`
+scene teardown, so a fight ends the M40/M42/M45 conditions (`prone`, `stunned`, `shaken`,
+`bleed`, `suppress`, `blind`, `exposed`, `marked_by`, and the `fear_source` slice b adds)
+rather than leaving them on a reused sheet. Exposed and Marked had no clear path anywhere
+before this, so a reused NPC carried them forever. The timed self-buffs (`shield`, `mesh`)
+are left to their own `cs_cond_tick` countdown, not cut short by the fight ending.
+
+Slice b finishes Shaken to its rule. `menace` records `fear_source` on its target as the
+menacer's sheet, and the shared `close`/`engage` path in `verb_move.c` refuses an advance
+onto that foe while the mover is Shaken, after the target is resolved and before its band
+changes. Advancing on any other foe, retreat, and disengage stay allowed. `fear_source`
+clears wherever Shaken clears, in `cs_rally` and at slice a's teardown.
+
+Slice c clamps a negative dice pool. `cs_divmod` casts to unsigned, so a negative pool
+became a huge dice count that spun `cs_roll`'s loop until the VM gas killed the verb; the
+`dice > 0` guard could not catch it. `cs_roll` now floors the pool at zero, resolving to
+the minimum one die and protecting every caller, including `verb_check` (the out-of-scope
+sibling the review noted). `cs_dice` is clamped the same way so a Crashed character's check
+shows a sane `0D` pool. The per-site clamp added to `verb_treat` during the review stays as
+belt and suspenders.
+
 ---
 
 # Future Milestones
