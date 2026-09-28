@@ -50,6 +50,14 @@ main(void)
 
     o.len = 0;
     if (ch < 0) { puts("You have no character sheet."); _exit(0); }
+    /* M55b: a character is set up once. Refuse chargen after the made marker is
+     * set, so the starting kit cannot be granted twice (cg_step resets to 0 at
+     * finalize, which would otherwise let a made character re-enter and merge
+     * the kit again). */
+    if (cs_geti(ch, "made", 0)) {
+        puts("Your character is already set up.");
+        _exit(0);
+    }
 
     step = cs_geti(ch, "cg_step", 0);
     if (step < 1 || step > 3) {
@@ -172,17 +180,33 @@ main(void)
             _exit(0);
         }
 
-        /* commit skills, funds, and current pools */
+        /* M55b: merge the starting kit into any progress earned before chargen,
+         * rather than overwriting it. A fresh character has nothing earned (the
+         * prototype leaves skills, funds, CP, and maneuvers unset, so each reads
+         * 0 or empty), so it still ends with the standard kit; a character that
+         * played first keeps its trained skills, credits, CP, and learned
+         * unlocks with the kit added on top. */
         for (i = 0; i < 20; i++) {
             char pn[40];
             cs_skname(pn, cs_skills[i].name);
-            cs_itoa(buf, pts[i]);
+            cs_itoa(buf, cs_geti(ch, pn, 0) + pts[i]);
             sys_setprop(ch, pn, buf);
         }
-        sys_setprop(ch, "money", "300");
-        sys_setprop(ch, "stims", "3");
-        sys_setprop(ch, "maneuvers", "smartlink");
-        sys_setprop(ch, "cp", "10");
+        cs_itoa(buf, cs_geti(ch, "money", 0) + 300); sys_setprop(ch, "money", buf);
+        cs_itoa(buf, cs_geti(ch, "stims", 0) + 3);   sys_setprop(ch, "stims", buf);
+        cs_itoa(buf, cs_geti(ch, "cp", 0) + 10);     sys_setprop(ch, "cp", buf);
+        if (!cs_list_has(ch, "maneuvers", "smartlink")) {
+            char mv[128];
+            struct cs_out mo;
+            int mn = sys_getprop(ch, "maneuvers", mv, sizeof(mv) - 1);
+
+            if (mn < 0) mn = 0;
+            mv[mn] = '\0';
+            mo.len = 0;
+            if (mv[0]) { cs_s(&mo, mv); cs_s(&mo, ","); }
+            cs_s(&mo, "smartlink");
+            sys_setprop(ch, "maneuvers", cs_cstr(&mo));
+        }
         cs_recalc(ch, &d);
         cs_itoa(buf, d.maxbp); sys_setprop(ch, "bp", buf);
         cs_itoa(buf, d.maxgrit); sys_setprop(ch, "grit", buf);

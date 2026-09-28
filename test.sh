@@ -3036,6 +3036,39 @@ curl -sf -X POST -d "$SID4 status" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p4.log "haven't set up your character" "status guides an uncreated character to chargen"
 curl -sf -X POST -d "$SID4 help start" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p4.log 'New here' "the start help topic orients a new player"
+
+# --- M55b: chargen preserves progress earned before setup ---
+# A character can train, learn, and earn CP before chargen; finalize must fold its
+# starting kit into that progress, not overwrite it. Give the fresh, unmade
+# TestPlayer4 a trained skill, a learned unlock, and earned CP, run chargen, and
+# confirm all three survive with the kit added, then that a second chargen is
+# refused.
+curl -sf -X POST -d "$SID1 @contents #101" http://localhost:$PORT/cmd >/dev/null
+P4E=$(grep -oE '&[0-9]+  TestPlayer4' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
+curl -sf -X POST -d "$SID1 @examine &$P4E" http://localhost:$PORT/cmd >/dev/null
+P4SH=$(grep -oE 'charid[^"]*"[0-9]+"' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+' | tail -1)
+curl -sf -X POST -d "$SID1 @set #$P4SH.sk_hacking=3" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P4SH.maneuvers=mesh" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P4SH.cp=5" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID4 chargen 6 6 6 6" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID4 chargen street" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID4 chargen firearms:6 command:6" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p4.log 'Character complete' "chargen completes for the fresh character"
+HK=$(curl -sf "http://localhost:$PORT/prop?obj=$P4SH&prop=sk_hacking&sid=$SID4" || true)
+[ "${HK:-0}" = "3" ] && pass "a skill trained before chargen survives finalize" \
+	|| fail "a skill trained before chargen survives finalize (sk_hacking '$HK')"
+CPV=$(curl -sf "http://localhost:$PORT/prop?obj=$P4SH&prop=cp&sid=$SID4" || true)
+[ "${CPV:-0}" = "15" ] && pass "CP earned before chargen is kept and the 10 CP kit added" \
+	|| fail "CP earned before chargen is kept and the 10 CP kit added (cp '$CPV')"
+MV=$(curl -sf "http://localhost:$PORT/prop?obj=$P4SH&prop=maneuvers&sid=$SID4" || true)
+echo "$MV" | grep -q 'mesh' \
+	&& pass "an unlock learned before chargen survives finalize" \
+	|| fail "an unlock learned before chargen survives finalize (maneuvers '$MV')"
+echo "$MV" | grep -q 'smartlink' \
+	&& pass "chargen still grants smartlink alongside the kept unlock" \
+	|| fail "chargen still grants smartlink alongside the kept unlock (maneuvers '$MV')"
+curl -sf -X POST -d "$SID4 chargen 6 6 6 6" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p4.log 'already set up' "chargen refuses to run a second time"
 kill $P4 2>/dev/null || true
 
 # --- M44a: the starter district hub and its services ---
