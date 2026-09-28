@@ -91,34 +91,98 @@ cd_name(char *dst, int giver)
     cs_itoa(dst + 2, giver);
 }
 
+/* M52b: breadth-first from `from` toward `goal`, following exit dest props, and
+ * copy the direction name of the first exit on a shortest path into `dir`.
+ * Returns 1 when a path is found (dir set), 0 when the goal is unreachable within
+ * the cap. The caller handles from == goal (already there) before calling. */
+static int
+path_step(int from, int goal, char *dir, int dirlen)
+{
+    int seen[32], n = 0, i;
+    char step[32][16];
+
+    seen[n] = from;
+    step[0][0] = '\0';
+    n++;
+    for (i = 0; i < n; i++) {
+        int r = seen[i], e = 0;
+
+        while ((e = sys_next(r, e)) != 0) {
+            char dst[16], en[16];
+            const char *src;
+            int d, j, dup = 0, k;
+
+            cs_getstr(e, "dest", dst, sizeof(dst));
+            if (!dst[0]) continue;
+            d = cs_atoi(dst);
+            if (d <= 0) continue;
+            for (j = 0; j < n; j++)
+                if (seen[j] == d) { dup = 1; break; }
+            if (dup || n >= 32) continue;
+            if (r == from) { cs_getstr(e, "name", en, sizeof(en)); src = en; }
+            else src = step[i];
+            if (d == goal) {
+                for (k = 0; src[k] && k < dirlen - 1; k++) dir[k] = src[k];
+                dir[k] = '\0';
+                return 1;
+            }
+            seen[n] = d;
+            for (k = 0; src[k] && k < 15; k++) step[n][k] = src[k];
+            step[n][k] = '\0';
+            n++;
+        }
+    }
+    dir[0] = '\0';
+    return 0;
+}
+
 /* M51b: print the active contract's briefing under a "Your job:" line -- its
  * objective (a bounty target, or a courier destination resolved from the
- * job_dest room id), its reward (creds, CP, an optional standing step, and any
- * job_grant clearance), and where to report. Reads only the giver the sheet
- * points to. Returns 1 when a contract is active and rendered, 0 when none. */
+ * job_dest room id), a live objective status (M52b: the direction toward a
+ * courier destination, or a bounty target's standing), its reward (creds, CP,
+ * an optional standing step, and any job_grant clearance), and where to report.
+ * Reads the giver the sheet points to and the room graph from `room`. Returns 1
+ * when a contract is active and rendered, 0 when none. */
 static int
-show_briefing(struct cs_out *o, int ch)
+show_briefing(struct cs_out *o, int ch, int room)
 {
     int active = cs_geti(ch, "job_giver", 0);
     char nm[32], tgt[32], dst[16];
+    int done = cs_geti(ch, "job_done", 0);
 
     if (active <= 0) return 0;
     cs_getstr(active, "name", nm, sizeof(nm));
     cs_s(o, "Your job: ");
     cs_s(o, nm);
-    cs_s(o, cs_geti(ch, "job_done", 0) ? " (done; report back)" : " (in progress)");
+    cs_s(o, done ? " (done; report back)" : " (in progress)");
     cs_s(o, "\n");
     cs_getstr(active, "job_target", tgt, sizeof(tgt));
     cs_getstr(active, "job_dest", dst, sizeof(dst));
     if (tgt[0]) {
         cs_s(o, "  Objective: defeat "); cs_s(o, tgt); cs_s(o, "\n");
+        cs_s(o, done ? "  The target is down.\n"
+                     : "  The target is still at large.\n");
     } else if (dst[0]) {
+        int goal = cs_atoi(dst);
         char rn[32];
 
-        cs_getstr(cs_atoi(dst), "name", rn, sizeof(rn));
+        cs_getstr(goal, "name", rn, sizeof(rn));
         cs_s(o, "  Objective: reach ");
         cs_s(o, rn[0] ? rn : dst);
         cs_s(o, "\n");
+        if (done) {
+            cs_s(o, "  Delivered; report back.\n");
+        } else if (goal == room) {
+            cs_s(o, "  You are at the destination.\n");
+        } else {
+            char dir[24];
+
+            if (path_step(room, goal, dir, sizeof(dir)) && dir[0]) {
+                cs_s(o, "  Head "); cs_s(o, dir); cs_s(o, " from here.\n");
+            } else {
+                cs_s(o, "  The destination is not nearby.\n");
+            }
+        }
     }
     cs_s(o, "  Reward: ");
     cs_i(o, cs_geti(active, "job_creds", 0));
@@ -332,7 +396,7 @@ main(void)
      * call from anywhere: the active briefing, the earned clearances, and a
      * one-line standing summary, reading only the caller's own sheet. */
     if (cs_streq(verb, "contracts")) {
-        if (!show_briefing(&o, ch))
+        if (!show_briefing(&o, ch, room))
             cs_s(&o, "No active contract.\n");
         cs_clearances_line(ch, &o);
         cs_decay(ch);           /* fade idle standing first, as the sheet does */
@@ -351,7 +415,7 @@ main(void)
         }
         if (!any)
             cs_s(&o, "  none\n");
-        show_briefing(&o, ch);
+        show_briefing(&o, ch, room);
         cs_flush(&o);
         _exit(0);
     }

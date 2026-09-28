@@ -1197,6 +1197,8 @@ curl -sf -X POST -d "$SID1 accept fixer" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'Objective: defeat raider' "the active contract shows its objective"
 check_log /tmp/smolmoo_p1.log 'Reward: 50 creds, 2 CP' "the active contract shows its reward"
+# M52b: before the fight the bounty target reads as still standing
+check_log /tmp/smolmoo_p1.log 'The target is still at large' "a bounty shows its target at large"
 # reporting before the target is down is refused
 curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'not done yet' "turnin refuses an unfinished job"
@@ -1206,6 +1208,8 @@ curl -sf -X POST -d "$SID1 reload" http://localhost:$PORT/cmd >/dev/null
 fight_over raider || true
 curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'done; report back' "defeating the target completes the bounty"
+# M52b: with the target down, the objective status updates
+check_log /tmp/smolmoo_p1.log 'The target is down' "a bounty shows its target down after the fight"
 curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'fixer pays you 50 creds and 2 CP' "turnin pays the bounty reward"
 curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
@@ -1240,8 +1244,13 @@ curl -sf -X POST -d "$SID1 accept broker" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'Objective: reach Destination' "a courier briefing names the destination"
 check_log /tmp/smolmoo_p1.log 'Reward: 30 creds, 1 CP, standing with couriers' "the briefing shows the full reward"
+# M52b: from the origin the breadcrumb points the way to the destination
+check_log /tmp/smolmoo_p1.log 'Head north from here' "a courier breadcrumb names the next step"
 # travel to the destination: arriving there completes the courier goal
 curl -sf -X POST -d "$SID1 go north" http://localhost:$PORT/cmd >/dev/null
+# M52b: at the destination the objective updates to delivered
+curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Delivered; report back' "the breadcrumb updates on arrival"
 # report back at the origin: pays creds, CP, and a standing step
 curl -sf -X POST -d "$SID1 @go #$CA" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
