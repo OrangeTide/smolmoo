@@ -585,6 +585,15 @@ check_log /tmp/smolmoo_p1.log 'Grit 6/6' "chargen set Grit to max"
 check_log /tmp/smolmoo_p1.log 'firearms 2D' "chargen wrote skills"
 check_log /tmp/smolmoo_p1.log 'CP 10' "chargen banks the 10 CP creation budget"
 
+# Capture TestPlayer1's sheet id once, still in the Lobby (#101) and before any
+# fight. M55b made chargen one-shot, so it can no longer be re-run mid-suite to
+# refresh BP or re-spec skills; later blocks do that directly on the sheet as
+# admin, which needs this id. (The train block below re-derives it the same way.)
+curl -sf -X POST -d "$SID1 @contents #101" http://localhost:$PORT/cmd >/dev/null
+P1E=$(grep -oE '&[0-9]+  TestPlayer1' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+')
+curl -sf -X POST -d "$SID1 @examine &$P1E" http://localhost:$PORT/cmd >/dev/null
+P1SH=$(grep -oE 'charid[^"]*"[0-9]+"' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+' | tail -1)
+
 # --- M25d: Grit on the fuel gauge ---
 # The status bar carries the live Grit gauge next to Fuel. Max Grit is
 # 3 + Wit dice + Charm dice: the 6/9/6/3 build gives 3 + 2 + 1 = 6, and
@@ -769,11 +778,12 @@ fight_over sentry picket straggler || true
 # Give the player a Stealth build so the approach beats the target's Passive
 # Perception every time. Stealth 6 + Agility 6 rolls 4D (min 4); the lookout
 # has Wit 0, so its Passive Perception is 4, and 4D never falls short.
-cg ""
-cg "6 9 6 3"
-cg "cyber"
-cg "stealth:6 firearms:6"
-check_log /tmp/smolmoo_p1.log 'Character complete' "stealth build for ambush"
+# M55b made chargen one-shot, so grant the Stealth skill directly on the sheet
+# (admin) instead of re-running chargen. The firearms build from the first
+# chargen stays; this only adds the stealth rating the ambush relies on.
+curl -sf -X POST -d "$SID1 @set #$P1SH.sk_stealth=6" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'stealth 2D' "stealth build for ambush"
 curl -sf -X POST -d "$SID1 wield pistol" http://localhost:$PORT/cmd >/dev/null
 # Open from hiding: the strike lands before initiative, target Exposed. The
 # ambush refuses while the previous multi-foe fight is still tearing down, so
@@ -809,12 +819,14 @@ check_log /tmp/smolmoo_p1.log 'No time for stealth' "ambush refused mid-fight"
 fight_over lookout || true
 
 # --- M25c-7: cross-room movement and fleeing a fight ---
-# Refresh to full BP, then start a fight to flee from. The retry loop also
-# waits out the teardown of the previous (lookout) fight.
-cg ""
-cg "6 9 6 3"
-cg "cyber"
-cg "stealth:6 firearms:6"
+# Refresh to full BP and Grit, then start a fight to flee from. M55b made chargen
+# one-shot (it once doubled as this refresh), so restore the combat pools the
+# earlier fights drained directly on the sheet as admin. Without this the thug's
+# opening strike can down the fighter at residual BP before it gets a turn to
+# flee, which read as a flaky flee. The retry loop below also waits out the
+# teardown of the previous (lookout) fight.
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=21" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.grit=6" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 wield pistol" http://localhost:$PORT/cmd >/dev/null
 # Start the fight, then POLL for it to open rather than re-attacking: a second
 # attack would land damage and could drop the tough thug before we flee, which
