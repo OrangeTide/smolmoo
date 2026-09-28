@@ -141,6 +141,7 @@ main(void)
             cs_s(&o, "; it is blinded.");
         } else {
             cs_seti(defsh, "shaken", 1);
+            cs_seti(defsh, "fear_source", atk);   /* M53b: source of the fear */
             cs_s(&o, " menaces ");
             cs_s(&o, dn);
             cs_s(&o, "; it is shaken.");

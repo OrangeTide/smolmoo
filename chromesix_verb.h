@@ -971,6 +971,7 @@ cs_rally(int sheet, int room)
     if (!cs_geti(sheet, "shaken", 0)) return;
     if (cs_roll(cs_geti(sheet, "wit", 0), &wild) < 10) return;
     cs_seti(sheet, "shaken", 0);
+    cs_seti(sheet, "fear_source", 0);   /* M53b: fear clears with the condition */
     cs_getstr(sheet, "name", nm, sizeof(nm));
     o.len = 0;
     cs_s(&o, nm);

@@ -107,6 +107,13 @@ main(void)
             for (i = 0; i < k; i++)
                 if (!cs_geti(cs_sheet(foes[i]), "downed", 0)) { foe = foes[i]; break; }
         if (foe <= 0) { puts("There is no one to close on."); _exit(0); }
+        /* M53b: a Shaken combatant cannot advance on the source of its fear;
+         * it may still close on any other foe, retreat, or disengage. */
+        if (cs_geti(sh, "shaken", 0)
+                && cs_geti(sh, "fear_source", 0) == cs_sheet(foe)) {
+            puts("You are too shaken to advance on them.");
+            _exit(0);
+        }
 
         {
             int fsh = cs_sheet(foe), b = cs_geti(fsh, "band", 0);

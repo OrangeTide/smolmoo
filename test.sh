@@ -3275,6 +3275,80 @@ curl -sf -X POST -d "$SID1 @set #$P1SH.blind=0" http://localhost:$PORT/cmd >/dev
 curl -sf -X POST -d "$SID1 @set #$P1SH.held=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M53b: Shaken blocks advancing on the fear source ---
+# A Shaken combatant cannot advance (close/engage) on the source of its fear, but
+# may still advance on any other foe, and the block lifts when Shaken clears.
+# Drive a fight, then set the condition directly and probe the movement gate.
+curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.mig=20" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.sk_brawl=40" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.shaken=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.fear_source=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+FR=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$FR.name=Fear Range" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$FR" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+BULLY=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$BULLY.name=bully" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BULLY.grade=tough" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BULLY.bp=9999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BULLY.mig=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BULLY.agi=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BULLY.band=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BULLY.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BULLY.location=#$FR" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack bully" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+# Shaken toward the bully: an engage on it is refused (a refused move does not
+# spend the turn, so it stays the player's turn and the message lands quickly).
+curl -sf -X POST -d "$SID1 @set #$BULLY.band=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.shaken=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.fear_source=$BULLY" http://localhost:$PORT/cmd >/dev/null
+_i=0
+while [ $_i -lt 40 ]; do
+	grep -q 'too shaken to advance' /tmp/smolmoo_p1.log 2>/dev/null && break
+	curl -sf -X POST -d "$SID1 engage bully" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.3
+	_i=$((_i + 1))
+done
+check_log /tmp/smolmoo_p1.log 'too shaken to advance' "Shaken refuses an advance on the fear source"
+# Still Shaken, but the fear points elsewhere: the advance on the bully is allowed
+# (proving the gate is specific to the source), so its band closes to melee.
+curl -sf -X POST -d "$SID1 @set #$BULLY.band=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.fear_source=999999" http://localhost:$PORT/cmd >/dev/null
+_i=0
+while [ $_i -lt 40 ]; do
+	FB=$(curl -sf "http://localhost:$PORT/prop?obj=$BULLY&prop=band&sid=$SID1" || true)
+	[ "${FB:-9}" = "0" ] && break
+	curl -sf -X POST -d "$SID1 engage bully" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.3
+	_i=$((_i + 1))
+done
+[ "${FB:-9}" = "0" ] && pass "Shaken still allows an advance that is not on the fear source" \
+	|| fail "Shaken still allows an advance that is not on the fear source (band '$FB')"
+# Clearing Shaken lifts the block: the advance on the original source now lands.
+curl -sf -X POST -d "$SID1 @set #$BULLY.band=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.shaken=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.fear_source=$BULLY" http://localhost:$PORT/cmd >/dev/null
+_i=0
+while [ $_i -lt 40 ]; do
+	FB2=$(curl -sf "http://localhost:$PORT/prop?obj=$BULLY&prop=band&sid=$SID1" || true)
+	[ "${FB2:-9}" = "0" ] && break
+	curl -sf -X POST -d "$SID1 engage bully" http://localhost:$PORT/cmd >/dev/null
+	sleep 0.3
+	_i=$((_i + 1))
+done
+[ "${FB2:-9}" = "0" ] && pass "clearing Shaken lifts the advance block" \
+	|| fail "clearing Shaken lifts the advance block (band '$FB2')"
+curl -sf -X POST -d "$SID1 @set #$BULLY.downed=1" http://localhost:$PORT/cmd >/dev/null
+fight_over bully || true
+curl -sf -X POST -d "$SID1 @set #$P1SH.shaken=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.fear_source=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M46a: boot reconcile and the seeded reset rule ---
 # The world ships reset rule #921 (proto #221, room #125, area #920) for the
 # cargo-bay scavenger, reconciled at boot so the bay starts populated with no
