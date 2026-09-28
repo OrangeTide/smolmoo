@@ -1550,6 +1550,49 @@ curl -sf -X POST -d "$SID1 @recycle #$WARE" http://localhost:$PORT/cmd >/dev/nul
 curl -sf -X POST -d "$SID1 @recycle #$VEND" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #0.decay_secs=604800" http://localhost:$PORT/cmd >/dev/null
 
+# --- M54c: faction aggro cools as the grudge decays ---
+# mob_react reads standing through cs_disposition too, so a Hostile standing that
+# decays back above the aggro threshold stops drawing aggro. Dig a room off the
+# lobby with a faction mob, walk TestPlayer3 in while Hostile (aggro, which also
+# anchors the decay clock), let it lapse, and walk in again to confirm no fresh
+# aggro, with no sheet view. Driven on non-admin TestPlayer3, who walks by exit.
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @dig nest to Reaver Nest" http://localhost:$PORT/cmd >/dev/null
+AGR=$(grep -oE 'Dug #[0-9]+ to #[0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '#[0-9]+' | tail -1 | tr -d '#')
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+RVR=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$RVR.name=reaver" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$RVR.faction=reavers" http://localhost:$PORT/cmd >/dev/null
+# a behavior token is what makes the host run on_enter on this mob; the faction
+# aggro then fires from standing, no aggro token needed (as M38b establishes).
+curl -sf -X POST -d "$SID1 @set #$RVR.behavior=greet" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$RVR.greeting=The reaver snarls." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$RVR.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$RVR.location=#$AGR" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #0.decay_secs=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @standing TestPlayer3 reavers -2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P3SH.decay_tick=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P3SH.bp=99" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P3SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+# entry 1: Hostile draws aggro, and anchors the decay clock
+curl -sf -X POST -d "$SID3 go nest" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'reaver turns on' "a faction mob aggros a Hostile newcomer"
+AGG1=$(grep -c 'reaver turns on' /tmp/smolmoo_p3.log 2>/dev/null || true)
+# tear the fight down and walk back to the lobby
+curl -sf -X POST -d "$SID1 @set #$AGR.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 go back" http://localhost:$PORT/cmd >/dev/null
+sleep 3
+# entry 2: the grudge has decayed above Hostile, so no fresh aggro fires
+curl -sf -X POST -d "$SID3 go nest" http://localhost:$PORT/cmd >/dev/null
+sleep 1
+AGG2=$(grep -c 'reaver turns on' /tmp/smolmoo_p3.log 2>/dev/null || true)
+[ "${AGG2:-0}" = "${AGG1:-0}" ] \
+	&& pass "aggro cools once the grudge decays above Hostile" \
+	|| fail "aggro cools once the grudge decays above Hostile (was ${AGG1} now ${AGG2})"
+curl -sf -X POST -d "$SID1 @set #$AGR.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 go back" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #0.decay_secs=604800" http://localhost:$PORT/cmd >/dev/null
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.
