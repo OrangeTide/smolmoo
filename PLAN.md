@@ -1184,6 +1184,32 @@ after the standing decays above the threshold a second entry draws none. A count
 line keeps the no-aggro case from passing vacuously. Both later slices are test-only, since
 slice a's one change at the shared reader already reaches every consequence.
 
+## Milestone 55: New-player integrity (a469b02, 09deeef)
+
+The M33-M52 review found two defects around a character that is playable before chargen has
+run: the sheet showed the inherited prototype defaults as though they were the player's own
+character, and running chargen afterward overwrote any progress earned first. M55 keeps early
+play legible and lossless, adding no new onboarding flow; the prototype-playable model stays by
+decision. The full plan is `M55.md`; this is the summary. It shipped in two slices, and grew the
+suite from 490 to 496 checks (with the M25a pre-chargen sheet check adapted).
+
+Slice a adds the made-marker guard to `verb_sheet.c`, matching the one `verb_status.c` gained in
+M43c: when the marker is unset the sheet prints the same guidance and returns, rather than
+rendering the inherited defaults. The M25a pre-chargen check now expects that guidance;
+prototype inheritance stays covered by the pre-chargen `check firearms` (a 2D pool from the
+inherited Agility), which reads no sheet. TestPlayer3, a character configured directly by the
+tests, is marked set up so its own sheet reads render.
+
+Slice b makes chargen's finalize lossless and one-shot. It merges its starting kit into what the
+character already has (credits, stims, and CP add to earned; each step-3 skill point adds to any
+level already trained; "smartlink" merges into the maneuvers list, keeping learned unlocks)
+rather than overwriting, and it refuses to run once the character is made, so the kit cannot be
+granted twice through the `cg_step` reset. A fresh character leaves the prototype's unset pools
+at zero, so it still ends with the standard kit; the change shows only for a character that
+played first. A test gives an unmade character a trained skill, a learned unlock, and earned CP,
+runs chargen, and confirms all three survive with the kit added, then that a second run is
+refused.
+
 ---
 
 # Future Milestones
