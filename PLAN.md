@@ -1090,6 +1090,33 @@ The shared rendering was factored to avoid duplication: `cs_clearances_line` and
 briefing became `show_briefing` in `verb_jobs.c`, reused by `jobs`. The sheet's output is
 unchanged.
 
+## Milestone 52: Quest board and objective tracking (803ab4d, 90f98e5, 401f38b)
+
+M37 built jobs, M47 chained them behind earned flags, and M51 surfaced a player's own
+contract, clearances, and standing. What stayed invisible was the wider offering (a player
+saw only the contracts in the room they stood in) and where an accepted objective actually
+was. M52 surfaces both, walking the room graph the world already forms through exits rather
+than adding a district data structure, so it stays content-light in code. The full plan is
+`M52.md`; this is the summary. It shipped in three slices, driven on non-admin TestPlayer3
+for the player-facing reads. The suite grew from 465 to 477 checks.
+
+Slice a adds a `board` verb (routed through `verb_jobs.c`, object #479) that runs a bounded
+breadth-first walk of the room graph from the player's room, following each room's exit
+`dest`, and lists every `job`=1 giver it finds through the existing `show_offer`, grouped by
+room. The traversal caps its visited set at a fixed array, so it yields a local
+neighbourhood rather than the whole map and cannot run away on a cyclic graph.
+
+Slice b grows `show_briefing` with objective tracking. A courier contract runs the same
+bounded walk toward its `job_dest` and reports the direction of the first exit on the
+shortest path (`path_step`), or a plain line when the player is already there or it is out
+of reach. A bounty contract reports whether its target still stands, from the `job_done`
+flag the win hook sets.
+
+Slice c renders campaign flags as prose titles. `cs_flag_label` reads `flaglabel_<token>`
+from the system object and falls back to the raw token when no label is set. The Clearances
+line and the `job_need` locked marker now render each flag through its label, so earned
+clearances read as titles while an unlabelled flag still shows its token.
+
 ---
 
 # Future Milestones
