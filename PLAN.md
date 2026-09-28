@@ -1158,6 +1158,32 @@ sibling the review noted). `cs_dice` is clamped the same way so a Crashed charac
 shows a sane `0D` pool. The per-site clamp added to `verb_treat` during the review stays as
 belt and suspenders.
 
+## Milestone 54: Standing that decays in play (986b651, e0df0a1, 126bb63)
+
+The M33-M52 review found that M39c's standing decay only ran when a player opened their sheet
+or the contracts view, so every consequence of standing read a stale value until then. M54
+routes the decay to the consequences it was built to soften, adding no new standing mechanic.
+The full plan is `M54.md`; this is the summary. It shipped in three slices, and grew the suite
+from 485 to 491 checks.
+
+Slice a makes the fix. Every consequence reads standing through one seam, `cs_disposition`,
+which the store pricing and service refusal, the contract minimum-standing gate (in
+`show_offer`, `accept`, and so the `board`), and the faction-mob aggro check all share. Calling
+`cs_decay(sheet)` at the top of `cs_disposition` (forward declared, since `cs_decay` is defined
+lower) fades idle standing before any consequence reads it, so it reflects real elapsed time
+whether or not the player has looked at their sheet. `cs_decay` is idempotent and cheap, so the
+hot paths cost nothing once a period has settled. A test sets TestPlayer3 exactly at a job
+gate, anchors the decay clock with a first `jobs` read (still open), lets it lapse, and
+confirms a later `jobs` read reads the gate as locked, with no sheet view.
+
+Slice b adds coverage for the store, which prices through the same reader: TestPlayer3 with an
+Allied standing sees a discounted price, and after the standing decays the price returns to
+base, with no sheet view. Slice c adds coverage for aggro, which `mob_react` reads through the
+same reader: TestPlayer3 walks into a faction mob's room while Hostile and draws aggro, then
+after the standing decays above the threshold a second entry draws none. A count of the aggro
+line keeps the no-aggro case from passing vacuously. Both later slices are test-only, since
+slice a's one change at the shared reader already reaches every consequence.
+
 ---
 
 # Future Milestones
