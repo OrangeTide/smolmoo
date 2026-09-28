@@ -742,6 +742,14 @@ check_log /tmp/smolmoo_p1.log 'guarded' "guard braces the incoming hit"
 fight_over brute || true
 
 # --- M25c-5: multi-foe fights and frontage (three gangers) ---
+# Refresh to full BP first. This fight holds each turn while the third ganger
+# closes over a couple of rounds, so the two engaged foes get free swings at a
+# passive fighter. On residual BP from the prior fights they could down it in
+# round 2, before the straggler reached Short in round 3, so 'frontage holds the
+# third at short' failed about one run in forty. Restore on the sheet as admin,
+# the same refresh the flee block uses.
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=21" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.grit=6" http://localhost:$PORT/cmd >/dev/null
 _i=0
 while [ $_i -lt 20 ]; do
 	curl -sf -X POST -d "$SID1 attack sentry" http://localhost:$PORT/cmd >/dev/null
