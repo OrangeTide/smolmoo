@@ -1544,8 +1544,15 @@ history_load_head(void)
     }
     fclose(f);
 
-    if (why)
+    if (why) {
         fprintf(stderr, "[history] %s; re-basing to a fresh chain\n", why);
+        /* Discard the stale head on disk too, so the re-base is durable at
+           once. history_head_addr and the @history/@rewind/@gc/@fsck commands
+           read head_file, not these globals; without this a wizard running one
+           of them before the first save would see the foreign or damaged head,
+           and @rewind could splice a foreign snapshot back into the world. */
+        remove(head_file);
+    }
 }
 
 /* Prepare signed world history for the serve loop: load the server's

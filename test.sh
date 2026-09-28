@@ -3525,6 +3525,17 @@ RBBP=$!
 RBBSID=$(wait_sid /tmp/smolmoo_rbb_p.log) || fail "no session id: /tmp/smolmoo_rbb_p.log"
 curl -sf -X POST -d "$RBBSID create BWiz bpass $RBBINV" \
 	http://localhost:7782/cmd >/dev/null
+# M48 fix: the re-base is durable on disk, not only in memory. Before the first
+# save, @history must show a clean chain and @rewind must refuse, proving the
+# stale foreign head was discarded at boot rather than left in head_file for
+# these commands (which read head_file) to walk back into.
+curl -sf -X POST -d "$RBBSID @history" http://localhost:7782/cmd >/dev/null
+check_log /tmp/smolmoo_rbb_p.log 'No world history yet' \
+	"a re-based instance shows a clean chain before its first save"
+curl -sf -X POST -d "$RBBSID @rewind 1" http://localhost:7782/cmd >/dev/null || true
+grep -q 'rewinding world to seq' /tmp/smolmoo_rbb.log \
+	&& fail "a pre-save @rewind must not roll back to a foreign root" \
+	|| pass "a pre-save @rewind refuses on the fresh chain"
 # build a fresh self-signed chain and prove it rewinds to its own genesis
 curl -sf -X POST -d "$RBBSID @create #1" http://localhost:7782/cmd >/dev/null
 curl -sf -X POST -d "$RBBSID @save" http://localhost:7782/cmd >/dev/null
