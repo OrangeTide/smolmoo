@@ -1210,6 +1210,29 @@ played first. A test gives an unmade character a trained skill, a learned unlock
 runs chargen, and confirms all three survive with the kit added, then that a second run is
 refused.
 
+## Milestone 56: Test flake cleanup (c19aa31)
+
+`make stress` (running `test.sh` back to back) surfaced intermittent failures that head-to-head
+diagnosis traced to test setup, not engine bugs. This milestone removes the setup flakiness one
+cause at a time, verified by clean stress runs rather than a single pass. It is test-only.
+
+The first fix is the flee flake, a fallout of M55b. Two combat-setup blocks in `test.sh` had
+been re-running chargen as a refresh: the ambush block to grant a Stealth build, and the flee
+block to restore full BP. M55b made chargen one-shot, so the guard now refuses both. The ambush
+`'Character complete'` check then passed only vacuously against the first chargen's stale log
+line, and the flee fighter entered its fight at residual BP from the prior lookout fight; the
+thug's opening strike could down it before its turn, so it never fled and all four flee checks
+failed together, about one run in seven. The fix captures TestPlayer1's sheet id once in the
+Lobby before any fight and does both refreshes directly on the sheet as admin, the way the rest
+of the suite manipulates sheets: `@set sk_stealth` for the ambush (with a real `stealth 2D`
+assertion replacing the vacuous one) and `@set bp`/`grit` for the flee. No turn-aware test
+primitives are added, avoiding the M50 regression. Verified across 22 stress runs with no flee
+failures. It shipped as a follow-up commit under the M55b label since it stems from that guard.
+
+Open: a single non-flee failure appeared once in those 22 runs (a rare combat or respawn timing
+flake) and did not reproduce in the following 12 runs. It is unidentified and unrelated to the
+flee cluster; it stays on this milestone's list to catch, reproduce, and fix the same way.
+
 ---
 
 # Future Milestones
