@@ -15,6 +15,13 @@ main(void)
 
     o.len = 0;
     if (ch < 0) { puts("You have no character sheet."); _exit(0); }
+    /* M55a: a sheet exists but chargen has not run (no `made` marker). Guide
+     * rather than render the inherited prototype defaults as the player's own
+     * character, mirroring the status guard (M43c). */
+    if (!cs_geti(ch, "made", 0)) {
+        puts("You haven't set up your character yet. Type 'chargen' to begin.");
+        _exit(0);
+    }
 
     n = sys_getprop(ch, "name", nm, sizeof(nm) - 1);
     if (n < 0) n = 0;

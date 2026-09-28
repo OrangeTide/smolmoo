@@ -548,10 +548,12 @@ curl -sf -X POST -d "$SID1 testdist" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'DIST:OK' "roll distribution sane"
 
 # --- M25a: character sheet and skill check ---
+# M55a: before chargen the sheet guides rather than showing the inherited
+# prototype defaults as the player's own character. Inheritance is still proven by
+# the pre-chargen check below (Agility 2D feeds a 2D firearms pool), which reads no
+# sheet, and the full readout is asserted after chargen completes.
 curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p1.log '=== TestPlayer1 ===' "sheet name"
-check_log /tmp/smolmoo_p1.log 'Agility 2D' "sheet inherits stats"
-check_log /tmp/smolmoo_p1.log 'Defense 6  Soak 4' "sheet derived stats"
+check_log /tmp/smolmoo_p1.log "haven't set up your character" "pre-chargen sheet guides to chargen"
 
 curl -sf -X POST -d "$SID1 check firearms 6" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'CHECK firearms: pool 2D' "skill check rolls"
@@ -575,6 +577,7 @@ check_log /tmp/smolmoo_p1.log 'must total 12 (you have 9)' "chargen skill sum"
 cg "firearms:6 command:6"
 check_log /tmp/smolmoo_p1.log 'Character complete' "chargen complete"
 curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '=== TestPlayer1 ===' "sheet renders the full readout after chargen"
 check_log /tmp/smolmoo_p1.log 'Might 3D' "chargen wrote attributes"
 check_log /tmp/smolmoo_p1.log 'Defense 10  Soak 6' "chargen recalc with hook"
 check_log /tmp/smolmoo_p1.log 'BP 21/21' "chargen set BP to max"
@@ -1044,6 +1047,9 @@ P3E=$(grep -oE '&[0-9]+  TestPlayer3' /tmp/smolmoo_p1.log | tail -1 | grep -oE '
 curl -sf -X POST -d "$SID1 @examine &$P3E" http://localhost:$PORT/cmd >/dev/null
 P3SH=$(grep -oE 'charid[^"]*"[0-9]+"' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+' | tail -1)
 curl -sf -X POST -d "$SID1 @set #$P3SH.money=100" http://localhost:$PORT/cmd >/dev/null
+# TestPlayer3 is a fully configured character (attributes, skills, and standing set
+# directly below), so mark it set up; M55a guards the sheet on the made marker.
+curl -sf -X POST -d "$SID1 @set #$P3SH.made=1" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID3 @go #101" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID3 buy cola from dispenser" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'You buy the cola for 5 creds. Balance 95' "a non-admin completes a purchase (own-sheet write, no wizard)"
