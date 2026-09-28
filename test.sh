@@ -3168,6 +3168,19 @@ check_log /tmp/smolmoo_p1.log 'target exposed' "cs_attack_resolve reads Exposed 
 check_log /tmp/smolmoo_p1.log '(marked)' "cs_attack_resolve reads the mark for the marker"
 curl -sf -X POST -d "$SID1 @set #$DM.downed=1" http://localhost:$PORT/cmd >/dev/null
 fight_over dummy || true
+# M53a: the scene teardown ends the conditions, so this reused dummy carries
+# neither Exposed nor Marked into a later fight (both persisted before M53a).
+_i=0
+while [ $_i -lt 40 ]; do
+	EXA=$(curl -sf "http://localhost:$PORT/prop?obj=$DM&prop=exposed&sid=$SID1" || true)
+	[ "${EXA:-0}" = "0" ] && break
+	sleep 0.1; _i=$((_i + 1))
+done
+[ "${EXA:-0}" = "0" ] && pass "scene teardown clears Exposed on the combatant" \
+	|| fail "scene teardown clears Exposed on the combatant (exposed '$EXA')"
+MKA=$(curl -sf "http://localhost:$PORT/prop?obj=$DM&prop=marked_by&sid=$SID1" || true)
+[ "${MKA:-0}" = "0" ] && pass "scene teardown clears the mark on the combatant" \
+	|| fail "scene teardown clears the mark on the combatant (marked_by '$MKA')"
 curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 

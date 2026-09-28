@@ -529,6 +529,10 @@ done:
          * fight early */
         sys_setprop(sh, "yielded", "0");
         sys_setprop(sh, "yield_done", "0");
+        /* M53a: end the M40/M42/M45 conditions with the scene, so a reused sheet
+         * does not carry Prone, Stun, bleed, Exposed, or Marked into its next
+         * fight. Timed buffs keep their own countdown. */
+        cs_clear_conditions(sh);
     }
     sys_setprop(room, "cb_active", "0");
     sys_setprop(room, "cb_turn", "0");

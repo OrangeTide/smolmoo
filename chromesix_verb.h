@@ -941,6 +941,24 @@ cs_cond_tick(int sheet, int room)
     sys_broadcast(room, cs_cstr(&o));
 }
 
+/* Clear the combat conditions a scene leaves on a combatant, so a reused sheet
+ * (a respawning NPC, or the player's next fight) starts clean. The timed
+ * self-buffs (shield, mesh) are left to their own cs_cond_tick countdown, not
+ * cut short here. Called from the verb_combat teardown (M53a). */
+static void
+cs_clear_conditions(int sheet)
+{
+    cs_seti(sheet, "prone", 0);
+    cs_seti(sheet, "stunned", 0);
+    cs_seti(sheet, "shaken", 0);
+    cs_seti(sheet, "bleed", 0);
+    cs_seti(sheet, "suppress", 0);
+    cs_seti(sheet, "blind", 0);
+    cs_seti(sheet, "exposed", 0);
+    cs_seti(sheet, "marked_by", 0);
+    cs_seti(sheet, "fear_source", 0);
+}
+
 /* A shaken combatant tries to rally at the end of its turn: a Wit roll against
  * Moderate (10) shakes off the fear (rules Section 8, M40b). */
 static void
