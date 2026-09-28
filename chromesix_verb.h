@@ -527,18 +527,76 @@ cs_decay(int sheet)
     cs_seti(sheet, "decay_tick", tick + steps * period);
 }
 
+/* M52c: copy the prose label for a campaign flag into `dst`, read from
+ * `flaglabel_<token>` on the system object #0. Fall back to the raw token when no
+ * label is set, so an unlabelled flag still reads. */
+static void
+cs_flag_label(const char *token, char *dst, int len)
+{
+    char key[48];
+    int k = 0, j = 0, n;
+    const char *pre = "flaglabel_";
+
+    while (pre[k] && k < (int)sizeof(key) - 1) {
+        key[k] = pre[k];
+        k++;
+    }
+    while (token[j] && k < (int)sizeof(key) - 1) {
+        key[k++] = token[j++];
+    }
+    key[k] = '\0';
+    n = sys_getprop(0, key, dst, len - 1);
+    if (n > 0) {
+        dst[n] = '\0';
+        return;
+    }
+    j = 0;
+    while (token[j] && j < len - 1) {
+        dst[j] = token[j];
+        j++;
+    }
+    dst[j] = '\0';
+}
+
 /* M51a: append the sheet's earned campaign flags as a "Clearances:" line, or
- * nothing when none are held. Shared by the sheet and the contracts view. */
+ * nothing when none are held. Shared by the sheet and the contracts view. Each
+ * token renders through its prose label (M52c), the raw token as fallback. */
 static void
 cs_clearances_line(int ch, struct cs_out *o)
 {
     char fl[128];
     int fn = sys_getprop(ch, "flags", fl, sizeof(fl) - 1);
+    int i = 0, first = 1;
 
-    if (fn > 0) {
-        fl[fn] = '\0';
-        cs_s(o, "Clearances: "); cs_s(o, fl); cs_s(o, "\n");
+    if (fn <= 0) {
+        return;
     }
+    fl[fn] = '\0';
+    cs_s(o, "Clearances: ");
+    while (fl[i]) {
+        char tok[32], lab[64];
+        int tj = 0;
+
+        while (fl[i] && fl[i] != ',' && tj < (int)sizeof(tok) - 1) {
+            tok[tj++] = fl[i++];
+        }
+        tok[tj] = '\0';
+        while (fl[i] && fl[i] != ',') {
+            i++;
+        }
+        if (fl[i] == ',') {
+            i++;
+        }
+        if (tj > 0) {
+            cs_flag_label(tok, lab, sizeof(lab));
+            if (!first) {
+                cs_s(o, ", ");
+            }
+            cs_s(o, lab);
+            first = 0;
+        }
+    }
+    cs_s(o, "\n");
 }
 
 /* Append a one-line "Standing:" summary, each faction as its id plus a band

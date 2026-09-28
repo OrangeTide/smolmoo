@@ -69,12 +69,13 @@ show_offer(struct cs_out *o, int giver, int ch)
     }
     /* M47a: a chain contract is locked until an earlier one grants its flag */
     {
-        char pre[32];
+        char pre[32], lab[64];
 
         cs_getstr(giver, "job_need", pre, sizeof(pre));
         if (pre[0] && !cs_has_flag(ch, pre)) {
+            cs_flag_label(pre, lab, sizeof(lab));
             cs_s(o, " (locked: requires ");
-            cs_s(o, pre);
+            cs_s(o, lab);
             cs_s(o, ")");
         }
     }

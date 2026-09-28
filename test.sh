@@ -1471,6 +1471,23 @@ check_log /tmp/smolmoo_p1.log 'Board Beta:' "board reaches the adjacent room"
 check_log /tmp/smolmoo_p1.log 'handler2:.*locked: requires boardclear' "board marks a gated contract locked"
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M52c: campaign flags render prose labels where set ---
+# A label on #0 (flaglabel_<token>) gives a flag a prose title in the Clearances
+# line and in a job_need locked marker; an unlabelled flag still shows its raw
+# token. Driven on non-admin TestPlayer3 for the sheet read, since it is a
+# player-facing view admin authority does not change.
+curl -sf -X POST -d "$SID1 @set #0.flaglabel_operative=Field Operative" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P3SH.flags=operative,rookie" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'Clearances:.*Field Operative' "a labelled flag renders its prose"
+check_log /tmp/smolmoo_p3.log 'Clearances:.*rookie' "an unlabelled flag shows its token"
+# The locked marker uses the label too: relabel the board's gate and re-read it.
+curl -sf -X POST -d "$SID1 @set #0.flaglabel_boardclear=Board Clearance" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$BR1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 board" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'handler2:.*locked: requires Board Clearance' "a locked marker renders the flag label"
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.
