@@ -1488,6 +1488,38 @@ curl -sf -X POST -d "$SID1 board" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'handler2:.*locked: requires Board Clearance' "a locked marker renders the flag label"
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- M54a: a standing gate decays in play, without a sheet view ---
+# The job_min gate reads standing through cs_disposition, which now fades idle
+# standing first (M54). Set TestPlayer3 exactly at a gate, anchor the decay clock
+# with a first jobs read (still open), let it lapse, then confirm a later jobs read
+# reads the gate as locked, all without ever opening the sheet or contracts.
+# Driven on non-admin TestPlayer3, who stands in the lobby (#101).
+curl -sf -X POST -d "$SID1 @set #0.decay_secs=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P3SH.standing=wolves:2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P3SH.decay_tick=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+GATE=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$GATE.name=quartermaster" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GATE.job=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GATE.job_desc=A vetted run." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GATE.job_creds=10" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GATE.job_min=wolves:2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GATE.location=#101" http://localhost:$PORT/cmd >/dev/null
+# first read anchors the decay clock; at the earned standing the gate is open
+curl -sf -X POST -d "$SID3 jobs" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p3.log 'quartermaster' || true
+grep -q 'locked: needs wolves' /tmp/smolmoo_p3.log \
+	&& fail "the standing gate is open at the earned band" \
+	|| pass "the standing gate is open at the earned band"
+sleep 3
+# a later read fades the standing below the gate; it now reads locked, and no
+# sheet or contracts view ever materialized the decay
+curl -sf -X POST -d "$SID3 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'locked: needs wolves' \
+	"a job gate reflects decayed standing without a sheet view"
+curl -sf -X POST -d "$SID1 @set #$GATE.job=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #0.decay_secs=604800" http://localhost:$PORT/cmd >/dev/null
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.

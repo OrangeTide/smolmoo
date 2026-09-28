@@ -412,6 +412,11 @@ cs_getstr(int obj, const char *name, char *dst, int sz)
     dst[n] = '\0';
 }
 
+/* M54: fade idle standing before any consequence reads it. cs_decay is defined
+ * further down; cs_disposition is the one seam every consequence (store, job
+ * gate, board, aggro) shares, so calling it here reaches them all. */
+static void cs_decay(int sheet);
+
 /* An NPC's effective standing toward a player against `faction` (M38c): the
  * player's `cs_standing` plus the NPC's optional `disp` offset, clamped to the
  * [-3, +3] band. With no `disp` it reads exactly as the faction standing, so a
@@ -424,6 +429,7 @@ cs_disposition(int npc, int sheet, const char *faction)
     char db[12];
     int off = 0, sign = 1, k = 0, v;
 
+    cs_decay(sheet);   /* M54: standing fades in play, not only on a sheet view */
     /* `disp` may be negative (a grudge), which cs_geti/cs_atoi cannot read, so
      * parse the sign here. */
     cs_getstr(npc, "disp", db, sizeof(db));
