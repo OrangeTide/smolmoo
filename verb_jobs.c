@@ -285,6 +285,49 @@ main(void)
         _exit(0);
     }
 
+    /* M52a: board -- every open contract in the district, not just this room. Walk
+     * the room graph breadth-first from here, following each room's exit `dest`
+     * props and visiting each room once up to a fixed cap, and list the givers each
+     * room holds through show_offer under a room header. Flush per room so a large
+     * district does not overrun the output buffer. Reads only world state. */
+    if (cs_streq(verb, "board")) {
+        int seen[32], n = 0, any = 0, i;
+
+        seen[n++] = room;
+        cs_s(&o, "Contracts nearby:\n");
+        for (i = 0; i < n; i++) {
+            int r = seen[i], e = 0, hdr = 0;
+
+            while ((e = sys_next(r, e)) != 0) {
+                char dst[16];
+
+                if (cs_geti(e, "job", 0)) {
+                    if (!hdr) {
+                        char rn[32];
+
+                        cs_getstr(r, "name", rn, sizeof(rn));
+                        cs_s(&o, rn); cs_s(&o, ":\n");
+                        hdr = 1;
+                    }
+                    show_offer(&o, e, ch);
+                    any = 1;
+                }
+                cs_getstr(e, "dest", dst, sizeof(dst));
+                if (dst[0]) {
+                    int d = cs_atoi(dst), j, dup = 0;
+
+                    for (j = 0; j < n; j++)
+                        if (seen[j] == d) { dup = 1; break; }
+                    if (!dup && d > 0 && n < 32) seen[n++] = d;
+                }
+            }
+            cs_flush(&o);
+        }
+        if (!any) cs_s(&o, "  none\n");
+        cs_flush(&o);
+        _exit(0);
+    }
+
     /* M51c: contracts -- a consolidated "what am I working on" view a player can
      * call from anywhere: the active briefing, the earned clearances, and a
      * one-line standing summary, reading only the caller's own sheet. */

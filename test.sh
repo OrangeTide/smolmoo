@@ -1419,6 +1419,49 @@ check_log /tmp/smolmoo_p3.log 'Objective: defeat courier' "contracts shows the a
 curl -sf -X POST -d "$SID3 abandon" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$CJ.job=0" http://localhost:$PORT/cmd >/dev/null
 
+# --- M52a: the district quest board lists contracts across connected rooms ---
+# Build two rooms one exit apart, a giver in each (one open, one flag-gated), and
+# confirm board from the first lists both with their rooms and the gate marked,
+# where jobs there shows only the local giver. The board reads character flags and
+# standing for the lock, not admin authority, so it reads the same for any player.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+BR1=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$BR1.name=Board Alpha" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$BR1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @dig east to Board Beta" http://localhost:$PORT/cmd >/dev/null
+BR2=$(grep -oE 'Dug #[0-9]+ to #[0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '#[0-9]+' | tail -1 | tr -d '#')
+# an open giver in Alpha
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+BG1=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$BG1.name=scout" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BG1.job=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BG1.job_desc=An open run." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BG1.job_cp=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BG1.job_creds=20" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BG1.location=#$BR1" http://localhost:$PORT/cmd >/dev/null
+# a flag-gated giver in Beta, needing a flag TestPlayer1 does not carry
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+BG2=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$BG2.name=handler2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BG2.job=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BG2.job_desc=A cleared-only run." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BG2.job_creds=40" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BG2.job_need=boardclear" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BG2.location=#$BR2" http://localhost:$PORT/cmd >/dev/null
+# jobs in Alpha shows only the local giver, not the one a room away
+curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
+drain
+check_log /tmp/smolmoo_p1.log 'scout: An open run' "jobs lists the local contract"
+grep -q 'handler2' /tmp/smolmoo_p1.log \
+	&& fail "jobs omits the adjacent room's contract" \
+	|| pass "jobs omits the adjacent room's contract"
+# board walks the exit to Beta and lists both contracts, grouped by room
+curl -sf -X POST -d "$SID1 board" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Board Alpha:' "board groups contracts by room"
+check_log /tmp/smolmoo_p1.log 'Board Beta:' "board reaches the adjacent room"
+check_log /tmp/smolmoo_p1.log 'handler2:.*locked: requires boardclear' "board marks a gated contract locked"
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.
