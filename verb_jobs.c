@@ -314,7 +314,7 @@ main(void)
             char grant[32];
 
             cs_getstr(giver, "job_grant", grant, sizeof(grant));
-            if (grant[0]) {
+            if (grant[0] && !cs_has_flag(ch, grant)) {
                 cs_flag_add(ch, grant);
                 cs_s(&o, " You are now cleared as ");
                 cs_s(&o, grant);

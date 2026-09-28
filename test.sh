@@ -2917,7 +2917,7 @@ waitgrep /tmp/smolmoo_p1.log 'New code:' || true
 INVITE4=$(grep -o 'New code: [A-Z0-9-]*' /tmp/smolmoo_p1.log | tail -1 | sed 's/New code: //')
 curl -sN http://localhost:$PORT/events > /tmp/smolmoo_p4.log &
 P4=$!
-SID4=$(wait_sid /tmp/smolmoo_p4.log)
+SID4=$(wait_sid /tmp/smolmoo_p4.log) || fail "no session id: /tmp/smolmoo_p4.log"
 curl -sf -X POST -d "$SID4 create TestPlayer4 pass4 $INVITE4" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p4.log 'data: +' "create acct 4"
 check_log /tmp/smolmoo_p4.log 'set up your character' "a fresh login is greeted with onboarding"
@@ -3534,6 +3534,7 @@ curl -sf -X POST -d "$RBBSID @rewind 1" http://localhost:7782/cmd >/dev/null || 
 check_log /tmp/smolmoo_rbb.log 'rewound to seq 1' \
 	"the re-based chain rewinds to its own genesis"
 kill $RBBSRV $RBBP 2>/dev/null || true
+wait $RBBSRV 2>/dev/null || true
 rm -rf "$RBA" "$RBA.key" "$RBB" "$RBB.key" \
 	/tmp/smolmoo_rba.log /tmp/smolmoo_rba_p.log \
 	/tmp/smolmoo_rbb.log /tmp/smolmoo_rbb_p.log

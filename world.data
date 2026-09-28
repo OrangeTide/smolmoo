@@ -383,7 +383,7 @@ commands=The ChromeSix game commands, by area (type 'help <area>'):
     character  combat  maneuvers  gear  jobs  social
     General server commands are under 'help' with no topic.
 character=chargen <steps>  |  sheet  |  status (st)  |  check <skill>
-    train <attr>  |  learn <unlock>
+    train <skill>  |  learn <unlock>
     Make and grow a character. chargen builds one; sheet is the full record and
     status the one-line vitals. check rolls a skill; train and learn spend CP.
 combat=attack <foe> [push N]  |  cover | takecover <foe>  |  reload <weapon>

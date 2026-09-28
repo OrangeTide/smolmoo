@@ -56,6 +56,7 @@ main(void)
     cyb = cs_geti(ch, cs_skills[ci].attr, 0) + cs_geti(ch, skc, 0);
     best = med > cyb ? med : cyb;
     pool = best - cs_crash_penalty(ch);
+    if (pool < 1) pool = 1;
     tn = 8 + wounds * 4;                 /* 12 / 16 / 20 for a 1 / 2 / 3 wound */
     roll = cs_roll(pool, &wild);
 

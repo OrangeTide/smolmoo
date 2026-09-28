@@ -5719,6 +5719,11 @@ cmd_feedback(int sid, const char *args)
             session_write(sid, "Usage: @dig <exit> to <room name | #N>");
             return;
         }
+        if (acct_over_quota(player_acct(sid))) {   /* M33b */
+            session_write(sid,
+                "You have reached your object quota; recycle something first.");
+            return;
+        }
 
         if (*d == '#') {
             roomid = (int)strtol(d + 1, NULL, 10);

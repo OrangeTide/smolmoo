@@ -171,7 +171,7 @@ main(void)
             int fsh = cs_sheet(foe), down, edge;
 
             cs_attack_resolve(sh, fsh, SHOCK_FOCUS, -cs_crash_penalty(sh), 0, 1,
-                              &o, &down, &edge);
+                              &o, &down, &edge, room);
             if (edge && !down) {
                 cs_seti(fsh, "stunned", 1);
                 cs_s(&o, " The current locks it up -- stunned!");
