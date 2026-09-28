@@ -997,6 +997,17 @@ isolated instances before each starts, so all three prove they re-base the plant
 head and still pass their original assertions, which is the coupling gone. The suite
 grew to 454 checks.
 
+Follow-up fix (7513e8c): the re-base was durable only in memory. `history_load_head`
+reset the in-memory head globals but left the stale head in `head_file`, and the
+`@history`, `@rewind`, `@gc`, and `@fsck` commands read `head_file`, not those globals.
+So before the first save a wizard could still see the foreign or damaged chain, and
+`@rewind` could roll the live world onto a foreign-signed root and self-sign it as a new
+local record. The fix removes the stale `head_file` at the point of re-base, so the reset
+is durable at once. A test probes the pre-first-save window on the re-based instance:
+`@history` shows a clean chain and `@rewind` refuses to roll back. This gap slipped
+through because the original M48 tests always saved before probing history; the new test
+covers that window. The suite grew by two checks, to 479.
+
 ## Milestone 49: Test determinism (robust readiness and outcome waits)
 
 The smoke suite grew to 454 checks across dozens of milestones, and M48 was itself a
