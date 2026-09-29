@@ -613,6 +613,17 @@ P1E=$(grep -oE '&[0-9]+  TestPlayer1' /tmp/smolmoo_p1.log | tail -1 | grep -oE '
 curl -sf -X POST -d "$SID1 @examine &$P1E" http://localhost:$PORT/cmd >/dev/null
 P1SH=$(grep -oE 'charid[^"]*"[0-9]+"' /tmp/smolmoo_p1.log | tail -1 | grep -oE '[0-9]+' | tail -1)
 
+# Restore TestPlayer1's combat pools to full on the sheet as admin, the refresh
+# the frontage and flee blocks use. The M25c fights below run back to back at
+# residual BP, and the tough (multi-round) and passive-hold fights trade blows
+# over many rounds. Under load extra NPC turns fit in the window, so the fighter
+# could be downed before the foe reached the checked outcome. Refreshing before
+# each fight makes every scene start full and removes that whole class of flakes.
+refresh_bp1() {
+	curl -sf -X POST -d "$SID1 @set #$P1SH.bp=21" http://localhost:$PORT/cmd >/dev/null
+	curl -sf -X POST -d "$SID1 @set #$P1SH.grit=6" http://localhost:$PORT/cmd >/dev/null
+}
+
 # --- M25d: Grit on the fuel gauge ---
 # The status bar carries the live Grit gauge next to Fuel. Max Grit is
 # 3 + Wit dice + Charm dice: the 6/9/6/3 build gives 3 + 2 + 1 = 6, and
@@ -667,7 +678,10 @@ check_log /tmp/smolmoo_p1.log 'already down' "downed foe rejected"
 curl -sf -X POST -d "$SID1 cover enforcer" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'not in a fight' "cover needs a fight"
 # Positional cover (2) lifts the enforcer's Passive Defense 6 to 8, so its
-# difficulty word reads "fair" rather than the raider's "trivial".
+# difficulty word reads "fair" rather than the raider's "trivial". The enforcer
+# is a tough: it takes many rounds of trading blows to Down via the BP path, so
+# refresh first or its return fire can drop the fighter at residual BP under load.
+refresh_bp1
 curl -sf -X POST -d "$SID1 attack enforcer" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'on the enforcer' "enforcer fight starts"
 check_log /tmp/smolmoo_p1.log 'enforcer at engaged range (unhurt, fair to hit)' "cover raises foe difficulty"
@@ -712,6 +726,7 @@ fight_over enforcer || true
 # --- M25c-3: range bands and movement (the gunner hangs back at range) ---
 # Retry until the previous fight has fully torn down (cb_active clears a poll
 # after the Downed line) and this fight actually starts.
+refresh_bp1
 _i=0
 while [ $_i -lt 20 ]; do
 	curl -sf -X POST -d "$SID1 attack gunner" http://localhost:$PORT/cmd >/dev/null
@@ -734,6 +749,10 @@ check_log /tmp/smolmoo_p1.log 'It drops' "gunner downed at range"
 fight_over gunner || true
 
 # --- M25c-4: reactions (free Strike and guard), vs a tough brute ---
+# The brute is a tough and the guard loop trades blows over many rounds, so
+# refresh first (as the enforcer above) to keep return fire from downing the
+# fighter at residual BP under load.
+refresh_bp1
 _i=0
 while [ $_i -lt 20 ]; do
 	curl -sf -X POST -d "$SID1 attack brute" http://localhost:$PORT/cmd >/dev/null
@@ -765,10 +784,8 @@ fight_over brute || true
 # closes over a couple of rounds, so the two engaged foes get free swings at a
 # passive fighter. On residual BP from the prior fights they could down it in
 # round 2, before the straggler reached Short in round 3, so 'frontage holds the
-# third at short' failed about one run in forty. Restore on the sheet as admin,
-# the same refresh the flee block uses.
-curl -sf -X POST -d "$SID1 @set #$P1SH.bp=21" http://localhost:$PORT/cmd >/dev/null
-curl -sf -X POST -d "$SID1 @set #$P1SH.grit=6" http://localhost:$PORT/cmd >/dev/null
+# third at short' failed about one run in forty.
+refresh_bp1
 _i=0
 while [ $_i -lt 20 ]; do
 	curl -sf -X POST -d "$SID1 attack sentry" http://localhost:$PORT/cmd >/dev/null
@@ -815,6 +832,7 @@ curl -sf -X POST -d "$SID1 wield pistol" http://localhost:$PORT/cmd >/dev/null
 # Open from hiding: the strike lands before initiative, target Exposed. The
 # ambush refuses while the previous multi-foe fight is still tearing down, so
 # retry, draining any leftover gangers, until it actually fires.
+refresh_bp1
 _i=0
 while [ $_i -lt 30 ]; do
 	curl -sf -X POST -d "$SID1 ambush lookout" http://localhost:$PORT/cmd >/dev/null
@@ -846,14 +864,11 @@ check_log /tmp/smolmoo_p1.log 'No time for stealth' "ambush refused mid-fight"
 fight_over lookout || true
 
 # --- M25c-7: cross-room movement and fleeing a fight ---
-# Refresh to full BP and Grit, then start a fight to flee from. M55b made chargen
-# one-shot (it once doubled as this refresh), so restore the combat pools the
-# earlier fights drained directly on the sheet as admin. Without this the thug's
-# opening strike can down the fighter at residual BP before it gets a turn to
-# flee, which read as a flaky flee. The retry loop below also waits out the
-# teardown of the previous (lookout) fight.
-curl -sf -X POST -d "$SID1 @set #$P1SH.bp=21" http://localhost:$PORT/cmd >/dev/null
-curl -sf -X POST -d "$SID1 @set #$P1SH.grit=6" http://localhost:$PORT/cmd >/dev/null
+# Refresh to full BP and Grit, then start a fight to flee from. Without the
+# refresh the thug's opening strike can down the fighter at residual BP before it
+# gets a turn to flee, which read as a flaky flee. The retry loop below also waits
+# out the teardown of the previous (lookout) fight.
+refresh_bp1
 curl -sf -X POST -d "$SID1 wield pistol" http://localhost:$PORT/cmd >/dev/null
 # Start the fight, then POLL for it to open rather than re-attacking: a second
 # attack would land damage and could drop the tough thug before we flee, which
@@ -899,6 +914,7 @@ check_log /tmp/smolmoo_p1.log '=== The Lobby ===' "go shows the destination"
 # span 0, a box with no ground to give.
 curl -sf -X POST -d "$SID1 go vault" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log '=== The Vault ===' "enter the span-0 vault"
+refresh_bp1
 _i=0
 while [ $_i -lt 10 ]; do
 	curl -sf -X POST -d "$SID1 attack drone" http://localhost:$PORT/cmd >/dev/null
@@ -926,6 +942,9 @@ check_log /tmp/smolmoo_p1.log 'Soak 8' "worn armor raises soak"
 curl -sf -X POST -d "$SID1 remove vest" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'take off the vest' "remove unwears armor"
 # hold in a fight passes the turn cleanly, and the prompt lists the actions.
+# The hold loop passes turns while the thug swings back, so refresh first or the
+# passive fighter can be downed at residual BP before 'holds, watching' is seen.
+refresh_bp1
 curl -sf -X POST -d "$SID1 wield pistol" http://localhost:$PORT/cmd >/dev/null
 _i=0
 while [ $_i -lt 20 ]; do

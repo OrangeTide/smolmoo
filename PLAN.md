@@ -1281,6 +1281,20 @@ before the scene, well past what the `mig=2` ghoul can spend over the fight, so 
 survives to act. The checks assert the ally's restored BP and the refusal messages, not the
 caller's BP, so the larger pool does not weaken them.
 
+The inject flake, the frontage flake, and the `tough downed via BP path` flake were all one
+class: a fight that checks a foe outcome while the player fights at residual BP, so under load an
+extra NPC turn or two could down the player before the checked line appeared. Rather than wait for
+each to surface on its own, the M25c chain was swept. A `refresh_bp1` helper restores the fighter's
+BP and Grit on the sheet as admin, and it runs before every M25c fight whose assertion is about the
+foe and not the player's own low BP: the enforcer and brute (toughs that trade blows over many
+rounds), the gunner and drone and ambush (which entered drained from the fight before), and the
+hold loop (a passive fighter the thug swings at freely). The frontage and flee blocks already did
+this inline and now call the same helper. Left alone are the fights that already set a deep pool
+and the tests where the low BP is the assertion itself: the short-rest and crash recovery reads,
+the status line vitals, and the reaper defibrillator that must take a lethal hit at one BP. A
+thirty-run stress passed clean after the sweep, where earlier batches surfaced a fresh flake from
+this class every dozen-odd runs.
+
 ---
 
 # Future Milestones
