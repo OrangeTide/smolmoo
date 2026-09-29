@@ -1539,7 +1539,12 @@ curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 # with a first jobs read (still open), let it lapse, then confirm a later jobs read
 # reads the gate as locked, all without ever opening the sheet or contracts.
 # Driven on non-admin TestPlayer3, who stands in the lobby (#101).
-curl -sf -X POST -d "$SID1 @set #0.decay_secs=1" http://localhost:$PORT/cmd >/dev/null
+# Keep decay disabled (a long period) while the earned-band check runs, and turn
+# on the one-second period only for the decay itself, below. With a one-second
+# period active during the earned-band read, a cs_disposition call that anchors
+# the decay clock and the job read a moment later can straddle a one-second
+# sys_now boundary under load, dropping a step and locking the gate early (M56).
+curl -sf -X POST -d "$SID1 @set #0.decay_secs=604800" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P3SH.standing=wolves:2" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P3SH.decay_tick=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
@@ -1550,15 +1555,19 @@ curl -sf -X POST -d "$SID1 @set #$GATE.job_desc=A vetted run." http://localhost:
 curl -sf -X POST -d "$SID1 @set #$GATE.job_creds=10" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$GATE.job_min=wolves:2" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$GATE.location=#101" http://localhost:$PORT/cmd >/dev/null
-# first read anchors the decay clock; at the earned standing the gate is open
+# at the earned standing the gate is open; with decay disabled here this is
+# deterministic, nothing can drop a step before the read
 curl -sf -X POST -d "$SID3 jobs" http://localhost:$PORT/cmd >/dev/null
 waitgrep /tmp/smolmoo_p3.log 'quartermaster' || true
 grep -q 'locked: needs wolves' /tmp/smolmoo_p3.log \
 	&& fail "the standing gate is open at the earned band" \
 	|| pass "the standing gate is open at the earned band"
-# a later read fades the standing below the gate; it now reads locked, and no
-# sheet or contracts view ever materialized the decay. Poll the gate read rather
-# than sleep a fixed period: it returns as soon as the decay crosses the gate.
+# now enable the one-second decay and re-anchor the clock; a later read fades the
+# standing below the gate, and no sheet or contracts view ever materialized it.
+# Poll the gate read rather than sleep a fixed period: it returns as soon as the
+# decay crosses the gate.
+curl -sf -X POST -d "$SID1 @set #0.decay_secs=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P3SH.decay_tick=0" http://localhost:$PORT/cmd >/dev/null
 waitread "$SID3" jobs /tmp/smolmoo_p3.log 'locked: needs wolves' \
 	"a job gate reflects decayed standing without a sheet view"
 curl -sf -X POST -d "$SID1 @set #$GATE.job=0" http://localhost:$PORT/cmd >/dev/null
@@ -1569,7 +1578,9 @@ curl -sf -X POST -d "$SID1 @set #0.decay_secs=604800" http://localhost:$PORT/cmd
 # fades in play. Give TestPlayer3 an Allied standing with a vendor's faction, list
 # once to anchor and see the discount, let it lapse, then list again to see the
 # price returned to base, with no sheet view. Driven on TestPlayer3 in #101.
-curl -sf -X POST -d "$SID1 @set #0.decay_secs=1" http://localhost:$PORT/cmd >/dev/null
+# decay disabled during the discount check, enabled below only for the decay
+# itself; the earned-band read must not race a decay step, as in M54a (M56)
+curl -sf -X POST -d "$SID1 @set #0.decay_secs=604800" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P3SH.standing=wolves:3" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P3SH.decay_tick=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
@@ -1582,11 +1593,13 @@ WARE=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*
 curl -sf -X POST -d "$SID1 @set #$WARE.name=widget" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$WARE.price=200" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$WARE.location=#$VEND" http://localhost:$PORT/cmd >/dev/null
-# first read anchors the decay clock; Allied (+3) discounts 200 to 140
+# Allied (+3) discounts 200 to 140; deterministic here since decay is disabled
 curl -sf -X POST -d "$SID3 list from quartermart" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'widget -- 140 creds' "an Allied discount applies before decay"
-# decayed to Neutral: the discount is gone and the price returns to base. Poll
-# the store read; it returns once the standing has drifted back to Neutral.
+# now enable the one-second decay and re-anchor; the discount then fades to base.
+# Poll the store read; it returns once the standing has drifted back to Neutral.
+curl -sf -X POST -d "$SID1 @set #0.decay_secs=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P3SH.decay_tick=0" http://localhost:$PORT/cmd >/dev/null
 waitread "$SID3" "list from quartermart" /tmp/smolmoo_p3.log 'widget -- 200 creds' \
 	"store pricing reflects decayed standing without a sheet view"
 curl -sf -X POST -d "$SID1 @recycle #$WARE" http://localhost:$PORT/cmd >/dev/null
@@ -1612,7 +1625,9 @@ curl -sf -X POST -d "$SID1 @set #$RVR.behavior=greet" http://localhost:$PORT/cmd
 curl -sf -X POST -d "$SID1 @set #$RVR.greeting=The reaver snarls." http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$RVR.downed=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$RVR.location=#$AGR" http://localhost:$PORT/cmd >/dev/null
-curl -sf -X POST -d "$SID1 @set #0.decay_secs=1" http://localhost:$PORT/cmd >/dev/null
+# decay disabled while entry 1 draws aggro, so the Hostile read is deterministic
+# and cannot race a step above the aggro threshold (M56); enabled after AGG1
+curl -sf -X POST -d "$SID1 @set #0.decay_secs=604800" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @standing TestPlayer3 reavers -2" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P3SH.decay_tick=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P3SH.bp=99" http://localhost:$PORT/cmd >/dev/null
@@ -1621,6 +1636,10 @@ curl -sf -X POST -d "$SID1 @set #$P3SH.downed=0" http://localhost:$PORT/cmd >/de
 curl -sf -X POST -d "$SID3 go nest" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'reaver turns on' "a faction mob aggros a Hostile newcomer"
 AGG1=$(grep -c 'reaver turns on' /tmp/smolmoo_p3.log 2>/dev/null || true)
+# now enable the one-second decay; the clock anchored on entry 1, so the wait
+# below fades the grudge above Hostile without re-anchoring. A re-anchor would
+# reset the clock and let entry 2 read the un-decayed standing and aggro again.
+curl -sf -X POST -d "$SID1 @set #0.decay_secs=1" http://localhost:$PORT/cmd >/dev/null
 # tear the fight down and walk back to the lobby
 curl -sf -X POST -d "$SID1 @set #$AGR.cb_active=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID3 go back" http://localhost:$PORT/cmd >/dev/null
