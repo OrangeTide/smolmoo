@@ -2797,8 +2797,10 @@ curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
 # --- M41c: the aid action (biomedical injector) ---
 # In a fight, inject restores BP to an ally in reach or to the caller. Grant the
-# unlock, stack Medicine so the Moderate check always clears, and set a high
-# Agility so the weak foe rarely lands a hit (keeping the caller's low BP stable).
+# unlock, stack Medicine so the Moderate check always clears, and give the caller
+# a high Agility and a deep BP pool so the weak foe cannot down it over the scene.
+# inject needs the caller's turn (turn_ok), so a downed caller would fail the
+# enemy-refusal and self-aid checks; the caller's BP is not asserted (M56).
 curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.maneuvers=smartlink,dermal,reflex,vigor,shield,mesh,shock,suppress,inject" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.sk_medicine=40" http://localhost:$PORT/cmd >/dev/null
@@ -2825,7 +2827,7 @@ curl -sf -X POST -d "$SID1 @set #$ALLY.bp=5" http://localhost:$PORT/cmd >/dev/nu
 curl -sf -X POST -d "$SID1 @set #$ALLY.downed=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$ALLY.location=#$SR6" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.downed=0" http://localhost:$PORT/cmd >/dev/null
-curl -sf -X POST -d "$SID1 @set #$P1SH.bp=5" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=200" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.mig=9" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.grit=30" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 attack ghoul" http://localhost:$PORT/cmd >/dev/null

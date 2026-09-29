@@ -1273,6 +1273,14 @@ precondition, so both take the same fix: decay stays disabled during the earned-
 does not re-anchor the clock when it enables the fast decay, since its second entry is a single
 read rather than a poll and a re-anchor would let it read the un-decayed standing and aggro again.
 
+The inject checks (`inject restores an ally's Body Points` and friends) set the caller's BP to a
+small value so the restore was visible. But inject runs inside a live scene: it needs `turn_ok`,
+so a caller downed by the mob before acting fails the checks, and under load the ghoul could land
+enough on a low-BP caller to down it first. The fix gives the caller a deep BP pool (`bp=200`)
+before the scene, well past what the `mig=2` ghoul can spend over the fight, so the caller always
+survives to act. The checks assert the ally's restored BP and the refusal messages, not the
+caller's BP, so the larger pool does not weaken them.
+
 ---
 
 # Future Milestones
