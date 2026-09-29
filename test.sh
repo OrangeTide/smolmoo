@@ -46,6 +46,25 @@ check_log() {
 	if poll "$1" "$2" $OUTCOME_TRIES; then pass "$3"; else fail "$3"; fi
 }
 
+# waitread SID CMD LOG PATTERN LABEL : for an effect computed lazily on a read
+# (decay, rest), re-issue the read as SID until a FRESH PATTERN line appears in
+# LOG, then pass/fail. PATTERN is counted as a delta (like social_drive) so a
+# matching line from before the effect never trips it, and it returns the moment
+# the effect lands, so it replaces a fixed sleep without capping a slow outcome.
+waitread() {
+	_b=$(grep -c "$4" "$3" 2>/dev/null || true)
+	_i=0
+	while [ $_i -lt $OUTCOME_TRIES ]; do
+		curl -sf -X POST -d "$1 $2" http://localhost:$PORT/cmd >/dev/null
+		_a=$(grep -c "$4" "$3" 2>/dev/null || true)
+		[ "${_a:-0}" -gt "${_b:-0}" ] && break
+		sleep 0.1
+		_i=$((_i + 1))
+	done
+	_a=$(grep -c "$4" "$3" 2>/dev/null || true)
+	if [ "${_a:-0}" -gt "${_b:-0}" ]; then pass "$5"; else fail "$5"; fi
+}
+
 # Readiness waits (M49a). A readiness gate is not an outcome check: if it gives
 # up, the block that follows runs against an unbooted server or an empty session
 # id and every check in it fails, so one slow boot looks like a cluster of
@@ -1537,11 +1556,10 @@ waitgrep /tmp/smolmoo_p3.log 'quartermaster' || true
 grep -q 'locked: needs wolves' /tmp/smolmoo_p3.log \
 	&& fail "the standing gate is open at the earned band" \
 	|| pass "the standing gate is open at the earned band"
-sleep 3
 # a later read fades the standing below the gate; it now reads locked, and no
-# sheet or contracts view ever materialized the decay
-curl -sf -X POST -d "$SID3 jobs" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p3.log 'locked: needs wolves' \
+# sheet or contracts view ever materialized the decay. Poll the gate read rather
+# than sleep a fixed period: it returns as soon as the decay crosses the gate.
+waitread "$SID3" jobs /tmp/smolmoo_p3.log 'locked: needs wolves' \
 	"a job gate reflects decayed standing without a sheet view"
 curl -sf -X POST -d "$SID1 @set #$GATE.job=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #0.decay_secs=604800" http://localhost:$PORT/cmd >/dev/null
@@ -1567,10 +1585,9 @@ curl -sf -X POST -d "$SID1 @set #$WARE.location=#$VEND" http://localhost:$PORT/c
 # first read anchors the decay clock; Allied (+3) discounts 200 to 140
 curl -sf -X POST -d "$SID3 list from quartermart" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'widget -- 140 creds' "an Allied discount applies before decay"
-sleep 3
-# decayed to Neutral: the discount is gone and the price returns to base
-curl -sf -X POST -d "$SID3 list from quartermart" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p3.log 'widget -- 200 creds' \
+# decayed to Neutral: the discount is gone and the price returns to base. Poll
+# the store read; it returns once the standing has drifted back to Neutral.
+waitread "$SID3" "list from quartermart" /tmp/smolmoo_p3.log 'widget -- 200 creds' \
 	"store pricing reflects decayed standing without a sheet view"
 curl -sf -X POST -d "$SID1 @recycle #$WARE" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @recycle #$VEND" http://localhost:$PORT/cmd >/dev/null
@@ -1966,8 +1983,13 @@ beacon_ticks() {
 }
 # no agent command runs between these two reads, so any increase is autonomous.
 T1=$(beacon_ticks)
-sleep 0.8
-T2=$(beacon_ticks)
+_i=0
+while [ $_i -lt $OUTCOME_TRIES ]; do
+	T2=$(beacon_ticks)
+	[ "${T2:-0}" -gt "${T1:-0}" ] 2>/dev/null && break
+	sleep 0.1
+	_i=$((_i + 1))
+done
 [ "${T2:-0}" -gt "${T1:-0}" ] \
 	&& pass "agent ticks climb with no player (EV_TIMER autonomy)" \
 	|| fail "agent ticks climb with no player (EV_TIMER autonomy)"
@@ -2350,10 +2372,10 @@ curl -sf -X POST -d "$SID1 @go #$SAFE" http://localhost:$PORT/cmd >/dev/null
 # the first read anchors the rest clock and shows the damaged BP
 curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'BP 8/21' "a damaged character reads below maximum before resting"
-sleep 3
-# after more than the rest period, a read pays out the recovery
-curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p1.log 'BP 21/21' "a short rest in a safe room restores BP over time"
+# a read pays out the recovery once the rest period elapses. Poll the sheet
+# rather than sleep a fixed period: it returns as soon as the payout lands.
+waitread "$SID1" sheet /tmp/smolmoo_p1.log 'BP 21/21' \
+	"a short rest in a safe room restores BP over time"
 # an unsafe room accrues nothing: damage again, wait, and read once
 curl -sf -X POST -d "$SID1 @set #$P1SH.bp=7" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.rest_since=0" http://localhost:$PORT/cmd >/dev/null
@@ -2437,10 +2459,11 @@ curl -sf -X POST -d "$SID1 @set #$P1SH.decay_tick=0" http://localhost:$PORT/cmd 
 # the first read anchors the decay clock and shows the earned band
 curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'wolves Allied' "standing starts at its earned band"
-sleep 3
-# after several periods a read has drifted the standing all the way to Neutral
-curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p1.log 'wolves Neutral' "idle standing decays toward Neutral"
+# after several periods a read has drifted the standing all the way to Neutral.
+# Poll the sheet rather than sleep a fixed period, which also removes the
+# boundary race the fixed sleep worked around: it returns once Neutral is read.
+waitread "$SID1" sheet /tmp/smolmoo_p1.log 'wolves Neutral' \
+	"idle standing decays toward Neutral"
 curl -sf -X POST -d "$SID1 @set #0.decay_secs=604800" http://localhost:$PORT/cmd >/dev/null
 
 # --- M40a: the Prone condition, the trip maneuver, and stand ---
@@ -2608,10 +2631,10 @@ curl -sf -X POST -d "$SID1 @set #$P1SH.bp=8" http://localhost:$PORT/cmd >/dev/nu
 curl -sf -X POST -d "$SID1 @set #$P1SH.crash=2" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.rest_since=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #$SAFE" http://localhost:$PORT/cmd >/dev/null
+# first read anchors the rest clock; then poll the payout rather than sleep fixed
 curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
-sleep 3
-curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p1.log 'BP 21/21' "a full rest restores BP before clearing Crash"
+waitread "$SID1" sheet /tmp/smolmoo_p1.log 'BP 21/21' \
+	"a full rest restores BP before clearing Crash"
 CR=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=crash&sid=$SID1")
 [ "$CR" = "0" ] && pass "a full short rest clears the Crash stack" \
 	|| fail "a full short rest clears the Crash stack (got '$CR')"
@@ -3121,10 +3144,17 @@ curl -sf -X POST -d "$SID1 go bunks" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #0.rest_secs=2" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.bp=5" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.rest_since=0" http://localhost:$PORT/cmd >/dev/null
+# first status anchors the rest clock; then poll the payout (a status read pays
+# it out, then the prop reads it back) rather than sleep a fixed period
 curl -sf -X POST -d "$SID1 status" http://localhost:$PORT/cmd >/dev/null
-sleep 3
-curl -sf -X POST -d "$SID1 status" http://localhost:$PORT/cmd >/dev/null
-RB=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=bp&sid=$SID1")
+_i=0
+while [ $_i -lt $OUTCOME_TRIES ]; do
+	curl -sf -X POST -d "$SID1 status" http://localhost:$PORT/cmd >/dev/null
+	RB=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=bp&sid=$SID1")
+	[ "${RB:-0}" -gt 5 ] 2>/dev/null && break
+	sleep 0.1
+	_i=$((_i + 1))
+done
 [ "${RB:-0}" -gt 5 ] && pass "the seeded bunk is a safe room that restores BP" \
 	|| fail "the seeded bunk is a safe room that restores BP (bp '$RB')"
 curl -sf -X POST -d "$SID1 @set #0.rest_secs=7200" http://localhost:$PORT/cmd >/dev/null
