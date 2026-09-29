@@ -1252,13 +1252,26 @@ polls on the same shape. The negative waits (no recovery in an unsafe room, no f
 slept agent not ticking) stay fixed, since absence cannot be polled for. The suite dropped from
 3m45s to 3m28s with no new flakes, and two boundary races the fixed sleeps worked around are gone.
 
-Open: the 20-run stress that verified the conversions surfaced a separate, pre-existing flake, `the
-standing gate is open at the earned band` (M54a), about one run in sixty. It is the decay-anchor
-precondition, and it runs before any converted line, so the conversions cannot cause it. The
-mechanism is not yet pinned: the first `jobs` read is meant to anchor `decay_tick` without
-decaying (cs_decay returns when the tick is zero), so the gate should read open at the earned
-band, but occasionally it reads locked. It stays on this milestone's list to reproduce with a
-preserved log and fix the same head-to-head way.
+The last flake was the decay-anchor precondition, `the standing gate is open at the earned band`
+(M54a), about one run in sixty. It is a load-dependent race. The M54a block set `decay_secs=1`
+before the earned-band read, so the gate is open only while the standing has not yet faded a
+step. `cs_decay` anchors `decay_tick` on the first read and returns without decaying, but a later
+`cs_disposition` call on the same sheet decays once a whole period has elapsed. With a
+one-second period, an anchoring read and the job read a moment later can straddle a one-second
+`sys_now` boundary under load, dropping a step to Friendly and locking the gate before the check.
+The isolated anchored read never locked across 520 diagnostic reads (400 re-anchored, 120
+real-flow), and there is exactly one wolves gate in the suite, so by elimination the failing read
+is the check's own, decaying under load; a light-load harness could not reproduce the rare event.
+
+The fix keeps decay disabled during the earned-band read (a long `decay_secs`) and turns the
+one-second period on only for the decay itself, re-anchoring the clock first. With no short period
+active, `cs_decay` cannot drop a step during the earned-band read (elapsed is far below the
+period), so the gate is open there deterministically, whatever the load; the second half then
+enables the fast decay and polls the gate to lock, as before. M54b (the Allied discount read) and
+M54c (the Hostile aggro read) shared the same latent race, setting `decay_secs=1` before a similar
+precondition, so both take the same fix: decay stays disabled during the earned-band read. M54c
+does not re-anchor the clock when it enables the fast decay, since its second entry is a single
+read rather than a poll and a re-anchor would let it read the un-decayed standing and aggro again.
 
 ---
 
