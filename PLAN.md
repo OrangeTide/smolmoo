@@ -1210,7 +1210,7 @@ played first. A test gives an unmade character a trained skill, a learned unlock
 runs chargen, and confirms all three survive with the kit added, then that a second run is
 refused.
 
-## Milestone 56: Test flake cleanup (c19aa31)
+## Milestone 56: Test flake cleanup (c19aa31, b158c81)
 
 `make stress` (running `test.sh` back to back) surfaced intermittent failures that head-to-head
 diagnosis traced to test setup, not engine bugs. This milestone removes the setup flakiness one
@@ -1229,9 +1229,36 @@ assertion replacing the vacuous one) and `@set bp`/`grit` for the flee. No turn-
 primitives are added, avoiding the M50 regression. Verified across 22 stress runs with no flee
 failures. It shipped as a follow-up commit under the M55b label since it stems from that guard.
 
-Open: a single non-flee failure appeared once in those 22 runs (a rare combat or respawn timing
-flake) and did not reproduce in the following 12 runs. It is unidentified and unrelated to the
-flee cluster; it stays on this milestone's list to catch, reproduce, and fix the same way.
+The open item from that first pass was the frontage flake. A 40-run stress plus a log-preserving
+diag traced it head-to-head: the M25c-5 multi-foe fight holds each turn while the third ganger
+closes over two or three rounds, so the two engaged foes get free swings at a passive fighter.
+Entering on residual BP from the prior fights, damage variance could down the fighter in round 2,
+before the straggler reached Short in round 3, so `frontage holds the third at short` never
+printed, about one run in forty. The same refresh the flee block uses fixes it: restore full BP
+and Grit on the sheet before the fight (b158c81). Confirmed by 120 targeted frontage runs, all
+landing, and a 20-run full-suite stress with no failures.
+
+The remaining work was wall-time, not flakiness. Profiling the suite with per-command timestamps
+showed `make test` spends about 75 percent of its wall clock in `sleep`, and almost none of it in
+NPC combat pacing: cutting the pace four-fold, from 400ms to 100ms, changed the 3m45s run by two
+seconds, because the poll loops mask any sub-second pace change, and an aggressive pace of 10ms
+broke three timing-tuned tests. An env-tunable pace was tried and reverted, since it added verb
+code against the size constraint for no measurable gain. The real cost is the poll `sleep`s and,
+in eight places, fixed unconditional `sleep 3` waits on a decay or rest timer. The positive ones,
+where the effect appears on a lazy read, became a `waitread` helper that re-issues the read until
+a fresh outcome line lands, counted as a delta so a stale line never trips it, returning as soon
+as the effect settles rather than after a flat three seconds; two prop-based waits became inline
+polls on the same shape. The negative waits (no recovery in an unsafe room, no fresh aggro, a
+slept agent not ticking) stay fixed, since absence cannot be polled for. The suite dropped from
+3m45s to 3m28s with no new flakes, and two boundary races the fixed sleeps worked around are gone.
+
+Open: the 20-run stress that verified the conversions surfaced a separate, pre-existing flake, `the
+standing gate is open at the earned band` (M54a), about one run in sixty. It is the decay-anchor
+precondition, and it runs before any converted line, so the conversions cannot cause it. The
+mechanism is not yet pinned: the first `jobs` read is meant to anchor `decay_tick` without
+decaying (cs_decay returns when the tick is zero), so the gate should read open at the earned
+band, but occasionally it reads locked. It stays on this milestone's list to reproduce with a
+preserved log and fix the same head-to-head way.
 
 ---
 
