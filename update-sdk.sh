@@ -22,10 +22,10 @@
 #          sdk/runtime/start_vm.S sdk/runtime/mulibc_vm.h sdk/runtime/moo_rt.c \
 #          sdk/runtime/moo_syscall_rv.S sdk/runtime/verb_rt_rv.S \
 #          sdk/runtime/verbmain.c
-#   2. In sdk/skjegg.mk: wrap the cross-compiled runtime object rules in
+#   2. In sdk/skjegg.mk: wrap the cross-assembled start_rv.o rule in
 #        ifndef SKJ_SKIP_M68K_RUNTIME ... endif  (smolmoo builds its own
-#        runtime with skj-cc/skj-as and stays free of the m68k/riscv GNU
-#        tools), and add the SPDX tag to the mk header.
+#        runtime with skj-as-rv and stays free of the GNU cross tools), and
+#        add the SPDX tag to the mk header.
 #   3. Restore the smolmoo sdk/LICENSE (a copy of the repo LICENSE.md, the
 #        dual-license summary) over upstream's full CC0 text:
 #          git checkout HEAD -- sdk/LICENSE
@@ -43,14 +43,15 @@
 #        cp sdk/emu/rv32.c sdk/emu/rv32.h .
 #   RISC-V RV32 is the verb engine.  As of skjegg v0.7.0 the RV stack calling
 #   convention was retired: the server builds every verb with the psABI
-#   toolchain (skj-cc-rv, skj-as-rv, skj-ld-rv).  The vendored ColdFire
-#   components are unused by the server; trimming them from COMPONENTS is a
-#   separate cleanup.
+#   toolchain (skj-cc-rv, skj-as-rv, skj-ld-rv).  The ColdFire backend,
+#   assembler, linker, and emulator are not vendored: the server never runs a
+#   ColdFire guest, and the RISC-V assembler and linker carry the shared
+#   asm/link skeleton on their own.
 
 set -eu
 
 ORIGIN="https://github.com/OrangeTide/skjegg-compiler-suite.git"
-COMPONENTS="coldfire riscv moo cc as ld as-rv ld-rv cpp emu-cf emu-rv"
+COMPONENTS="riscv moo cc as-rv ld-rv cpp emu-rv"
 DEST="sdk"
 REF="v0.7.0"
 UPDATE_DIR="."
