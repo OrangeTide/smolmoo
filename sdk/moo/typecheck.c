@@ -1,6 +1,4 @@
-/* typecheck.c : type checking pass for MooScript
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* typecheck.c : type checking pass for MooScript */
 
 #include "moo.h"
 

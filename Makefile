@@ -43,9 +43,9 @@ $(B)/smolvfs/cas-sign-monocypher.o : smolvfs/cas-sign-monocypher.c smolvfs/cas-s
 # assembler.
 #
 # MooScript verb runtime: the entry shim/arena (moo_rt), host bridge, string
-# and list libraries, and the stack-convention syscall stubs. The C parts are
-# built with skj-cc-rv (stack calling convention) to match the MooScript
-# backend, unlike the psABI C verbs above.
+# and list libraries, and the syscall stubs. As of skjegg v0.7.0 the RV32
+# stack convention was retired, so the C parts build with skj-cc-rv (now the
+# ILP32 psABI) and the stubs use the register convention, same as the C verbs.
 MOO_RT_OBJS := $(BUILD)/moo_rt.o $(BUILD)/host_vm.o $(BUILD)/str.o \
 	$(BUILD)/list.o $(BUILD)/moo_syscall_rv.o
 sdk: skjegg $(BUILD)/verb_rt_rv.o $(BUILD)/verbmain.o $(MOO_RT_OBJS) $(BUILD)/mulibc.h
@@ -61,7 +61,7 @@ $(BUILD)/verb_rt_rv.o: sdk/runtime/verb_rt_rv.S | $(BUILD)
 # libverbmain: the generic event-loop main() an agent (agent_*.c) links against.
 # Built with the psABI C compiler, like the C verbs it links with.
 $(BUILD)/verbmain.o: sdk/runtime/verbmain.c mulibc.h | skjegg $(BUILD)
-	$(BUILD)/skj-cc-rv-psabi -I. -I sdk/runtime -o $(BUILD)/verbmain.s $< && \
+	$(BUILD)/skj-cc-rv -I. -I sdk/runtime -o $(BUILD)/verbmain.s $< && \
 		$(BUILD)/skj-as-rv -o $@ $(BUILD)/verbmain.s
 
 $(BUILD)/moo_syscall_rv.o: sdk/runtime/moo_syscall_rv.S | skjegg $(BUILD)

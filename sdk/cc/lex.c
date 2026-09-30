@@ -1,6 +1,4 @@
-/* lex.c : C lexer for skj-cc
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* lex.c : C lexer for skj-cc */
 
 #include "cc.h"
 

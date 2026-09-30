@@ -1,6 +1,4 @@
-/* internal.h : C preprocessor library — private data structures
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* internal.h : C preprocessor library — private data structures */
 
 #ifndef CPP_INTERNAL_H
 #define CPP_INTERNAL_H
@@ -108,6 +106,12 @@ long long        cond_eval(struct cpp *p, struct pp_token *expr);
 void             cond_push(struct cpp *p, int active);
 void             cond_pop(struct cpp *p);
 int              cond_active(struct cpp *p);
+
+/* A hard preprocessing error: prints "skj-cpp: error: ..." and increments
+ * p->errors, which cpp_process_file turns into a nonzero exit.  Unlike warn(),
+ * it fails the run, for constraint violations the C standard requires a
+ * diagnostic for (#error, an unbalanced conditional, and so on). */
+void             cpp_error(struct cpp *p, const char *fmt, ...);
 
 /* dir.c */
 int              dir_process_line(struct cpp *p, const char *line, int len,

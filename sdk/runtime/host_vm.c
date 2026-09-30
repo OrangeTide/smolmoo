@@ -234,11 +234,19 @@ __moo_obj_contents(const char *obj)
     return l;
 }
 
-/* Verb dispatch (`obj:verb(args)`) lands here. The MooScript backend passes
- * the call on the stack, followed by `typemask`, then the variadic arguments
- * (`&typemask + 1` is the first). `typemask` carries two routing bits per
- * argument, set by the compiler from each argument's static type: 2 = object,
- * 1 = string, 0 = other.
+/* Verb dispatch (`obj:verb(args)`) lands here. The MooScript backend (with
+ * smolmoo's local lower.c patch) emits __moo_verb_call(obj, verb, argc,
+ * typemask, arg0, arg1, ...): the args are ordinary positional parameters in
+ * the RISC-V ILP32 psABI, not C varargs, since the RV backend has no
+ * variadic-callee support. `typemask` carries two routing bits per argument,
+ * set by the compiler from each argument's static type: 2 = object, 1 =
+ * string, 0 = other.
+ *
+ * The args are declared as explicit int parameters (a0..a7) rather than `...`.
+ * Eight covers any realistic verb call; MOO marshalling only needs the first
+ * two object arguments and the first string, which are always among the
+ * leading args. The compiler caps a call at 16 arguments; any past the eighth
+ * are simply not marshalled.
  *
  * `tell` is a runtime built-in: it writes to fd 1, the invoking player's
  * stream, so `player:tell(...)` reaches that player. Any other verb is run on
@@ -247,10 +255,19 @@ __moo_obj_contents(const char *obj)
  * classic MOO shape: object arguments fill dobj then iobj, the first string
  * argument becomes argstr. Other types (int, float, ...) are not marshalled;
  * pass them as strings with tostr(). */
+#define MOO_VC_MAXARG 8
+
 void
-__moo_verb_call(const char *obj, struct moo_str *verb, int argc, int typemask)
+__moo_verb_call(const char *obj, struct moo_str *verb, int argc, int typemask,
+                int a0, int a1, int a2, int a3, int a4, int a5, int a6, int a7)
 {
-    int *va = &typemask + 1;   /* va[0] = first argument */
+    int va[MOO_VC_MAXARG];
+
+    va[0] = a0; va[1] = a1; va[2] = a2; va[3] = a3;
+    va[4] = a4; va[5] = a5; va[6] = a6; va[7] = a7;
+
+    if (argc > MOO_VC_MAXARG)
+        argc = MOO_VC_MAXARG;
 
     if (moo_str_eq_cstr(verb, "tell")) {
         struct moo_str *msg = argc >= 1 ? (struct moo_str *)va[0] : 0;
@@ -270,7 +287,7 @@ __moo_verb_call(const char *obj, struct moo_str *verb, int argc, int typemask)
 
         str_to_cstr(verb, vbuf, sizeof(vbuf));
         abuf[0] = 0;
-        for (i = 0; i < argc && i < 16; i++) {
+        for (i = 0; i < argc; i++) {
             int cat = (typemask >> (2 * i)) & 3;
 
             if (cat == 2) {

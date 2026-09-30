@@ -1,6 +1,4 @@
-/* main.c : driver for skj-as ColdFire assembler
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* main.c : driver for skj-as ColdFire assembler */
 
 #include "as.h"
 #include "version.h"

@@ -1,6 +1,4 @@
-/* regalloc_rv.c : linear-scan register allocator for RISC-V
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* regalloc_rv.c : linear-scan register allocator for RISC-V */
 /*
  * Poletto & Sarkar (1999) linear-scan register allocation.
  *

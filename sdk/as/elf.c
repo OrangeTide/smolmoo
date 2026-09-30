@@ -1,6 +1,4 @@
-/* elf.c : ELF32 big-endian relocatable object writer for ColdFire
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* elf.c : ELF32 big-endian relocatable object writer for ColdFire */
 
 #include "as.h"
 

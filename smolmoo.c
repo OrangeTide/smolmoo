@@ -3121,21 +3121,26 @@ static void
 task_step(int ti, int quantum)
 {
     struct vm_task *t = &tasks[ti];
+    enum rv_run_reason reason;
 
     t->suspended = 0;
     t->vm.cpu.halted = 0;
     t->vm.outlen = 0;
     task_current = ti;
-    rv_run(&t->vm.cpu, quantum);
+    reason = rv_run(&t->vm.cpu, quantum, NULL);
     vm_flush_output(&t->vm);
     task_current = -1;
 
     if (t->suspended) {
-        /* sys_suspend set the state already */
-    } else if (t->vm.cpu.halted) {
+        /* sys_suspend set the state already (it halts the hart to yield). */
+    } else if (reason == RV_RUN_HALT || reason == RV_RUN_TRAP) {
+        /* A clean exit halts; a trap is fatal here because a verb installs no
+         * handler, so rv_run redirects to mtvec (0) and reports the trap
+         * rather than halting. Reap the task on either. */
         task_free(ti);
     }
-    /* else: preempted, stays TASK_READY */
+    /* else RV_RUN_BUDGET: preempted mid-slice, stays TASK_READY. (RV_RUN_YIELD
+       cannot occur: verbs yield through sys_suspend, never wfi.) */
 }
 
 static void
@@ -3987,10 +3992,10 @@ program_compile(int sid, const char *src, char *hash_out, int is_c,
         aobj[0] = '\0';
 
     if (is_c)
-        /* C verbs: skj-cc-rv-psabi (register psABI) + verb_rt_rv stubs. The
+        /* C verbs: skj-cc-rv (register psABI) + verb_rt_rv stubs. The
          * header comes from the SDK dir (bundled mulibc.h) or the repo (-I.).*/
         snprintf(cmd, sizeof(cmd),
-            "%s/skj-cc-rv-psabi -I%s -I. -o %s/_prog.s %s/_prog.c "
+            "%s/skj-cc-rv -I%s -I. -o %s/_prog.s %s/_prog.c "
             "2>%s/_prog.err && "
             "%s/skj-as-rv -o %s/_prog.o %s/_prog.s 2>>%s/_prog.err && "
             "%s/skj-ld-rv -T vm_rv.ld -o %s/_prog.elf %s/_prog.o "
@@ -7338,10 +7343,10 @@ cmd_install(const char *conf_path, const char *sdk)
             int ok = 0;
 
             if (ext && strcmp(ext, ".moo") == 0 && sdk) {
-                /* MooScript verbs. skj-mooc-rv emits stack-convention RV32
-                 * assembly; the verb links against the MooScript runtime
-                 * (moo_rt entry/arena, host bridge, str/list, and the
-                 * stack-convention syscall stubs), all built into the SDK by
+                /* MooScript verbs. skj-mooc-rv emits register-convention (ILP32
+                 * psABI) RV32 assembly; the verb links against the MooScript
+                 * runtime (moo_rt entry/arena, host bridge, str/list, and the
+                 * register-convention syscall stubs), all built into the SDK by
                  * `make sdk`. The compiled verb exports `main`, which moo_rt's
                  * _start calls with the vm_args context. */
                 snprintf(cmd, sizeof(cmd),
@@ -7358,7 +7363,7 @@ cmd_install(const char *conf_path, const char *sdk)
                 fprintf(stderr, "[build:moo] %s\n", elf_src);
                 ok = (system(cmd) == 0);
             } else if (ext && strcmp(ext, ".c") == 0 && sdk) {
-                /* C verbs. skj-cc-rv-psabi emits the standard RISC-V ILP32
+                /* C verbs. skj-cc-rv emits the standard RISC-V ILP32
                  * psABI, matching the ecall stubs in verb_rt_rv.o, which also
                  * supplies the CRT _start that calls the verb's main(). A plain
                  * verb links only verb_rt_rv.o; an agent_*.c program also links
@@ -7373,7 +7378,7 @@ cmd_install(const char *conf_path, const char *sdk)
                 else
                     aobj[0] = '\0';
                 snprintf(cmd, sizeof(cmd),
-                    "%s/skj-cc-rv-psabi -I. -I sdk/runtime "
+                    "%s/skj-cc-rv -I. -I sdk/runtime "
                     "-o %s/_verb.s %s && "
                     "%s/skj-as-rv -o %s/_verb.o "
                     "%s/_verb.s && "

@@ -1,6 +1,4 @@
-/* script.c : GNU ld linker script subset parser
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* script.c : GNU ld linker script subset parser */
 
 #include "ld.h"
 

@@ -1,15 +1,16 @@
 #!/bin/sh
 # update-sdk.sh : smolmoo's re-vendoring wrapper around skjegg's vendor.sh.
-# Copyright (c) 2026 Jon Mayo
 # SPDX-License-Identifier: 0BSD OR CC0-1.0
 #
 # This is skjegg's vendor.sh with smolmoo's component selection and release
 # ref baked in.  Run it with no arguments to re-vendor the SDK into sdk/;
-# pass -r REF to move to a different release.
+# pass -r REF to move to a different release.  Regenerate it from a newer
+# vendor.sh when the release changes the vendoring logic (component set,
+# backend file layout), which a plain -r bump cannot follow.
 #
 # Usage: update-sdk.sh [-d DIR] [-r REF] [-u DIR] component ...
 #
-# Backends:  coldfire  riscv  x86  mips
+# Backends:  coldfire  riscv  mips
 # Frontends: tinc  scheme  moo  pascal  cc
 # Tools:     as  ld  as-rv  ld-rv  as-mips  ld-mips  ar  cpp
 # Emulators: emu-cf  emu-rv
@@ -18,28 +19,40 @@
 # local integrations must be re-applied after each run):
 #   1. Restore the smolmoo-local verb runtime that skjegg does not ship:
 #        git checkout -- sdk/runtime/host_vm.c sdk/runtime/hypercall.S \
-#                        sdk/runtime/start_vm.S sdk/runtime/mulibc_vm.h
+#          sdk/runtime/start_vm.S sdk/runtime/mulibc_vm.h sdk/runtime/moo_rt.c \
+#          sdk/runtime/moo_syscall_rv.S sdk/runtime/verb_rt_rv.S \
+#          sdk/runtime/verbmain.c
 #   2. In sdk/skjegg.mk: wrap the cross-compiled runtime object rules in
 #        ifndef SKJ_SKIP_M68K_RUNTIME ... endif  (smolmoo builds its own
-#        runtime with skj-cc and stays free of the m68k/riscv GNU tools).
-#   3. Re-apply smolmoo's license to the vendored sources.  This project
-#        distributes the compiler under a different license than upstream
-#        (by permission): set sdk/LICENSE from the repo LICENSE.md, and
-#        normalize every vendored source header to the smolmoo block:
-#          Copyright (c) 2026 Jon Mayo
-#          SPDX-License-Identifier: 0BSD OR CC0-1.0
-#   4. Copy the server-embedded CPU core to the top level:
+#        runtime with skj-cc/skj-as and stays free of the m68k/riscv GNU
+#        tools), and add the SPDX tag to the mk header.
+#   3. Restore the smolmoo sdk/LICENSE (a copy of the repo LICENSE.md, the
+#        dual-license summary) over upstream's full CC0 text:
+#          git checkout HEAD -- sdk/LICENSE
+#        A human may then normalize the vendored source headers to add the
+#        smolmoo copyright line above each SPDX tag; that is left to a human.
+#   4. Re-apply smolmoo's local MooScript patch to sdk/moo/lower.c: the
+#        verb-call lowering (N_VCALL) emits __moo_verb_call(obj, verb, argc,
+#        typemask, args...) with a per-argument typemask (2 bits/arg: 2 =
+#        object, 1 = string, 0 = other), which host_vm.c uses to route object
+#        args to dobj/iobj and a string arg to argstr.  Upstream skjegg has no
+#        typemask.  The other toolchain patches smolmoo once carried (assembler
+#        immediate-range checks, the backend's large frame-offset lowering)
+#        are upstream as of v0.7.0 and no longer need re-applying.
+#   5. Copy the server-embedded CPU core to the top level:
 #        cp sdk/emu/rv32.c sdk/emu/rv32.h .
-#   RISC-V RV32 is the verb engine.  The server links rv32.c and verbs are
-#   built with the in-tree RISC-V toolchain (skj-cc-rv-psabi, skj-as-rv,
-#   skj-ld-rv).  The vendored ColdFire components are unused by the server;
-#   trimming them from COMPONENTS is a separate cleanup.
+#   RISC-V RV32 is the verb engine.  As of skjegg v0.7.0 the RV stack calling
+#   convention was retired: the server builds every verb with the psABI
+#   toolchain (skj-cc-rv, skj-as-rv, skj-ld-rv).  The vendored ColdFire
+#   components are unused by the server; trimming them from COMPONENTS is a
+#   separate cleanup.
+
 set -eu
 
 ORIGIN="https://github.com/OrangeTide/skjegg-compiler-suite.git"
 COMPONENTS="coldfire riscv moo cc as ld as-rv ld-rv cpp emu-cf emu-rv"
 DEST="sdk"
-REF="v0.5.0"
+REF="v0.7.0"
 UPDATE_DIR="."
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -49,7 +62,7 @@ usage() {
 Usage: vendor-skjegg.sh [-d DIR] [-r REF] [-u DIR] component ...
        update-skjegg.sh                      (re-vendor)
 
-Backends:  coldfire  riscv  x86  mips
+Backends:  coldfire  riscv  mips
 Frontends: tinc  scheme  moo  pascal  cc
 Tools:     as  ld  as-rv  ld-rv  as-mips  ld-mips  ar  cpp
              (as-rv/ld-rv: the RISC-V RV32 toolchain; as-mips/ld-mips: the
@@ -89,7 +102,7 @@ fi
 
 # ---- parse and validate components ----
 
-has_cf=0 has_rv=0 has_x86=0 has_mips=0
+has_cf=0 has_rv=0 has_mips=0
 has_tinc=0 has_scheme=0 has_moo=0 has_pascal=0 has_cc=0
 has_as=0 has_ld=0 has_cpp=0
 has_as_rv=0 has_ld_rv=0
@@ -100,7 +113,6 @@ for comp in $COMPONENTS; do
     case "$comp" in
         coldfire) has_cf=1 ;;
         riscv)    has_rv=1 ;;
-        x86)      has_x86=1 ;;
         mips)     has_mips=1 ;;
         tinc)     has_tinc=1 ;;
         scheme)   has_scheme=1 ;;
@@ -122,7 +134,7 @@ for comp in $COMPONENTS; do
 done
 
 has_fe=$((has_tinc + has_scheme + has_moo + has_pascal + has_cc))
-has_be=$((has_cf + has_rv + has_x86 + has_mips))
+has_be=$((has_cf + has_rv + has_mips))
 
 if [ "$has_fe" -gt 0 ] && [ "$has_be" -eq 0 ]; then
     die "frontends require at least one backend"
@@ -169,13 +181,10 @@ if [ "$has_cf" -eq 1 ]; then
 fi
 if [ "$has_rv" -eq 1 ]; then
     mkdir -p "$DEST/backend" "$DEST/runtime"
-    cp "$S/backend/rv_emit.c" "$S/backend/regalloc_rv.c" "$DEST/backend/"
+    cp "$S/backend/rv_select.c" "$S/backend/rv_mc_text.c" \
+       "$S/backend/rv_mc.h" "$S/backend/rv_select.h" "$S/backend/rv_mc_text.h" \
+       "$S/backend/regalloc_rv.c" "$DEST/backend/"
     cp "$S/runtime/start_rv.S" "$DEST/runtime/"
-fi
-if [ "$has_x86" -eq 1 ]; then
-    mkdir -p "$DEST/backend" "$DEST/runtime"
-    cp "$S/backend/x86_emit.c" "$S/backend/regalloc_x86.c" "$DEST/backend/"
-    cp "$S/runtime/start_x86.asm" "$DEST/runtime/"
 fi
 if [ "$has_mips" -eq 1 ]; then
     # The Linux crt (start_mips.S), plus what MIPS I specifically needs: half.c
@@ -347,8 +356,6 @@ emit_compiler() {
 # header
 cat > "$MK" <<EOF
 # skjegg.mk — vendored skjegg compiler toolkit
-# Copyright (c) 2026 Jon Mayo
-# SPDX-License-Identifier: 0BSD OR CC0-1.0
 # Origin: $ORIGIN ($commit)
 # Components: $COMPONENTS
 # Generated: $(date -u +%Y-%m-%d)
@@ -394,13 +401,6 @@ RV_AS ?= riscv64-linux-gnu-as
 RV_LD ?= riscv64-linux-gnu-ld
 MK
 fi
-if [ "$has_x86" -eq 1 ]; then
-    cat >> "$MK" <<'MK'
-
-X86_ASM ?= nasm
-X86_LD  ?= ld
-MK
-fi
 if [ "$has_mips" -eq 1 ]; then
     cat >> "$MK" <<'MK'
 
@@ -420,10 +420,7 @@ if [ "$has_cf" -eq 1 ]; then
     printf 'SKJ_CF := $(SKJEGG)backend/regalloc_cf.c $(SKJEGG)backend/cf_emit.c\n' >> "$MK"
 fi
 if [ "$has_rv" -eq 1 ]; then
-    printf 'SKJ_RV := $(SKJEGG)backend/regalloc_rv.c $(SKJEGG)backend/rv_emit.c\n' >> "$MK"
-fi
-if [ "$has_x86" -eq 1 ]; then
-    printf 'SKJ_X86 := $(SKJEGG)backend/regalloc_x86.c $(SKJEGG)backend/x86_emit.c\n' >> "$MK"
+    printf 'SKJ_RV := $(SKJEGG)backend/regalloc_rv.c $(SKJEGG)backend/rv_select.c $(SKJEGG)backend/rv_mc_text.c\n' >> "$MK"
 fi
 if [ "$has_mips" -eq 1 ]; then
     printf 'SKJ_MIPS := $(SKJEGG)backend/regalloc_mips.c $(SKJEGG)backend/mips_emit.c\n' >> "$MK"
@@ -518,9 +515,6 @@ fi
 if [ "$has_tinc" -eq 1 ] && [ "$has_rv" -eq 1 ]; then
     emit_compiler skj-tinc-rv SKJ_TINC SKJ_RV '-I$(SKJEGG)ir -I$(SKJEGG)tinc'
 fi
-if [ "$has_tinc" -eq 1 ] && [ "$has_x86" -eq 1 ]; then
-    emit_compiler skj-tinc-x86 SKJ_TINC SKJ_X86 '-I$(SKJEGG)ir -I$(SKJEGG)tinc'
-fi
 if [ "$has_tinc" -eq 1 ] && [ "$has_mips" -eq 1 ]; then
     emit_compiler skj-tinc-mips SKJ_TINC SKJ_MIPS '-I$(SKJEGG)ir -I$(SKJEGG)tinc'
 fi
@@ -529,9 +523,6 @@ if [ "$has_scheme" -eq 1 ] && [ "$has_cf" -eq 1 ]; then
 fi
 if [ "$has_scheme" -eq 1 ] && [ "$has_rv" -eq 1 ]; then
     emit_compiler skj-sc-rv SKJ_SCHEME SKJ_RV '-I$(SKJEGG)scheme -I$(SKJEGG)ir'
-fi
-if [ "$has_scheme" -eq 1 ] && [ "$has_x86" -eq 1 ]; then
-    emit_compiler skj-sc-x86 SKJ_SCHEME SKJ_X86 '-I$(SKJEGG)scheme -I$(SKJEGG)ir'
 fi
 if [ "$has_scheme" -eq 1 ] && [ "$has_mips" -eq 1 ]; then
     emit_compiler skj-sc-mips SKJ_SCHEME SKJ_MIPS '-I$(SKJEGG)scheme -I$(SKJEGG)ir'
@@ -542,9 +533,6 @@ fi
 if [ "$has_moo" -eq 1 ] && [ "$has_rv" -eq 1 ]; then
     emit_compiler skj-mooc-rv SKJ_MOO SKJ_RV '-I$(SKJEGG)moo -I$(SKJEGG)ir'
 fi
-if [ "$has_moo" -eq 1 ] && [ "$has_x86" -eq 1 ]; then
-    emit_compiler skj-mooc-x86 SKJ_MOO SKJ_X86 '-I$(SKJEGG)moo -I$(SKJEGG)ir'
-fi
 if [ "$has_moo" -eq 1 ] && [ "$has_mips" -eq 1 ]; then
     emit_compiler skj-mooc-mips SKJ_MOO SKJ_MIPS '-I$(SKJEGG)moo -I$(SKJEGG)ir'
 fi
@@ -554,9 +542,6 @@ fi
 if [ "$has_pascal" -eq 1 ] && [ "$has_rv" -eq 1 ]; then
     emit_compiler skj-pc-rv SKJ_PASCAL SKJ_RV '-I$(SKJEGG)pascal -I$(SKJEGG)ir'
 fi
-if [ "$has_pascal" -eq 1 ] && [ "$has_x86" -eq 1 ]; then
-    emit_compiler skj-pc-x86 SKJ_PASCAL SKJ_X86 '-I$(SKJEGG)pascal -I$(SKJEGG)ir'
-fi
 if [ "$has_pascal" -eq 1 ] && [ "$has_mips" -eq 1 ]; then
     emit_compiler skj-pc-mips SKJ_PASCAL SKJ_MIPS '-I$(SKJEGG)pascal -I$(SKJEGG)ir'
 fi
@@ -565,13 +550,11 @@ if [ "$has_cc" -eq 1 ] && [ "$has_cf" -eq 1 ]; then
         '-I$(SKJEGG)cc -I$(SKJEGG)cpp -I$(SKJEGG)ir' '$(SKJ_CPP_LIB)'
 fi
 if [ "$has_cc" -eq 1 ] && [ "$has_rv" -eq 1 ]; then
+    # The RISC-V C compiler emits the standard ILP32 psABI (a0..a7) so its
+    # output interlinks with gcc; it pairs with the standalone RV toolchain
+    # (as-rv/ld-rv) and runtime/start_rv_psabi_cc.S.
     emit_compiler skj-cc-rv SKJ_CC SKJ_RV \
         '-I$(SKJEGG)cc -I$(SKJEGG)cpp -I$(SKJEGG)ir' '$(SKJ_CPP_LIB)'
-    # The psABI build: same sources with -DCC_PSABI, emitting the standard
-    # RISC-V ILP32 convention so its output interlinks with gcc.  Pairs with
-    # the standalone RV toolchain (as-rv/ld-rv) and runtime/start_rv_psabi_cc.S.
-    emit_compiler skj-cc-rv-psabi SKJ_CC SKJ_RV \
-        '-DCC_PSABI -I$(SKJEGG)cc -I$(SKJEGG)cpp -I$(SKJEGG)ir' '$(SKJ_CPP_LIB)'
 fi
 if [ "$has_cc" -eq 1 ] && [ "$has_mips" -eq 1 ]; then
     emit_compiler skj-cc-mips SKJ_CC SKJ_MIPS \
@@ -581,10 +564,6 @@ if [ "$has_cc" -eq 1 ] && [ "$has_mips" -eq 1 ]; then
     # softfloat.c call, for the FPU-less R3051 (the PlayStation).
     emit_compiler skj-cc-mips-sf SKJ_CC SKJ_MIPS \
         '-DMIPS_SOFTFLOAT -I$(SKJEGG)cc -I$(SKJEGG)cpp -I$(SKJEGG)ir' '$(SKJ_CPP_LIB)'
-fi
-if [ "$has_cc" -eq 1 ] && [ "$has_x86" -eq 1 ]; then
-    emit_compiler skj-cc-x86 SKJ_CC SKJ_X86 \
-        '-I$(SKJEGG)cc -I$(SKJEGG)cpp -I$(SKJEGG)ir' '$(SKJ_CPP_LIB)'
 fi
 
 # tool binary rules
@@ -677,12 +656,6 @@ if [ "$has_rv" -eq 1 ]; then
     {
         printf '\n$(BUILD)/start_rv.o: $(SKJEGG)runtime/start_rv.S | $(BUILD)\n'
         printf '\t$(RV_AS) -march=rv32im -mabi=ilp32 -o $@ $<\n'
-    } >> "$MK"
-fi
-if [ "$has_x86" -eq 1 ]; then
-    {
-        printf '\n$(BUILD)/start_x86.o: $(SKJEGG)runtime/start_x86.asm | $(BUILD)\n'
-        printf '\t$(X86_ASM) -f elf32 -o $@ $<\n'
     } >> "$MK"
 fi
 if [ "$has_pascal" -eq 1 ] && [ "$has_cf" -eq 1 ]; then

@@ -1,6 +1,4 @@
-/* moo.h : shared declarations for the MooScript compiler
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* moo.h : shared declarations for the MooScript compiler */
 #ifndef MOO_H
 #define MOO_H
 

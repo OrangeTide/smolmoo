@@ -1,6 +1,4 @@
-/* main.c : skj-cc C compiler driver
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* main.c : skj-cc C compiler driver */
 
 #include "cc.h"
 #include "cpp.h"

@@ -1,6 +1,4 @@
-/* guest.c : sparse guest memory, the syscall layer, and the initial stack
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* guest.c : sparse guest memory, the syscall layer, and the initial stack */
 
 #include "guest.h"
 
@@ -33,6 +31,12 @@ gm_free(guest_mem *m)
         free(m->dir[i]);
         m->dir[i] = NULL;
     }
+    if (m->pool) {                      /* return this guest's pages to the pool */
+        if (m->pool->used >= m->committed)
+            m->pool->used -= m->committed;
+        else
+            m->pool->used = 0;
+    }
     m->committed = 0;
 }
 
@@ -49,6 +53,98 @@ gm_map(guest_mem *m, uint32_t base, uint32_t size, int prot, const char *name)
     r->prot = prot;
     r->name = name;
     return 0;
+}
+
+/* The dynamic mapping area sits above the image, heap, and stack the loader
+ * places, and grows upward. Each mapping is followed by a one-page gap so a
+ * following guard page never abuts the previous mapping. */
+#define GM_MMAP_BASE    0x70000000u
+
+uint32_t
+gm_mmap(guest_mem *m, uint32_t size, unsigned flags)
+{
+    uint32_t base;
+
+    uint64_t next, base64, end;
+    int slots;
+
+    size = (size + GM_PAGE_SIZE - 1) & ~(GM_PAGE_SIZE - 1);
+    if (size == 0)
+        return 0;
+    if (m->mmap_next == 0)
+        m->mmap_next = GM_MMAP_BASE;
+
+    /* Lay out an optional guard page, the mapping, and a trailing gap, all in
+     * 64-bit so a large request cannot wrap the 32-bit cursor and hand back a
+     * low address that overlaps the image, the heap, or an earlier mapping.
+     * The whole extent must stay inside the 32-bit space. */
+    next = m->mmap_next;
+    base64 = next + ((flags & GM_MAP_GUARD_LO) ? GM_PAGE_SIZE : 0);
+    end = base64 + (uint64_t)size + GM_PAGE_SIZE;   /* + the trailing gap */
+    if (end > 0x100000000ull)
+        return 0;
+
+    /* Reserve the region slots up front, so a full table never leaves a guard
+     * mapped with no mapping behind it. */
+    slots = (flags & GM_MAP_GUARD_LO) ? 2 : 1;
+    if (m->nregions + slots > GM_MAX_REGIONS)
+        return 0;
+
+    if (flags & GM_MAP_GUARD_LO)        /* an unmapped page below the region */
+        gm_map(m, (uint32_t)next, GM_PAGE_SIZE, 0, "guard");
+
+    base = (uint32_t)base64;
+    gm_map(m, base, size, GM_R | GM_W, "mapping");
+    m->mmap_next = (uint32_t)end;
+    return base;
+}
+
+void
+gm_munmap(guest_mem *m, uint32_t base, uint32_t size)
+{
+    uint32_t a, pages, k;
+    int i;
+
+    size = (size + GM_PAGE_SIZE - 1) & ~(GM_PAGE_SIZE - 1);
+    if (size == 0)
+        return;
+    if ((uint64_t)base + size > 0x100000000ull)     /* a range that wraps: ignore */
+        return;
+
+    /* Free the committed pages of the mapping (its guard never commits). Count
+     * pages rather than compare against base + size, which would wrap. */
+    pages = size >> GM_PAGE_SHIFT;
+    for (k = 0, a = base; k < pages; k++, a += GM_PAGE_SIZE) {
+        uint32_t l1 = a >> 22;
+        uint32_t l2 = (a >> GM_PAGE_SHIFT) & (GM_L2_ENTRIES - 1);
+
+        if (m->dir[l1] && m->dir[l1][l2]) {
+            free(m->dir[l1][l2]);
+            m->dir[l1][l2] = NULL;
+            if (m->committed >= GM_PAGE_SIZE)
+                m->committed -= GM_PAGE_SIZE;
+            if (m->pool && m->pool->used >= GM_PAGE_SIZE)
+                m->pool->used -= GM_PAGE_SIZE;
+        }
+    }
+
+    /* Drop the mapping's region entry, and the guard page just below it if it
+     * has one, keeping the region table order. */
+    for (i = 0; i < m->nregions; i++) {
+        if (m->regions[i].base == base && m->regions[i].size == size) {
+            int lo = i, drop, j;
+
+            if (i > 0 && m->regions[i - 1].prot == 0 &&
+                m->regions[i - 1].base + m->regions[i - 1].size == base)
+                lo = i - 1;
+            drop = i - lo + 1;
+            for (j = lo; j + drop < m->nregions; j++)
+                m->regions[j] = m->regions[j + drop];
+            m->nregions -= drop;
+            break;
+        }
+    }
+    m->last = NULL;             /* the compaction may dangle the lookup cache */
 }
 
 /** Region containing addr, or NULL.  Accesses cluster, so the last hit is
@@ -80,6 +176,7 @@ gm_fault(guest_mem *m, uint32_t addr, int is_write, const char *why)
     m->fault = 1;
     m->fault_addr = addr;
     m->fault_write = is_write;
+    m->fault_guard = 0;         /* the guard-page path sets this after us */
     m->fault_why = why;
 }
 
@@ -101,6 +198,11 @@ gm_page(guest_mem *m, uint32_t addr, int want_write)
         gm_fault(m, addr, want_write, "unmapped");
         return NULL;
     }
+    if (r->prot == 0) {         /* a guard page: any access is a stack overflow */
+        gm_fault(m, addr, want_write, "stack overflow");
+        m->fault_guard = 1;
+        return NULL;
+    }
     if (want_write && !(r->prot & GM_W) && !m->loading) {
         gm_fault(m, addr, 1, "read-only");
         return NULL;
@@ -109,6 +211,11 @@ gm_page(guest_mem *m, uint32_t addr, int want_write)
         return page;
     if (m->committed + GM_PAGE_SIZE > m->limit) {
         gm_fault(m, addr, want_write, "memory limit");
+        return NULL;
+    }
+    if (m->pool && m->pool->limit &&
+        m->pool->used + GM_PAGE_SIZE > m->pool->limit) {
+        gm_fault(m, addr, want_write, "memory pool exhausted");
         return NULL;
     }
 
@@ -126,6 +233,8 @@ gm_page(guest_mem *m, uint32_t addr, int want_write)
     }
     m->dir[l1][l2] = page;
     m->committed += GM_PAGE_SIZE;
+    if (m->pool)
+        m->pool->used += GM_PAGE_SIZE;
     return page;
 }
 
@@ -226,6 +335,16 @@ gm_zero(guest_mem *m, uint32_t addr, uint32_t len)
 
     for (i = 0; i < len; i++)
         gm_write8(m, addr + i, 0);
+}
+
+void
+gm_read_out(guest_mem *m, uint32_t addr, void *dst, uint32_t len)
+{
+    uint8_t *d = dst;
+    uint32_t i;
+
+    for (i = 0; i < len; i++)
+        d[i] = gm_read8(m, addr + i);
 }
 
 /****************************************************************

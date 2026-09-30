@@ -1,6 +1,4 @@
 /* rv_macro.c : GAS .macro / .endm expansion for the RV32 assembler.
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0
  *
  * A line-based pre-pass run once before the sizing and emit passes, so the
  * multi-pass assembler core never sees a macro.  Supports parameterless

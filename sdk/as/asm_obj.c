@@ -1,6 +1,4 @@
-/* asm_obj.c : arch-neutral section and symbol-table helpers
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* asm_obj.c : arch-neutral section and symbol-table helpers */
 
 #include "asm_obj.h"
 

@@ -1,6 +1,4 @@
-/* cf_emit.c : ColdFire / m68k back-end, emits GAS-syntax assembly
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* cf_emit.c : ColdFire / m68k back-end, emits GAS-syntax assembly */
 /*
  * Instruction selection is direct: one IR op -> a short burst of m68k
  * instructions.  Integer temps live in d2..d7, float temps in fp2..fp7
@@ -331,10 +329,15 @@ emit_funop(FILE *out, struct ir_func *fn, struct ir_insn *i,
  * Per-instruction emission
  ****************************************************************/
 
-static int arg_temps[16];
-static int arg_is_float[16];
-static int arg_is_f32[16];
-static int arg_is_i64[16];
+/* Maximum arguments in one call. Mirrors the C front end's cap (lower.c:
+   "too many arguments"); the two must agree, or a call the front end accepts
+   would be rejected here. */
+#define CF_MAX_ARGS 32
+
+static int arg_temps[CF_MAX_ARGS];
+static int arg_is_float[CF_MAX_ARGS];
+static int arg_is_f32[CF_MAX_ARGS];
+static int arg_is_i64[CF_MAX_ARGS];
 static int narg;
 static int label_prefix;
 static int uses_floats;
@@ -682,7 +685,7 @@ emit_insn(FILE *out, struct ir_func *fn, struct ir_insn *i)
         break;
 
     case IR_ARG:
-        if (narg >= 16)
+        if (narg >= CF_MAX_ARGS)
             die("cf_emit: too many args");
         arg_is_float[narg] = 0;
         arg_is_f32[narg] = 0;
@@ -690,7 +693,7 @@ emit_insn(FILE *out, struct ir_func *fn, struct ir_insn *i)
         arg_temps[narg++] = i->a;
         break;
     case IR_FARG:
-        if (narg >= 16)
+        if (narg >= CF_MAX_ARGS)
             die("cf_emit: too many args");
         arg_is_float[narg] = 1;
         arg_is_f32[narg] = (i->imm == FWIDTH_F32);
@@ -745,11 +748,24 @@ emit_insn(FILE *out, struct ir_func *fn, struct ir_insn *i)
         fprintf(out, "\tmove.l %%a0, %d(%%fp)\n", off + 8);
         fprintf(out, "\tlea %d(%%fp), %%a0\n", off);
         fprintf(out, "\tmove.l %%a0, __cont_mark_sp\n");
+        /* stash the continuation-arena high-water mark (first entry only,
+         * before the re-entry label) for IR_CONT_UNWIND to restore */
+        fprintf(out, "\tmove.l __cont_arena_ptr, %%d0\n");
+        fprintf(out, "\tmove.l %%d0, %d(%%fp)\n", off + 12);
         fprintf(out, "\tmoveq #0, %%d0\n");
         fprintf(out, ".Lmark%d_%d:\n", label_prefix, i->label);
         if (strcmp(sd, "%d0") != 0)
             fprintf(out, "\tmove.l %%d0, %s\n", sd);
         wd(out, fn, i->dst, sd);
+        break;
+    }
+
+    case IR_CONT_UNWIND: {
+        /* restore the continuation arena to the mark-time high-water mark,
+         * reclaiming every buffer captured within the closing reset extent */
+        int off = slot_offset(fn, i->slot);
+        fprintf(out, "\tmove.l %d(%%fp), %%d0\n", off + 12);
+        fprintf(out, "\tmove.l %%d0, __cont_arena_ptr\n");
         break;
     }
 
@@ -1385,7 +1401,7 @@ emit_insn(FILE *out, struct ir_func *fn, struct ir_insn *i)
     }
 
     case IR_ARG64:
-        if (narg >= 16)
+        if (narg >= CF_MAX_ARGS)
             die("cf_emit: too many args");
         arg_is_float[narg] = 0;
         arg_is_i64[narg] = 1;

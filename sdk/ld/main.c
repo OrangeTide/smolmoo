@@ -1,6 +1,4 @@
-/* main.c : skj-ld linker driver
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* main.c : skj-ld linker driver */
 
 #include "ld.h"
 #include "version.h"

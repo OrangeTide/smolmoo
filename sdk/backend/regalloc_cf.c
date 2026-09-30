@@ -1,6 +1,4 @@
-/* regalloc_cf.c : linear-scan register allocator for ColdFire
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* regalloc_cf.c : linear-scan register allocator for ColdFire */
 /*
  * Poletto & Sarkar (1999) linear-scan register allocation.
  *

@@ -1,6 +1,4 @@
-/* rv_elf_write.c : ELF32 little-endian RISC-V executable writer
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* rv_elf_write.c : ELF32 little-endian RISC-V executable writer */
 
 #include "rv_ld.h"
 

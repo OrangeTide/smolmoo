@@ -1,6 +1,4 @@
-/* cf_user.c : Linux user-mode machine for the ColdFire emulator
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* cf_user.c : Linux user-mode machine for the ColdFire emulator */
 
 #include "coldfire.h"
 #include "elf32.h"

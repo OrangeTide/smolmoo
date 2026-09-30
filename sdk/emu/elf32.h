@@ -1,6 +1,4 @@
-/* elf32.h : ELF32 loader for the guest machines, either endianness
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* elf32.h : ELF32 loader for the guest machines, either endianness */
 
 #ifndef ELF32_H
 #define ELF32_H
@@ -40,5 +38,15 @@ uint32_t elf32_load_raw(const char *path, elf32_poke_fn poke, void *ctx,
 
 /* Address of a symbol, or 0 when absent. */
 uint32_t elf32_symbol(const char *path, const char *name);
+
+/* The same three operations against an in-memory image rather than a file:
+ * a buffer of `size` bytes the caller owns.  `what` names the image in any
+ * diagnostic (the file variants pass the path).  These are what a memory
+ * region loader (spawn_image, a VFS blob) reaches for; the path variants are
+ * thin wrappers that read the file into a buffer and call these. */
+int elf32_probe_mem(const uint8_t *buf, long size, elf32_info *info);
+int elf32_load_mem(guest *g, const uint8_t *buf, long size, elf32_info *info,
+                   const char *what);
+uint32_t elf32_symbol_mem(const uint8_t *buf, long size, const char *name);
 
 #endif /* ELF32_H */

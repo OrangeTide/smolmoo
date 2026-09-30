@@ -1,6 +1,4 @@
-/* ld.h : static linker for ELF32 big-endian (ColdFire/m68k) — shared types
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* ld.h : static linker for ELF32 big-endian (ColdFire/m68k) — shared types */
 
 #ifndef LD_H
 #define LD_H

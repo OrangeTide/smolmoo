@@ -1,6 +1,4 @@
-/* main.c : skj-cpp preprocessor CLI
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* main.c : skj-cpp preprocessor CLI */
 
 #include "cpp.h"
 #include "util.h"

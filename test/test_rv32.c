@@ -149,7 +149,7 @@ test_addi(Test *t)
 
     setup(&m, &cpu);
     poke(&m, ENTRY, enc_addi(10, 0, 42));
-    rv_run(&cpu, 1);
+    rv_run(&cpu, 1, NULL);
     TAP_CHECKF(t, rv_get_x(&cpu, 10) == 42, "x10 = %u", rv_get_x(&cpu, 10));
     TAP_CHECKF(t, rv_get_pc(&cpu) == ENTRY + 4,
         "PC = %08x", rv_get_pc(&cpu));
@@ -164,7 +164,7 @@ test_addi_sign_extend(Test *t)
 
     setup(&m, &cpu);
     poke(&m, ENTRY, enc_addi(11, 0, -1));
-    rv_run(&cpu, 1);
+    rv_run(&cpu, 1, NULL);
     TAP_CHECKF(t, rv_get_x(&cpu, 11) == 0xFFFFFFFFu,
         "x11 = %08x", rv_get_x(&cpu, 11));
 }
@@ -181,7 +181,7 @@ test_add(Test *t)
     poke(&m, ENTRY,     enc_addi(10, 0, 5));
     poke(&m, ENTRY + 4, enc_addi(11, 0, 7));
     poke(&m, ENTRY + 8, enc_add(12, 10, 11));
-    n = rv_run(&cpu, 3);
+    rv_run(&cpu, 3, &n);
     TAP_CHECKF(t, n == 3, "executed %d", n);
     TAP_CHECKF(t, rv_get_x(&cpu, 12) == 12, "x12 = %u", rv_get_x(&cpu, 12));
     TAP_CHECKF(t, rv_get_pc(&cpu) == ENTRY + 12,
@@ -200,7 +200,7 @@ test_load_store(Test *t)
     poke(&m, ENTRY,      enc_addi(10, 0, 0x2A1));
     poke(&m, ENTRY + 4,  enc_sw(10, 0, 0x40));
     poke(&m, ENTRY + 8,  enc_lw(11, 0, 0x40));
-    rv_run(&cpu, 3);
+    rv_run(&cpu, 3, NULL);
     TAP_CHECKF(t, rv_get_x(&cpu, 11) == 0x2A1,
         "x11 = %03x", rv_get_x(&cpu, 11));
     TAP_CHECKF(t, m.b[0x40] == 0xA1 && m.b[0x41] == 0x02,
@@ -240,7 +240,7 @@ test_ecall(Test *t)
     poke(&m, ENTRY,     enc_addi(17, 0, 7));    /* a7 = 7 (syscall nr) */
     poke(&m, ENTRY + 4, enc_addi(10, 0, 99));   /* a0 = 99 (arg)       */
     poke(&m, ENTRY + 8, ECALL);
-    rv_run(&cpu, 3);
+    rv_run(&cpu, 3, NULL);
     TAP_CHECKF(t, p.calls == 1, "handler calls = %d", p.calls);
     TAP_CHECKF(t, p.last_nr == 7, "a7 = %u", p.last_nr);
     TAP_CHECKF(t, p.last_a0 == 99, "a0 = %u", p.last_a0);

@@ -1,6 +1,4 @@
 /* start_rv.S - minimal RISC-V (RV32IM) runtime for Linux user-mode.
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0
  *
  * Provides _start (the ELF entry point), and thin wrappers for the two
  * syscalls the test programs need: write(2) and exit(2).  qemu-riscv32
@@ -11,8 +9,9 @@
  *   ecall to invoke
  *   return value in a0
  *
- * Our calling convention passes all args on the stack (not in registers),
- * so the wrappers load from the stack before issuing ecall.
+ * The backend emits the RISC-V ILP32 platform psABI, so arguments arrive
+ * in a0..a7.  The syscall wrappers pass them straight through: write's
+ * (fd, buf, n) are already in a0, a1, a2, which is the ecall order too.
  *
  * _start drops argc/argv (tests take no arguments), calls main, then
  * passes main's return value to _exit.
@@ -21,6 +20,7 @@
 	.text
 	.globl _start
 	.globl write
+	.globl read
 	.globl exit
 	.globl _exit
 
@@ -34,17 +34,19 @@ _start:
 
 /* int write(int fd, const char *buf, int n); */
 write:
-	lw	a2, 8(sp)
-	lw	a1, 4(sp)
-	lw	a0, 0(sp)
 	li	a7, 64
+	ecall
+	ret
+
+/* int read(int fd, char *buf, int n); */
+read:
+	li	a7, 63
 	ecall
 	ret
 
 /* void exit(int status); */
 exit:
 _exit:
-	lw	a0, 0(sp)
 	li	a7, 93
 	ecall
 1:	j	1b
@@ -164,7 +166,6 @@ __lshrdi3:
  *   Bump allocator.  Aligns size up to 4 bytes.  Returns pointer in a0. */
 	.globl __moo_arena_alloc
 __moo_arena_alloc:
-	lw	a0, 0(sp)
 	addi	a0, a0, 3
 	andi	a0, a0, -4
 	la	t0, __moo_arena_ptr
@@ -288,6 +289,7 @@ __cont_resume:
 	.globl __cont_mark_sp
 __cont_mark_sp:
 	.word	0
+	.globl	__cont_arena_ptr
 __cont_arena_ptr:
 	.word	__cont_arena
 __moo_arena_ptr:

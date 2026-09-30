@@ -1,6 +1,4 @@
 /* asm_lex.h : arch-neutral GAS-syntax tokenizer shared by the assemblers.
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0
  *
  * The scanner is parameterized by two knobs set at init time:
  *   comment_ch : the line-comment character ('|' for m68k GAS, '#' for RISC-V)

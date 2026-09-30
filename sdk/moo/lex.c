@@ -1,6 +1,4 @@
 /* lex.c - Hand-written lexer for MooScript.
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0
  *
  * Single-buffer, one-token lookahead. The buffer is owned by the
  * caller of lex_init (main slurps the whole file into memory).

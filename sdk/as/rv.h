@@ -1,6 +1,4 @@
 /* rv.h : RISC-V RV32 assembler — shared types
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0
  *
  * A second front end for the assembler skeleton (asm_lex.c + asm_obj.c),
  * beside the ColdFire one.  It reads the GAS-syntax subset the RISC-V backend

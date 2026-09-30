@@ -1,6 +1,4 @@
 /* asm_obj.h : arch-neutral object bookkeeping shared by the assemblers.
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0
  *
  * Sections, symbols and relocations, plus the byte-emission and symbol-table
  * helpers.  The section emitter is endianness-aware (a per-section flag) so

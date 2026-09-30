@@ -1,6 +1,4 @@
-/* main.c : skj-run driver — run a guest ELF on an in-tree emulator
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* main.c : skj-run driver — run a guest ELF on an in-tree emulator */
 
 #include "elf32.h"
 #include "guest.h"
@@ -45,6 +43,8 @@ usage(FILE *out)
         "  --stack BYTES   guest stack size (default 1M)\n"
         "  --heap BYTES    guest heap size for brk (default 16M)\n"
         "  --max-insns N   stop after N instructions (default unlimited)\n"
+        "  --total-mem BYTES  aggregate memory cap across all processes\n"
+        "  --child-max-insns N  per-spawned-child instruction budget\n"
         "  --trace         dump the CPU event ring on a fault\n"
         "  --stats         report instruction and syscall counts\n"
         "  -q, --quiet     discard guest output\n"
@@ -176,6 +176,14 @@ main(int argc, char **argv)
         }
         if (strcmp(a, "--max-insns") == 0 && i + 1 < argc) {
             o.max_insns = parse_size(argv[++i]);
+            continue;
+        }
+        if (strcmp(a, "--total-mem") == 0 && i + 1 < argc) {
+            o.total_mem = parse_size(argv[++i]);
+            continue;
+        }
+        if (strcmp(a, "--child-max-insns") == 0 && i + 1 < argc) {
+            o.child_max_insns = parse_size(argv[++i]);
             continue;
         }
         fprintf(stderr, "skj-run: unknown option '%s'\n", a);

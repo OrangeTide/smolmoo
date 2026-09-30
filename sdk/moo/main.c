@@ -1,6 +1,4 @@
-/* main.c : MooScript compiler driver
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* main.c : MooScript compiler driver */
 
 #include "moo.h"
 #include "version.h"

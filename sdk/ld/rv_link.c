@@ -1,6 +1,4 @@
 /* rv_link.c : RISC-V relocation application over the shared layout core.
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0
  *
  * Layout, symbol resolution and the undefined-symbol check are the shared
  * ld_layout()/ld_check_undefined() from link.c; this file supplies the

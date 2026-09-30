@@ -1,6 +1,4 @@
-/* cc.h : skj-cc C compiler front-end declarations
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* cc.h : skj-cc C compiler front-end declarations */
 
 #ifndef CC_H
 #define CC_H

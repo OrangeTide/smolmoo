@@ -1,6 +1,4 @@
-/* list.c : runtime list operations for MooScript (m68k target)
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* list.c : runtime list operations for MooScript (m68k target) */
 
 struct moo_list {
     int count;

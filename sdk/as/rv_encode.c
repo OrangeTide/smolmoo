@@ -1,6 +1,4 @@
 /* rv_encode.c : RV32 instruction encoder
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0
  *
  * Covers the RISC-V backend's full output plus the RV32 baseline: the RV32I
  * base, M, A, single/double/half float (F/D/Zfh), Zicsr, and the
@@ -635,6 +633,8 @@ enc_jalr(struct rv_asm *a, const char *m, struct rv_operand *ops, int nops,
         }
     }
 
+    if (imm < -2048 || imm > 2047)
+        die("'%s' immediate %d out of range [-2048, 2047]", m, imm);
     if (emit)
         emit_word(a, enc_i(0x67, 0, rd, rs1, imm));
     return 4;

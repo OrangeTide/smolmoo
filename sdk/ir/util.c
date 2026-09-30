@@ -1,6 +1,4 @@
-/* util.c : diagnostics, allocation helpers, and error recovery
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* util.c : diagnostics, allocation helpers, and error recovery */
 
 #include "util.h"
 

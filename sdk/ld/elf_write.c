@@ -1,6 +1,4 @@
-/* elf_write.c : ELF32 big-endian executable writer
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* elf_write.c : ELF32 big-endian executable writer */
 
 #include "ld.h"
 

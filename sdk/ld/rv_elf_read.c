@@ -1,6 +1,4 @@
-/* rv_elf_read.c : ELF32 little-endian RISC-V relocatable object reader
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* rv_elf_read.c : ELF32 little-endian RISC-V relocatable object reader */
 
 #include "rv_ld.h"
 

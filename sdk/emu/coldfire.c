@@ -1,6 +1,5 @@
-/* coldfire.c : ColdFire V4e CPU emulator
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* coldfire.c : ColdFire V4e CPU emulator */
+/* Copyright (c) 2026 Jon Mayo — MIT-0 OR Public Domain */
 
 #include "coldfire.h"
 #include <limits.h>

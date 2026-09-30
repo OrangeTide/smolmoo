@@ -1,6 +1,4 @@
-/* cpp.h : C preprocessor library — public API
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* cpp.h : C preprocessor library — public API */
 
 #ifndef CPP_H
 #define CPP_H

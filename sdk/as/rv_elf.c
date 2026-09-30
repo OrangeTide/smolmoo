@@ -1,6 +1,4 @@
 /* rv_elf.c : ELF32 little-endian relocatable object writer for RISC-V
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0
  *
  * Mirrors the ColdFire writer's structure (fixed section table, section
  * symbols, local-then-global symbol ordering, local-defined relocations

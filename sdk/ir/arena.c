@@ -1,6 +1,4 @@
-/* arena.c : bump allocator with mark/release
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* arena.c : bump allocator with mark/release */
 
 #include "arena.h"
 

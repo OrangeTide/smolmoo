@@ -1,6 +1,4 @@
-/* str.c : flat string operations for MooScript (m68k target)
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* str.c : flat string operations for MooScript (m68k target) */
 
 struct moo_str {
     int len;

@@ -1,9 +1,25 @@
 /* rv32.c : RV32IMAFC_Zicsr_Zifencei_Zba_Zbb_Zbs_Zcb CPU emulator
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+ * Copyright 2026 Jon Mayo
+ * SPDX-License-Identifier: 0BSD OR CC0-1.0
+ */
 
 #include "rv32.h"
+#include <stdlib.h>
 #include <string.h>
+
+/* Branch hints for the interpreter loop. These do not change how the hardware
+ * predictor behaves; they steer code layout so the exceptional exits (traps,
+ * bus faults, illegal encodings) are kept out of the straight-line dispatch
+ * path. Profiling shows the loop's conditional branches are already predicted
+ * near-perfectly, so these are documentation of intent and I-cache layout, not
+ * a throughput fix. Only the true rare paths are marked. */
+#if defined(__GNUC__) || defined(__clang__)
+#define RV_LIKELY(x)   __builtin_expect(!!(x), 1)
+#define RV_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#else
+#define RV_LIKELY(x)   (x)
+#define RV_UNLIKELY(x) (x)
+#endif
 
 /* Guest-instruction coverage. Which lines of this file a test executed is
  * not the same question as which instructions it ran, and for an emulator
@@ -78,19 +94,25 @@ imm_i(uint32_t i)
     return (int32_t)i >> 20;
 }
 
+/* The S/B/J immediates are assembled in unsigned space and sign-extended by a
+ * final left-then-arithmetic-right shift.  Extending the sign bit directly with
+ * (int32_t)i >> k would shift a negative value left, which is undefined even
+ * though it yields the intended bits on two's-complement hardware. */
 static inline int32_t
 imm_s(uint32_t i)
 {
-    return ((int32_t)i >> 25 << 5) | (int32_t)((i >> 7) & 0x1f);
+    uint32_t u = (((i >> 25) & 0x7f) << 5) | ((i >> 7) & 0x1f);
+    return (int32_t)(u << 20) >> 20;    /* 12-bit signed */
 }
 
 static inline int32_t
 imm_b(uint32_t i)
 {
-    return ((int32_t)i >> 31 << 12) |
-           (int32_t)(((i >> 25) & 0x3f) << 5) |
-           (int32_t)(((i >> 8) & 0x0f) << 1) |
-           (int32_t)(((i >> 7) & 0x01) << 11);
+    uint32_t u = (((i >> 31) & 0x01) << 12) |
+                 (((i >> 25) & 0x3f) << 5) |
+                 (((i >> 8) & 0x0f) << 1) |
+                 (((i >> 7) & 0x01) << 11);
+    return (int32_t)(u << 19) >> 19;    /* 13-bit signed */
 }
 
 static inline int32_t
@@ -102,10 +124,11 @@ imm_u(uint32_t i)
 static inline int32_t
 imm_j(uint32_t i)
 {
-    return ((int32_t)i >> 31 << 20) |
-           (int32_t)(((i >> 21) & 0x3ff) << 1) |
-           (int32_t)(((i >> 20) & 0x01) << 11) |
-           (int32_t)(((i >> 12) & 0xff) << 12);
+    uint32_t u = (((i >> 31) & 0x01) << 20) |
+                 (((i >> 21) & 0x3ff) << 1) |
+                 (((i >> 20) & 0x01) << 11) |
+                 (((i >> 12) & 0xff) << 12);
+    return (int32_t)(u << 11) >> 11;    /* 21-bit signed */
 }
 
 /****************************************************************
@@ -1726,21 +1749,131 @@ illegal(rv_cpu *cpu, uint32_t insn)
     rv_trap(cpu, RV_CAUSE_ILLEGAL_INSN, insn);
 }
 
-/** Execute one already-fetched 32-bit encoding.
+/****************************************************************
+ * Decoded-instruction cache
  *
- * cpu->pc holds the address of the instruction being executed. next holds
- * the address of the following one and is written back by the caller unless
- * a trap or a taken branch changed the flow.
- */
-static uint32_t
-exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
+ * A direct-mapped table keyed by guest PC. Each slot holds the expanded
+ * 32-bit encoding, the instruction length and a flag for the Zcmp forms that
+ * are run without going through the main dispatch. The index folds a high
+ * slice of the PC into the low one so that code lying in two far-apart
+ * regions (the image text and the embedded runtime) does not collide. A slot
+ * whose tag does not match is simply refilled: the cache is a hint, so a miss
+ * or an eviction only costs the fetch-and-expand it was meant to save.
+ ****************************************************************/
+
+typedef struct rv_dec {
+    uint32_t pc;            /* tag; RV_DEC_NONE marks an empty slot */
+    uint32_t insn;          /* expanded form (raw 16-bit for a Zcmp entry) */
+    uint16_t len;           /* 2 or 4: how far the PC advances */
+    uint16_t zcmp;          /* 1 for a Zcmp form dispatched to exec_zcmp */
+} rv_dec;
+
+#define RV_DEC_BITS 16
+#define RV_DEC_SIZE (1u << RV_DEC_BITS)
+#define RV_DEC_NONE 0xffffffffu     /* odd, so never a valid 2-aligned PC */
+
+static inline uint32_t
+rv_dec_index(const rv_cpu *cpu, uint32_t pc)
 {
-    uint32_t rd = RD(insn), rs1 = RS1(insn), rs2 = RS2(insn);
-    uint32_t f3 = FUNCT3(insn), f7 = FUNCT7(insn);
-    uint32_t a = cpu->x[rs1], b = cpu->x[rs2];
-    uint32_t addr, val, csr, old;
-    int32_t sa = (int32_t)a, sb = (int32_t)b;
+    return ((pc >> 1) ^ (pc >> 17)) & cpu->dec_mask;
+}
+
+/** Run up to `budget` instructions.
+ *
+ * The loop stays here across instructions rather than returning after each,
+ * dispatching on the major opcode with a switch the compiler lowers to a jump
+ * table. cpu->pc names the instruction in flight and `next` the one after.
+ *
+ * It stops the moment the machine halts (an exit, or a bus fault the host
+ * turned into a halt), a trap is taken, the hart parks on wfi, or the budget
+ * is spent, and returns the reason so the host can act on a faulting or
+ * yielding task instead of spinning out the batch. *retired, when non-NULL,
+ * receives the number of instructions it accounted for. */
+enum rv_run_reason
+rv_run(rv_cpu *cpu, int budget, int *retired)
+{
+    uint32_t rd, rs1, rs2, f3, f7, a, b, addr, val, csr, old;
+    uint32_t insn, next, lo, pc;
+    int32_t sa, sb;
     int rm;
+    int count = 0;
+    rv_dec *d;
+
+step:
+    if (count >= budget || cpu->halted)
+        goto out;
+
+    cpu->in_trap = 0;
+
+    /* An interrupt is taken between instructions; nothing retires on it. */
+    if (RV_UNLIKELY((cpu->mip & cpu->mie) != 0)) {
+        uint32_t irq = rv_irq_pending(cpu);
+
+        if (irq) {
+            rv_trap(cpu, irq, 0);
+            count++;
+            goto out;
+        }
+    }
+
+    pc = cpu->pc;
+    if (RV_UNLIKELY(pc & 1)) {
+        rv_trap(cpu, RV_CAUSE_INSN_MISALIGNED, pc);
+        count++;
+        goto out;
+    }
+
+    /* Fast path: a predecoded entry for this PC (guest code never changes). */
+    d = cpu->dec ? &cpu->dec[rv_dec_index(cpu, pc)] : NULL;
+    if (d && d->pc == pc) {
+        next = pc + d->len;
+        insn = d->insn;
+        if (d->zcmp)
+            goto do_zcmp;
+    } else {
+        if (RV_UNLIKELY(cpu->probe && cpu->probe(cpu->bus_ctx, pc, 2, 0))) {
+            rv_trace_push(&cpu->trace, RV_TR_FETCH_FAULT, pc, 0, pc, NULL);
+            rv_trap(cpu, RV_CAUSE_INSN_ACCESS_FAULT, pc);
+            count++;
+            goto out;
+        }
+        lo = cpu->read16(cpu->bus_ctx, pc) & 0xffff;
+        if ((lo & 3) != 3) {
+            next = pc + 2;
+            ICOV_NOTE(lo, 2);
+            if (cpu->zcmp && is_zcmp((uint16_t)lo)) {
+                insn = lo;
+                if (d) { d->insn = lo; d->len = 2; d->zcmp = 1; d->pc = pc; }
+                goto do_zcmp;
+            }
+            insn = rv_expand_c((uint16_t)lo);
+            if (insn == 0 && cpu->zcb)
+                insn = rv_expand_zcb((uint16_t)lo);
+            if (RV_UNLIKELY(insn == 0)) {
+                illegal(cpu, lo);
+                count++;
+                goto out;
+            }
+            if (d) { d->insn = insn; d->len = 2; d->zcmp = 0; d->pc = pc; }
+        } else {
+            if (RV_UNLIKELY(cpu->probe && cpu->probe(cpu->bus_ctx, pc + 2, 2, 0))) {
+                rv_trace_push(&cpu->trace, RV_TR_FETCH_FAULT, pc, 0, pc + 2,
+                              NULL);
+                rv_trap(cpu, RV_CAUSE_INSN_ACCESS_FAULT, pc + 2);
+                count++;
+                goto out;
+            }
+            insn = lo | ((cpu->read16(cpu->bus_ctx, pc + 2) & 0xffff) << 16);
+            next = pc + 4;
+            ICOV_NOTE(insn, 4);
+            if (d) { d->insn = insn; d->len = 4; d->zcmp = 0; d->pc = pc; }
+        }
+    }
+
+    rd = RD(insn); rs1 = RS1(insn); rs2 = RS2(insn);
+    f3 = FUNCT3(insn); f7 = FUNCT7(insn);
+    a = cpu->x[rs1]; b = cpu->x[rs2];
+    sa = (int32_t)a; sb = (int32_t)b;
 
     switch (OPCODE(insn)) {
     case OP_LUI:
@@ -1760,7 +1893,7 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
     case OP_JALR:
         if (f3 != 0) {
             illegal(cpu, insn);
-            return next;
+            goto retire;
         }
         val = (a + (uint32_t)imm_i(insn)) & ~1u;
         cpu->x[rd] = next;
@@ -1775,7 +1908,7 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
         case 5: val = sa >= sb; break;                      /* bge */
         case 6: val = a < b; break;                         /* bltu */
         case 7: val = a >= b; break;                        /* bgeu */
-        default: illegal(cpu, insn); return next;
+        default: illegal(cpu, insn); goto retire;
         }
         if (val)
             next = cpu->pc + (uint32_t)imm_b(insn);
@@ -1785,28 +1918,28 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
         addr = a + (uint32_t)imm_i(insn);
         switch (f3) {
         case 0: /* lb */
-            if (mem_read(cpu, addr, 1, &val)) return next;
+            if (mem_read(cpu, addr, 1, &val)) goto retire;
             cpu->x[rd] = (uint32_t)(int32_t)(int8_t)val;
             break;
         case 1: /* lh */
-            if (mem_read(cpu, addr, 2, &val)) return next;
+            if (mem_read(cpu, addr, 2, &val)) goto retire;
             cpu->x[rd] = (uint32_t)(int32_t)(int16_t)val;
             break;
         case 2: /* lw */
-            if (mem_read(cpu, addr, 4, &val)) return next;
+            if (mem_read(cpu, addr, 4, &val)) goto retire;
             cpu->x[rd] = val;
             break;
         case 4: /* lbu */
-            if (mem_read(cpu, addr, 1, &val)) return next;
+            if (mem_read(cpu, addr, 1, &val)) goto retire;
             cpu->x[rd] = val & 0xff;
             break;
         case 5: /* lhu */
-            if (mem_read(cpu, addr, 2, &val)) return next;
+            if (mem_read(cpu, addr, 2, &val)) goto retire;
             cpu->x[rd] = val & 0xffff;
             break;
         default:
             illegal(cpu, insn);
-            return next;
+            goto retire;
         }
         break;
 
@@ -1816,7 +1949,7 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
         case 0: mem_write(cpu, addr, 1, b); break;
         case 1: mem_write(cpu, addr, 2, b); break;
         case 2: mem_write(cpu, addr, 4, b); break;
-        default: illegal(cpu, insn); return next;
+        default: illegal(cpu, insn); goto retire;
         }
         break;
 
@@ -1934,7 +2067,7 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
 
         if (!cpu->atomics || f3 != 2) {     /* RV32 has only the word forms */
             illegal(cpu, insn);
-            return next;
+            goto retire;
         }
 
         /* An atomic must be naturally aligned whatever the setting for
@@ -1949,16 +2082,16 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
                                          : RV_TR_STORE_MISALIGN,
                           cpu->pc, insn, addr, "unaligned atomic");
             rv_trap(cpu, cause, addr);
-            return next;
+            goto retire;
         }
 
         if (funct5 == 0x02) {               /* lr.w */
             if (rs2 != 0) {
                 illegal(cpu, insn);
-                return next;
+                goto retire;
             }
             if (mem_read(cpu, addr, 4, &old))
-                return next;
+                goto retire;
             cpu->res_addr = addr;
             cpu->res_valid = 1;
             cpu->x[rd] = old;
@@ -1968,7 +2101,7 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
         if (funct5 == 0x03) {               /* sc.w */
             if (cpu->res_valid && cpu->res_addr == addr) {
                 if (mem_write(cpu, addr, 4, b))
-                    return next;
+                    goto retire;
                 cpu->x[rd] = 0;             /* zero means the store won */
             } else {
                 cpu->x[rd] = 1;
@@ -1978,7 +2111,7 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
         }
 
         if (mem_read(cpu, addr, 4, &old))
-            return next;
+            goto retire;
         switch (funct5) {
         case 0x00: val = old + b; break;                        /* amoadd */
         case 0x01: val = b; break;                              /* amoswap */
@@ -1991,36 +2124,46 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
         case 0x1c: val = old > b ? old : b; break;              /* amomaxu */
         default:
             illegal(cpu, insn);
-            return next;
+            goto retire;
         }
         if (mem_write(cpu, addr, 4, val))
-            return next;
+            goto retire;
         cpu->x[rd] = old;                   /* the value before the update */
         break;
     }
 
     case OP_MISC_MEM:
-        /* fence and fence.i have no effect on a single-hart interpreter
-         * with no instruction cache of its own */
-        if (f3 != 0 && f3 != 1)
+        /* fence (f3=0) is a data barrier: nothing to do on a single-hart
+         * interpreter. fence.i (f3=1) makes prior stores visible to
+         * instruction fetch, so it must drop the decoded-instruction cache,
+         * which would otherwise serve a stale decode for a page the guest
+         * just rewrote (self-modifying code, a guest-side JIT). */
+        if (f3 == 1) {
+            if (cpu->dec) {
+                uint32_t k;
+                for (k = 0; k <= cpu->dec_mask; k++)
+                    cpu->dec[k].pc = RV_DEC_NONE;
+            }
+        } else if (f3 != 0) {
             illegal(cpu, insn);
+        }
         break;
 
     case OP_LOAD_FP:
         if (f3 != 2) {
             illegal(cpu, insn);
-            return next;
+            goto retire;
         }
         addr = a + (uint32_t)imm_i(insn);
         if (mem_read(cpu, addr, 4, &val))
-            return next;
+            goto retire;
         cpu->f[rd] = val;
         break;
 
     case OP_STORE_FP:
         if (f3 != 2) {
             illegal(cpu, insn);
-            return next;
+            goto retire;
         }
         addr = a + (uint32_t)imm_s(insn);
         mem_write(cpu, addr, 4, cpu->f[rs2]);
@@ -2034,12 +2177,12 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
 
         if (((insn >> 25) & 3) != 0) {  /* fmt must be S */
             illegal(cpu, insn);
-            return next;
+            goto retire;
         }
         rm = resolve_rm(cpu, f3);
         if (rm < 0) {
             illegal(cpu, insn);
-            return next;
+            goto retire;
         }
         switch (OPCODE(insn)) {
         case OP_MADD:
@@ -2064,7 +2207,7 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
 
         if ((f7 & 3) != 0) {            /* fmt must be S */
             illegal(cpu, insn);
-            return next;
+            goto retire;
         }
         switch (f7 >> 2) {
         case 0x00:  /* fadd.s */
@@ -2072,7 +2215,7 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
         case 0x02:  /* fmul.s */
         case 0x03:  /* fdiv.s */
             rm = resolve_rm(cpu, f3);
-            if (rm < 0) { illegal(cpu, insn); return next; }
+            if (rm < 0) { illegal(cpu, insn); goto retire; }
             switch (f7 >> 2) {
             case 0x00: cpu->f[rd] = fp_add(cpu, fa, fb, rm); break;
             case 0x01: cpu->f[rd] = fp_add(cpu, fa, fb ^ 0x80000000u, rm);
@@ -2082,9 +2225,9 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
             }
             break;
         case 0x0b:  /* fsqrt.s */
-            if (rs2 != 0) { illegal(cpu, insn); return next; }
+            if (rs2 != 0) { illegal(cpu, insn); goto retire; }
             rm = resolve_rm(cpu, f3);
-            if (rm < 0) { illegal(cpu, insn); return next; }
+            if (rm < 0) { illegal(cpu, insn); goto retire; }
             cpu->f[rd] = fp_sqrt(cpu, fa, rm);
             break;
         case 0x04:  /* fsgnj.s / fsgnjn.s / fsgnjx.s */
@@ -2094,15 +2237,15 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
             case 1: cpu->f[rd] = (fa & 0x7fffffffu) |
                                  (~fb & 0x80000000u); break;
             case 2: cpu->f[rd] = fa ^ (fb & 0x80000000u); break;
-            default: illegal(cpu, insn); return next;
+            default: illegal(cpu, insn); goto retire;
             }
             break;
         case 0x05:  /* fmin.s / fmax.s */
-            if (f3 > 1) { illegal(cpu, insn); return next; }
+            if (f3 > 1) { illegal(cpu, insn); goto retire; }
             cpu->f[rd] = fp_minmax(cpu, fa, fb, (int)f3);
             break;
         case 0x14:  /* feq.s / flt.s / fle.s */
-            if (f3 > 2) { illegal(cpu, insn); return next; }
+            if (f3 > 2) { illegal(cpu, insn); goto retire; }
             if (f3 == 2) {                              /* feq.s */
                 if (f32_is_snan(fa) || f32_is_snan(fb))
                     fflags_set(cpu, RV_FFLAG_NV);
@@ -2120,15 +2263,15 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
             }
             break;
         case 0x18:  /* fcvt.w.s / fcvt.wu.s */
-            if (rs2 > 1) { illegal(cpu, insn); return next; }
+            if (rs2 > 1) { illegal(cpu, insn); goto retire; }
             rm = resolve_rm(cpu, f3);
-            if (rm < 0) { illegal(cpu, insn); return next; }
+            if (rm < 0) { illegal(cpu, insn); goto retire; }
             cpu->x[rd] = fp_to_int(cpu, fa, (int)rs2, rm);
             break;
         case 0x1a:  /* fcvt.s.w / fcvt.s.wu */
-            if (rs2 > 1) { illegal(cpu, insn); return next; }
+            if (rs2 > 1) { illegal(cpu, insn); goto retire; }
             rm = resolve_rm(cpu, f3);
-            if (rm < 0) { illegal(cpu, insn); return next; }
+            if (rm < 0) { illegal(cpu, insn); goto retire; }
             if (rs2 == 0)
                 cpu->f[rd] = f32_round(cpu, (double)(int32_t)a, 0.0, rm,
                                        (int32_t)a < 0);
@@ -2136,20 +2279,20 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
                 cpu->f[rd] = f32_round(cpu, (double)a, 0.0, rm, 0);
             break;
         case 0x1c:  /* fmv.x.w / fclass.s */
-            if (rs2 != 0) { illegal(cpu, insn); return next; }
+            if (rs2 != 0) { illegal(cpu, insn); goto retire; }
             if (f3 == 0)
                 cpu->x[rd] = fa;
             else if (f3 == 1)
                 cpu->x[rd] = fp_class(fa);
-            else { illegal(cpu, insn); return next; }
+            else { illegal(cpu, insn); goto retire; }
             break;
         case 0x1e:  /* fmv.w.x */
-            if (rs2 != 0 || f3 != 0) { illegal(cpu, insn); return next; }
+            if (rs2 != 0 || f3 != 0) { illegal(cpu, insn); goto retire; }
             cpu->f[rd] = a;
             break;
         default:
             illegal(cpu, insn);
-            return next;
+            goto retire;
         }
         break;
     }
@@ -2162,7 +2305,7 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
                 if (cpu->ecall && cpu->ecall(cpu, cpu->ecall_ctx) == 0)
                     break;
                 rv_trap(cpu, RV_CAUSE_ECALL_M, 0);
-                return next;
+                goto retire;
             }
             if (insn == 0x00100073) {           /* ebreak */
                 rv_trace_push(&cpu->trace, RV_TR_EBREAK, cpu->pc, insn, 0,
@@ -2172,14 +2315,15 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
                  * trap handlers that recover the instruction length read
                  * it from mepc rather than from mtval. */
                 rv_trap(cpu, RV_CAUSE_BREAKPOINT, 0);
-                return next;
+                goto retire;
             }
             if (insn == 0x30200073) {           /* mret */
                 cpu->mstatus |= RV_MSTATUS_MIE;
                 if (!(cpu->mstatus & RV_MSTATUS_MPIE))
                     cpu->mstatus &= ~RV_MSTATUS_MIE;
                 cpu->mstatus |= RV_MSTATUS_MPIE;
-                return cpu->mepc;
+                next = cpu->mepc;
+                goto retire;
             }
             if (insn == 0x10500073) {           /* wfi */
                 /* Legal as a nop, and that is what it is here: the
@@ -2191,21 +2335,21 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
                 break;
             }
             illegal(cpu, insn);
-            return next;
+            goto retire;
         }
         /* Zicsr */
         csr = insn >> 20;
         val = (f3 & 4) ? rs1 : a;               /* immediate or register form */
         if (f3 == 4) {
             illegal(cpu, insn);
-            return next;
+            goto retire;
         }
         /* A read is skipped only for a write-only csrrw with rd == x0 */
         if ((f3 & 3) == 1 && rd == 0) {
             old = 0;
         } else if (csr_read(cpu, csr, &old)) {
             illegal(cpu, insn);
-            return next;
+            goto retire;
         }
         /* Set and clear forms with a zero source field perform no write,
          * so they never raise an exception on a read-only csr */
@@ -2220,7 +2364,7 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
         }
         if (csr_write(cpu, csr, val)) {
             illegal(cpu, insn);
-            return next;
+            goto retire;
         }
         cpu->x[rd] = old;
         rv_trace_push(&cpu->trace, RV_TR_CSR, cpu->pc, insn, csr, NULL);
@@ -2228,35 +2372,61 @@ exec(rv_cpu *cpu, uint32_t insn, uint32_t next)
 
     default:
         illegal(cpu, insn);
-        return next;
+        break;
     }
 
+retire:
     cpu->x[0] = 0;
-    return next;
+    if (!cpu->in_trap)
+        cpu->pc = next;
+    cpu->cycles++;
+    cpu->mcycle++;
+    cpu->minstret++;
+    count++;
+    if (RV_UNLIKELY(cpu->in_trap || cpu->halted || cpu->waiting))
+        goto out;
+    goto step;
 
-    /* Zba, Zbb and Zbs are reached only once the base decoder has
-     * rejected an encoding, which is why these live at the end of the
-     * function rather than at the head of the two arithmetic cases.
-     * Testing for them first is the obvious arrangement and costs about
-     * 7% of interpreter throughput on code that uses none of them,
-     * because it puts a call in front of every add and every shift. */
+    /* A Zcmp form does too much to be rewritten as one 32-bit instruction, so
+     * it runs here and joins the others at retire. */
+do_zcmp:
+    if (exec_zcmp(cpu, (uint16_t)insn, &next))
+        illegal(cpu, insn);
+    goto retire;
+
+    /* Zba, Zbb and Zbs are reached only once the base decoder has rejected an
+     * encoding, which is why they sit at the end rather than in front of every
+     * add and shift: testing for them first costs about 7% of throughput on
+     * code that uses none of them. */
 zb_reg:
     if (cpu->bitmanip && bitmanip_reg(insn, f3, f7, a, b, &val)) {
         cpu->x[rd] = val;
-        cpu->x[0] = 0;
-        return next;
+        goto retire;
     }
     illegal(cpu, insn);
-    return next;
+    goto retire;
 
 zb_imm:
     if (cpu->bitmanip && bitmanip_imm(insn, f3, f7, a, &val)) {
         cpu->x[rd] = val;
-        cpu->x[0] = 0;
-        return next;
+        goto retire;
     }
     illegal(cpu, insn);
-    return next;
+    goto retire;
+
+out:
+    if (retired)
+        *retired = count;
+    /* halt outranks a trap: a double fault sets both, and the host wants to
+     * see the halt. A parked hart (wfi) is still runnable, so it reports as a
+     * yield, not a stop. Budget exhaustion is the fall-through. */
+    if (cpu->halted)
+        return RV_RUN_HALT;
+    if (cpu->in_trap)
+        return RV_RUN_TRAP;
+    if (cpu->waiting)
+        return RV_RUN_YIELD;
+    return RV_RUN_BUDGET;
 }
 
 /****************************************************************
@@ -2329,115 +2499,46 @@ rv_halt(rv_cpu *cpu)
     cpu->halted = 1;
 }
 
-int
-rv_step(rv_cpu *cpu)
+/* The decoded-instruction cache (rv_dec, rv_dec_index) is defined above, next
+ * to rv_run, the loop that reads it. These install and release it. */
+void
+rv_dec_enable(rv_cpu *cpu)
 {
-    uint32_t insn, next, lo;
+#ifdef RV_ICOV
+    /* Coverage counts every dynamic execution, which the cache's fast path
+     * would skip, so leave it off for that build. */
+    (void)cpu;
+#else
+    uint32_t i;
 
-    if (cpu->halted)
-        return -1;
-
-    cpu->in_trap = 0;
-
-    /* An interrupt is taken between instructions, so mepc names the one
-     * that has not run yet and mret resumes at it. Nothing retires on
-     * this step.
-     *
-     * The guard is what keeps this off the hot path. Almost every guest
-     * runs with no line raised, and testing two words already in the
-     * struct is cheaper than a call that computes the same answer: with
-     * the call unconditional this cost 6.7% of throughput, and with the
-     * guard it is not measurable. */
-    if ((cpu->mip & cpu->mie) != 0) {
-        uint32_t irq = rv_irq_pending(cpu);
-
-        if (irq) {
-            rv_trap(cpu, irq, 0);
-            return cpu->halted ? -1 : 0;
-        }
+    if (cpu->dec)
+        return;
+    cpu->dec = malloc(RV_DEC_SIZE * sizeof(rv_dec));
+    if (!cpu->dec) {            /* no cache: the slow path still runs */
+        cpu->dec_mask = 0;
+        return;
     }
+    for (i = 0; i < RV_DEC_SIZE; i++)
+        cpu->dec[i].pc = RV_DEC_NONE;
+    cpu->dec_mask = RV_DEC_SIZE - 1;
+#endif
+}
 
-    if (cpu->pc & 1) {
-        rv_trap(cpu, RV_CAUSE_INSN_MISALIGNED, cpu->pc);
-        return cpu->halted ? -1 : 0;
-    }
-    if (cpu->probe && cpu->probe(cpu->bus_ctx, cpu->pc, 2, 0)) {
-        rv_trace_push(&cpu->trace, RV_TR_FETCH_FAULT, cpu->pc, 0, cpu->pc,
-                      NULL);
-        rv_trap(cpu, RV_CAUSE_INSN_ACCESS_FAULT, cpu->pc);
-        return cpu->halted ? -1 : 0;
-    }
-
-    /* Instructions are fetched in 16-bit units. With the C extension the
-     * program counter is only guaranteed to be two-byte aligned, so a
-     * 32-bit encoding may straddle a four-byte boundary. */
-    lo = cpu->read16(cpu->bus_ctx, cpu->pc) & 0xffff;
-    if ((lo & 3) != 3) {
-        next = cpu->pc + 2;
-        ICOV_NOTE(lo, 2);
-
-        /* The Zcmp forms do too much to be rewritten as a single 32-bit
-         * instruction, so they run here rather than through the expander */
-        if (cpu->zcmp && is_zcmp((uint16_t)lo)) {
-            if (exec_zcmp(cpu, (uint16_t)lo, &next)) {
-                illegal(cpu, lo);
-                return cpu->halted ? -1 : 0;
-            }
-            cpu->x[0] = 0;
-            if (!cpu->in_trap)
-                cpu->pc = next;
-            cpu->cycles++;
-            cpu->mcycle++;
-            cpu->minstret++;
-            return cpu->halted ? -1 : 0;
-        }
-
-        /* Zcb occupies encodings the base compressed set leaves illegal,
-         * so the two expanders can be tried in either order and only the
-         * cost differs. The base set is tried first because it is what
-         * almost every compressed instruction in a program belongs to:
-         * asking Zcb first costs about 6% of interpreter throughput on
-         * ordinary compressed code, for a call that returns nothing. */
-        insn = rv_expand_c((uint16_t)lo);
-        if (insn == 0 && cpu->zcb)
-            insn = rv_expand_zcb((uint16_t)lo);
-        if (insn == 0) {
-            illegal(cpu, lo);
-            return cpu->halted ? -1 : 0;
-        }
-    } else {
-        if (cpu->probe && cpu->probe(cpu->bus_ctx, cpu->pc + 2, 2, 0)) {
-            rv_trace_push(&cpu->trace, RV_TR_FETCH_FAULT, cpu->pc, 0,
-                          cpu->pc + 2, NULL);
-            rv_trap(cpu, RV_CAUSE_INSN_ACCESS_FAULT, cpu->pc + 2);
-            return cpu->halted ? -1 : 0;
-        }
-        insn = lo | ((cpu->read16(cpu->bus_ctx, cpu->pc + 2) & 0xffff) << 16);
-        next = cpu->pc + 4;
-        ICOV_NOTE(insn, 4);
-    }
-
-    next = exec(cpu, insn, next);
-
-    if (!cpu->in_trap)
-        cpu->pc = next;
-
-    cpu->cycles++;
-    cpu->mcycle++;
-    cpu->minstret++;
-    return cpu->halted ? -1 : 0;
+void
+rv_dec_free(rv_cpu *cpu)
+{
+    free(cpu->dec);
+    cpu->dec = NULL;
+    cpu->dec_mask = 0;
 }
 
 int
-rv_run(rv_cpu *cpu, int count)
+rv_step(rv_cpu *cpu)
 {
-    int i;
-
-    for (i = 0; i < count; i++) {
-        if (rv_step(cpu) < 0)
-            break;
-    }
-    return i;
+    /* One instruction, for a host that drives the machine itself. The
+     * threaded rv_run is the loop the scheduler uses. */
+    rv_run(cpu, 1, NULL);
+    return cpu->halted ? -1 : 0;
 }
 
 uint32_t

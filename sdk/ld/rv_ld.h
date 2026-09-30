@@ -1,6 +1,4 @@
 /* rv_ld.h : RISC-V RV32 static linker — constants and entry points.
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0
  *
  * Reuses the arch-neutral structures and the shared layout core from ld.h
  * (ld_layout / ld_find_output_sec / ld_check_undefined / ld_free) plus the

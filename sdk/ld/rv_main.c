@@ -1,6 +1,4 @@
-/* rv_main.c : skj-ld-rv, the RISC-V RV32 linker driver
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* rv_main.c : skj-ld-rv, the RISC-V RV32 linker driver */
 
 #include "rv_ld.h"
 #include "version.h"

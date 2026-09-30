@@ -1,6 +1,4 @@
 /* parse.c - Recursive-descent parser for MooScript.
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0
  *
  * Grammar:
  *   program    = { verb_def | func_def | const_decl }

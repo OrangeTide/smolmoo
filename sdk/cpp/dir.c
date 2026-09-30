@@ -1,12 +1,25 @@
-/* dir.c : directive dispatcher and main processing loop
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* dir.c : directive dispatcher and main processing loop */
 
 #include "internal.h"
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <time.h>
+#include <stdarg.h>
+#include <stdio.h>
+
+void
+cpp_error(struct cpp *p, const char *fmt, ...)
+{
+    va_list ap;
+
+    va_start(ap, fmt);
+    fprintf(stderr, "skj-cpp: error: ");
+    vfprintf(stderr, fmt, ap);
+    fputc('\n', stderr);
+    va_end(ap);
+    p->errors++;
+}
 
 static void
 file_push(struct cpp *p, const char *path, char *buf)
@@ -245,20 +258,18 @@ handle_include(struct cpp *p, const char *line)
 
     char *path = resolve_include(p, name, is_system);
     if (!path) {
-        warn("%s:%d: cannot find include file '%s'",
-             p->file ? p->file->path : "<unknown>",
-             p->file ? p->file->line : 0, name);
-        p->errors++;
+        cpp_error(p, "%s:%d: cannot find include file '%s'",
+                  p->file ? p->file->path : "<unknown>",
+                  p->file ? p->file->line : 0, name);
         return;
     }
 
     char *buf = slurp(path);
     if (!buf) {
-        warn("%s:%d: cannot read include file '%s'",
-             p->file ? p->file->path : "<unknown>",
-             p->file ? p->file->line : 0, path);
+        cpp_error(p, "%s:%d: cannot read include file '%s'",
+                  p->file ? p->file->path : "<unknown>",
+                  p->file ? p->file->line : 0, path);
         free(path);
-        p->errors++;
         return;
     }
 
@@ -297,11 +308,11 @@ static void
 handle_elif(struct cpp *p, const char *line)
 {
     if (!p->cond) {
-        warn("#elif without #if");
+        cpp_error(p, "#elif without #if");
         return;
     }
     if (p->cond->is_else) {
-        warn("#elif after #else");
+        cpp_error(p, "#elif after #else");
         return;
     }
     if (p->cond->seen_true) {
@@ -323,11 +334,11 @@ static void
 handle_else(struct cpp *p)
 {
     if (!p->cond) {
-        warn("#else without #if");
+        cpp_error(p, "#else without #if");
         return;
     }
     if (p->cond->is_else) {
-        warn("duplicate #else");
+        cpp_error(p, "duplicate #else");
         return;
     }
     p->cond->is_else = 1;
@@ -344,10 +355,9 @@ static void
 handle_error(struct cpp *p, const char *line)
 {
     const char *s = skip_ws(line);
-    warn("%s:%d: #error %s",
-         p->file ? p->file->path : "<unknown>",
-         p->file ? p->file->line : 0, s);
-    p->errors++;
+    cpp_error(p, "%s:%d: #error %s",
+              p->file ? p->file->path : "<unknown>",
+              p->file ? p->file->line : 0, s);
 }
 
 static void
@@ -706,5 +716,15 @@ cpp_process_file(struct cpp *p, const char *path, FILE *out)
     while ((rc = cpp_next_line(p, buf, sizeof buf)) > 0) {
         fwrite(buf, 1, rc, out);
     }
-    return rc < 0 ? -1 : 0;
+
+    /* A conditional left open at end of input is a constraint violation. */
+    while (p->cond) {
+        cpp_error(p, "unterminated #if (missing #endif)");
+        cond_pop(p);
+    }
+
+    /* Any counted error (a #error, an unbalanced conditional, a missing
+     * include) fails the run, so the exit code reflects the diagnostics
+     * rather than only a hard read failure. */
+    return (rc < 0 || p->errors) ? -1 : 0;
 }

@@ -1,6 +1,4 @@
 # version.mk — the single source of truth for the Skjegg version.
-# Copyright (c) 2026 Jon Mayo
-# SPDX-License-Identifier: 0BSD OR CC0-1.0
 #
 # Bump this, then tag the release commit as v$(SKJ_VERSION).
 # `make release-check` verifies the two agree.
@@ -9,4 +7,4 @@
 # Vendored and tarball builds use it verbatim, so a consumer never sees
 # their own project's tags reported as a Skjegg version.
 
-SKJ_VERSION := 0.5.0
+SKJ_VERSION := 0.7.0

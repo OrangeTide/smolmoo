@@ -1,6 +1,4 @@
-/* encode.c : ColdFire instruction encoder
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* encode.c : ColdFire instruction encoder */
 
 #include "as.h"
 

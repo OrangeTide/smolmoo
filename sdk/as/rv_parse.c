@@ -1,6 +1,4 @@
 /* rv_parse.c : two-pass driver, operand and directive parsing for RV32
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0
  *
  * The scanner and object bookkeeping are the shared skeleton (asm_lex.c,
  * asm_obj.c); this file supplies the RISC-V operand grammar, directive set

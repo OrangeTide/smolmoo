@@ -1,6 +1,4 @@
-/* tok.c : preprocessor tokenizer
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* tok.c : preprocessor tokenizer */
 
 #include "internal.h"
 #include <ctype.h>

@@ -1,6 +1,4 @@
 /* rv_archive.c : ar(1) archive (.a) support for skj-ld-rv.
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0
  *
  * A static archive is a symbol index plus a bag of relocatable objects.  The
  * linker pulls in only the members that define a symbol some already-loaded

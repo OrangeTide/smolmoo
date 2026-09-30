@@ -1,6 +1,4 @@
-/* host_stub.c : stub host operations for standalone MooScript testing
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* host_stub.c : stub host operations for standalone MooScript testing */
 
 struct moo_str {
     int len;
@@ -72,7 +70,7 @@ __moo_obj_contents(const char *obj)
 }
 
 void
-__moo_verb_call(const char *obj, struct moo_str *verb, int argc, int typemask)
+__moo_verb_call(const char *obj, struct moo_str *verb, int argc)
 {
 }
 

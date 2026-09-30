@@ -1,6 +1,4 @@
 | start.S - minimal m68k/ColdFire runtime for Linux user-mode.
-| Copyright (c) 2026 Jon Mayo
-| SPDX-License-Identifier: 0BSD OR CC0-1.0
 |
 | Provides _start (the ELF entry point), and thin wrappers for the two
 | syscalls the test programs need: write(2) and exit(2). qemu-m68k uses
@@ -685,6 +683,7 @@ __exc_src_yield:
     .globl __cont_mark_sp
 __cont_mark_sp:
     .long 0
+    .globl __cont_arena_ptr
 __cont_arena_ptr:
     .long __cont_arena
 __moo_arena_ptr:

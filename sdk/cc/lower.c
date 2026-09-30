@@ -1,6 +1,4 @@
-/* lower.c : C AST to IR lowering
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* lower.c : C AST to IR lowering */
 
 #include "cc.h"
 

@@ -1,6 +1,4 @@
-/* parse.c : recursive-descent C89 parser
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* parse.c : recursive-descent C89 parser */
 
 #include "cc.h"
 

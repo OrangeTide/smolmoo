@@ -1,6 +1,4 @@
-/* cond.c : conditional directives and #if expression evaluator
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* cond.c : conditional directives and #if expression evaluator */
 
 #include "internal.h"
 #include <string.h>
@@ -22,7 +20,7 @@ void
 cond_pop(struct cpp *p)
 {
     if (!p->cond) {
-        warn("unmatched #endif");
+        cpp_error(p, "unmatched #endif");
         return;
     }
     struct cpp_cond *c = p->cond;

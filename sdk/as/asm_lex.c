@@ -1,6 +1,4 @@
-/* asm_lex.c : arch-neutral GAS-syntax tokenizer
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* asm_lex.c : arch-neutral GAS-syntax tokenizer */
 
 #include "asm_lex.h"
 

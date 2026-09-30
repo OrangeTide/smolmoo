@@ -1,6 +1,4 @@
-/* util.h : diagnostics, memory helpers, and error recovery
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* util.h : diagnostics, memory helpers, and error recovery */
 
 #ifndef UTIL_H
 #define UTIL_H

@@ -1,12 +1,12 @@
-/* moo_syscall_rv.S : stack-convention syscall stubs for the MooScript verb
- * runtime.
+/* moo_syscall_rv.S : syscall stubs for the MooScript verb runtime.
+ * SPDX-License-Identifier: 0BSD OR CC0-1.0
  *
- * The MooScript backend and skj-cc-rv pass call arguments on the stack
- * (arg0 at 0(sp), arg1 at 4(sp), ...) and return the result in a0. These
- * stubs load the arguments into a0-a3, place the syscall number in a7, trap
- * with ecall, and return with the host's result already in a0. This differs
- * from verb_rt_rv.S, whose stubs follow the register (psABI) convention used
- * by the C verbs.
+ * As of skjegg v0.7.0 the RV32 stack calling convention was retired: the
+ * MooScript backend and skj-cc-rv both pass call arguments in registers
+ * (arg0 in a0, arg1 in a1, ...) and return the result in a0. These stubs
+ * place the syscall number in a7, trap with ecall, and return with the
+ * host's result already in a0, the same register convention as the C-verb
+ * stubs in verb_rt_rv.S.
  *
  * Assembled with skj-as-rv.
  */
@@ -30,123 +30,88 @@
     .globl sys_hasverb
     .globl sys_setpriv
 
-_exit:                                  /* 0(sp)=status */
-    lw      a0, 0(sp)
+_exit:                                  /* a0=status */
     li      a7, 0
     ecall
 1:  j       1b
 
-open:                                   /* 0(sp)=name 4(sp)=flags -> a0=fd */
-    lw      a0, 0(sp)
-    lw      a1, 4(sp)
+open:                                   /* a0=name, a1=flags -> a0=fd */
     li      a7, 1
     ecall
     ret
 
-close:                                  /* 0(sp)=fd -> a0=result */
-    lw      a0, 0(sp)
+close:                                  /* a0=fd -> a0=result */
     li      a7, 2
     ecall
     ret
 
-read:                                   /* 0(sp)=fd 4(sp)=buf 8(sp)=len */
-    lw      a0, 0(sp)
-    lw      a1, 4(sp)
-    lw      a2, 8(sp)
+read:                                   /* a0=fd, a1=buf, a2=len */
     li      a7, 3
     ecall
     ret
 
-write:                                  /* 0(sp)=fd 4(sp)=buf 8(sp)=len */
-    lw      a0, 0(sp)
-    lw      a1, 4(sp)
-    lw      a2, 8(sp)
+write:                                  /* a0=fd, a1=buf, a2=len */
     li      a7, 4
     ecall
     ret
 
-sys_broadcast:                          /* 0(sp)=room 4(sp)=msg -> a0=count */
-    lw      a0, 0(sp)
-    lw      a1, 4(sp)
+sys_broadcast:                          /* a0=room, a1=msg -> a0=count */
     li      a7, 6
     ecall
     ret
 
-sys_getprop:                            /* 0(sp)=obj 4=name 8=buf 12=bufsz */
-    lw      a0, 0(sp)
-    lw      a1, 4(sp)
-    lw      a2, 8(sp)
-    lw      a3, 12(sp)
+sys_getprop:                            /* a0=obj, a1=name, a2=buf, a3=bufsz */
     li      a7, 7
     ecall
     ret
 
-sys_setprop:                            /* 0(sp)=obj 4=name 8=val */
-    lw      a0, 0(sp)
-    lw      a1, 4(sp)
-    lw      a2, 8(sp)
+sys_setprop:                            /* a0=obj, a1=name, a2=val */
     li      a7, 8
     ecall
     ret
 
-sys_objfind:                            /* 0(sp)=name -> a0=objid */
-    lw      a0, 0(sp)
+sys_objfind:                            /* a0=name -> a0=objid */
     li      a7, 9
     ecall
     ret
 
-sys_random:                             /* 0(sp)=max -> a0=int in [0,max) */
-    lw      a0, 0(sp)
+sys_random:                             /* a0=max -> a0=int in [0,max) */
     li      a7, 12
     ecall
     ret
 
-sys_move:                               /* 0(sp)=obj 4=dest */
-    lw      a0, 0(sp)
-    lw      a1, 4(sp)
+sys_move:                               /* a0=obj, a1=dest */
     li      a7, 13
     ecall
     ret
 
-sys_next:                               /* 0(sp)=container 4=after -> a0=child */
-    lw      a0, 0(sp)
-    lw      a1, 4(sp)
+sys_next:                               /* a0=container, a1=after -> a0=child */
     li      a7, 14
     ecall
     ret
 
-sys_create:                             /* 0(sp)=parent -> a0=new obj id */
-    lw      a0, 0(sp)
+sys_create:                             /* a0=parent -> a0=new obj id */
     li      a7, 16
     ecall
     ret
 
-sys_recycle:                            /* 0(sp)=obj -> a0=result */
-    lw      a0, 0(sp)
+sys_recycle:                            /* a0=obj -> a0=result */
     li      a7, 17
     ecall
     ret
 
-sys_call:                               /* 0(sp)=target 4=verb 8=argstr
-                                         * 12=dobj 16=iobj */
-    lw      a0, 0(sp)
-    lw      a1, 4(sp)
-    lw      a2, 8(sp)
-    lw      a3, 12(sp)
-    lw      a4, 16(sp)
+sys_call:                               /* a0=target, a1=verb, a2=argstr,
+                                         * a3=dobj, a4=iobj */
     li      a7, 18
     ecall
     ret
 
-sys_hasverb:                            /* 0(sp)=target 4=verb -> a0=0/1 */
-    lw      a0, 0(sp)
-    lw      a1, 4(sp)
+sys_hasverb:                            /* a0=target, a1=verb -> a0=0/1 */
     li      a7, 19
     ecall
     ret
 
-sys_setpriv:                            /* 0(sp)=on -> a0=0 ok, negative denied */
-    lw      a0, 0(sp)
+sys_setpriv:                            /* a0=on -> a0=0 ok, negative denied */
     li      a7, 20
     ecall
     ret

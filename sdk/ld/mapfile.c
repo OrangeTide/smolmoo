@@ -1,6 +1,6 @@
-/* mapfile.c : read-only memory-mapped file helpers
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* mapfile.c : read-only memory-mapped file helpers */
+/* Copyright (c) 2006, 2025-2026 Jon Mayo <jon@rm-f.net>
+ * Licensed under MIT-0 OR PUBLIC DOMAIN */
 
 #include "mapfile.h"
 

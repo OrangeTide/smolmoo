@@ -1,6 +1,4 @@
-/* parse.c : two-pass GAS syntax parser for ColdFire assembler
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* parse.c : two-pass GAS syntax parser for ColdFire assembler */
 
 #include "as.h"
 

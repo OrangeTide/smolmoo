@@ -1,6 +1,7 @@
 /* rv32.h : embeddable RV32IMAFC_Zicsr_Zifencei_Zba_Zbb_Zbs_Zcb CPU emulator
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+ * Copyright 2026 Jon Mayo
+ * SPDX-License-Identifier: 0BSD OR CC0-1.0
+ */
 
 #ifndef RV32_H
 #define RV32_H
@@ -218,6 +219,14 @@ typedef struct rv_cpu {
     /* Environment call interface */
     rv_ecall_fn ecall;
     void *ecall_ctx;        /* opaque pointer passed to ecall */
+
+    /* Decoded-instruction cache. Each guest PC is predecoded once (the
+     * compressed forms expanded, the length resolved) so the hot loop skips
+     * the fetch and the expander on every re-execution. Guest code carries no
+     * write permission, so an entry can never go stale. NULL until
+     * rv_dec_enable installs it; dec_mask is the entry count minus one. */
+    struct rv_dec *dec;
+    uint32_t dec_mask;
 } rv_cpu;
 
 /****************************************************************
@@ -328,6 +337,12 @@ void rv_init(rv_cpu *cpu,
 
 void rv_reset(rv_cpu *cpu, uint32_t entry);
 
+/* Install (or drop) the decoded-instruction cache. Enabling it is a pure
+ * speed-up with no effect on results. Safe to call once after rv_init; a
+ * second enable is a no-op. rv_dec_free releases it. */
+void rv_dec_enable(rv_cpu *cpu);
+void rv_dec_free(rv_cpu *cpu);
+
 /* Install an ECALL handler. Guest ECALLs are passed to the callback before
  * the environment-call trap is taken, giving the host a zero-copy seam for
  * native services. */
@@ -339,8 +354,28 @@ void rv_set_probe(rv_cpu *cpu, rv_probe_fn fn);
 /* Execute one instruction. Returns 0 on success, -1 when halted. */
 int rv_step(rv_cpu *cpu);
 
-/* Execute up to count instructions. Returns the number executed. */
-int rv_run(rv_cpu *cpu, int count);
+/* Why rv_run() returned control to the host. */
+enum rv_run_reason {
+    RV_RUN_BUDGET = 0,  /* ran the full count; still runnable */
+    RV_RUN_HALT,        /* cpu halted: a clean exit or a double fault */
+    RV_RUN_TRAP,        /* a trap was taken; cpu->mcause names the cause */
+    RV_RUN_YIELD,       /* the hart is parked (cpu->waiting): still runnable,
+                         * voluntarily off the CPU. A host-call handler sets
+                         * the bit to yield, and wfi sets it too. The host
+                         * resumes by clearing cpu->waiting (or by taking an
+                         * interrupt, which clears it) and running again. This
+                         * is the cooperative-yield boundary a scheduler builds
+                         * coroutine-style tasks on. */
+};
+
+/* Execute up to count instructions, stopping early the moment the machine
+ * halts, takes a trap, or parks on wfi. Returns the reason so the host can
+ * observe and act on a stuck, faulting, or yielding task instead of spinning
+ * out the batch; *retired, when non-NULL, receives the number of
+ * instructions executed. Stopping on these events is what a JIT backend
+ * returns through as well: this interpreter loop is one implementation of
+ * that contract. */
+enum rv_run_reason rv_run(rv_cpu *cpu, int count, int *retired);
 
 /* Stop execution; rv_step() returns -1 until the next rv_reset(). */
 void rv_halt(rv_cpu *cpu);

@@ -1,6 +1,4 @@
-/* elf32.c : ELF32 loader for the guest machines, either endianness
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* elf32.c : ELF32 loader for the guest machines, either endianness */
 
 #include "elf32.h"
 
@@ -89,21 +87,21 @@ slurp(const char *path, long *size)
 
 /** Validate the header and fill info.  Returns 0 on success. */
 static int
-read_header(const char *path, const uint8_t *b, long size, elf32_info *info)
+read_header(const char *what, const uint8_t *b, long size, elf32_info *info)
 {
     int be;
 
     if (size < 52 || memcmp(b, "\177ELF", 4) != 0) {
-        fprintf(stderr, "skj-run: %s is not an ELF file\n", path);
+        fprintf(stderr, "skj-run: %s is not an ELF file\n", what);
         return -1;
     }
     if (b[4] != ELFCLASS32) {
         fprintf(stderr, "skj-run: %s is not ELF32 (the guests are 32-bit)\n",
-                path);
+                what);
         return -1;
     }
     if (b[5] != ELFDATA2LSB && b[5] != ELFDATA2MSB) {
-        fprintf(stderr, "skj-run: %s has an unknown byte order\n", path);
+        fprintf(stderr, "skj-run: %s has an unknown byte order\n", what);
         return -1;
     }
     be = (b[5] == ELFDATA2MSB);
@@ -113,10 +111,16 @@ read_header(const char *path, const uint8_t *b, long size, elf32_info *info)
     info->machine = rd16(b + 18, be);
     info->entry = rd32(b + 24, be);
     if (rd16(b + 16, be) != ET_EXEC && info->entry == 0) {
-        fprintf(stderr, "skj-run: %s is not an executable image\n", path);
+        fprintf(stderr, "skj-run: %s is not an executable image\n", what);
         return -1;
     }
     return 0;
+}
+
+int
+elf32_probe_mem(const uint8_t *b, long size, elf32_info *info)
+{
+    return read_header("<image>", b, size, info);
 }
 
 int
@@ -134,27 +138,21 @@ elf32_probe(const char *path, elf32_info *info)
 }
 
 int
-elf32_load(guest *g, const char *path, elf32_info *info)
+elf32_load_mem(guest *g, const uint8_t *b, long size, elf32_info *info,
+               const char *what)
 {
-    long size;
-    uint8_t *b = slurp(path, &size);
     uint32_t phoff, i, phnum, phentsize;
     int be;
 
-    if (!b)
+    if (read_header(what, b, size, info) != 0)
         return -1;
-    if (read_header(path, b, size, info) != 0) {
-        free(b);
-        return -1;
-    }
     be = info->big_endian;
     phoff = rd32(b + 28, be);
     phentsize = rd16(b + 42, be);
     phnum = rd16(b + 44, be);
 
     if (phnum == 0 || phoff == 0) {
-        fprintf(stderr, "skj-run: %s has no program headers\n", path);
-        free(b);
+        fprintf(stderr, "skj-run: %s has no program headers\n", what);
         return -1;
     }
 
@@ -170,8 +168,8 @@ elf32_load(guest *g, const char *path, elf32_info *info)
 
         if ((long)(phoff + (i + 1) * phentsize) > size) {
             fprintf(stderr, "skj-run: %s: program headers past end of file\n",
-                    path);
-            free(b);
+                    what);
+            g->mem.loading = 0;
             return -1;
         }
         type = rd32(ph + 0, be);
@@ -185,8 +183,8 @@ elf32_load(guest *g, const char *path, elf32_info *info)
 
         if ((long)(offset + filesz) > size) {
             fprintf(stderr, "skj-run: %s: segment %u past end of file\n",
-                    path, i);
-            free(b);
+                    what, i);
+            g->mem.loading = 0;
             return -1;
         }
 
@@ -202,8 +200,8 @@ elf32_load(guest *g, const char *path, elf32_info *info)
         page_lo = vaddr & ~(GM_PAGE_SIZE - 1);
         page_hi = (vaddr + memsz + GM_PAGE_SIZE - 1) & ~(GM_PAGE_SIZE - 1);
         if (gm_map(&g->mem, page_lo, page_hi - page_lo, prot, "image") != 0) {
-            fprintf(stderr, "skj-run: %s: too many loadable segments\n", path);
-            free(b);
+            fprintf(stderr, "skj-run: %s: too many loadable segments\n", what);
+            g->mem.loading = 0;
             return -1;
         }
         gm_write(&g->mem, vaddr, b + offset, filesz);
@@ -217,18 +215,31 @@ elf32_load(guest *g, const char *path, elf32_info *info)
         info->nsegments++;
     }
     g->mem.loading = 0;
-    free(b);
 
     if (info->nsegments == 0) {
-        fprintf(stderr, "skj-run: %s has no loadable segments\n", path);
+        fprintf(stderr, "skj-run: %s has no loadable segments\n", what);
         return -1;
     }
     if (g->mem.fault) {
         fprintf(stderr, "skj-run: %s: cannot map the image (%s at 0x%08x)\n",
-                path, g->mem.fault_why, g->mem.fault_addr);
+                what, g->mem.fault_why, g->mem.fault_addr);
         return -1;
     }
     return 0;
+}
+
+int
+elf32_load(guest *g, const char *path, elf32_info *info)
+{
+    long size;
+    uint8_t *b = slurp(path, &size);
+    int rc;
+
+    if (!b)
+        return -1;
+    rc = elf32_load_mem(g, b, size, info, path);
+    free(b);
+    return rc;
 }
 
 uint32_t
@@ -286,21 +297,15 @@ elf32_load_raw(const char *path, elf32_poke_fn poke, void *ctx,
 }
 
 uint32_t
-elf32_symbol(const char *path, const char *name)
+elf32_symbol_mem(const uint8_t *b, long size, const char *name)
 {
-    long size;
-    uint8_t *b = slurp(path, &size);
     elf32_info info;
     uint32_t shoff, shentsize, shnum, i;
     uint32_t found = 0;
     int be;
 
-    if (!b)
+    if (read_header("<image>", b, size, &info) != 0)
         return 0;
-    if (read_header(path, b, size, &info) != 0) {
-        free(b);
-        return 0;
-    }
     be = info.big_endian;
     shoff = rd32(b + 32, be);
     shentsize = rd16(b + 46, be);
@@ -341,6 +346,19 @@ elf32_symbol(const char *path, const char *name)
             }
         }
     }
+    return found;
+}
+
+uint32_t
+elf32_symbol(const char *path, const char *name)
+{
+    long size;
+    uint8_t *b = slurp(path, &size);
+    uint32_t found;
+
+    if (!b)
+        return 0;
+    found = elf32_symbol_mem(b, size, name);
     free(b);
     return found;
 }

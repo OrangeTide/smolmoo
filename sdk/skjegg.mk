@@ -1,9 +1,8 @@
 # skjegg.mk — vendored skjegg compiler toolkit
-# Copyright (c) 2026 Jon Mayo
 # SPDX-License-Identifier: 0BSD OR CC0-1.0
-# Origin: https://github.com/OrangeTide/skjegg-compiler-suite.git (a365036)
+# Origin: https://github.com/OrangeTide/skjegg-compiler-suite.git (cf186b4)
 # Components: coldfire riscv moo cc as ld as-rv ld-rv cpp emu-cf emu-rv
-# Generated: 2026-09-12
+# Generated: 2026-09-30
 #
 # Include from your Makefile:
 #   include sdk/skjegg.mk
@@ -25,8 +24,8 @@ CFLAGS += -I$(BUILD)
 # a vendored tree may come from a ref that has moved past that release, and
 # a bare release number would then overstate what you actually have.
 include $(SKJEGG)version.mk
-SKJ_VENDOR_REF    := v0.5.0
-SKJ_VENDOR_COMMIT := a365036
+SKJ_VENDOR_REF    := v0.7.0
+SKJ_VENDOR_COMMIT := cf186b4
 SKJ_FULL_VERSION  := $(SKJ_VERSION)$(if $(SKJ_VENDOR_COMMIT),+g$(SKJ_VENDOR_COMMIT))
 
 M68K_CC ?= m68k-linux-gnu-gcc
@@ -39,7 +38,7 @@ RV_LD ?= riscv64-linux-gnu-ld
 # sources
 SKJ_IR := $(SKJEGG)ir/ir.c $(SKJEGG)ir/util.c $(SKJEGG)ir/arena.c
 SKJ_CF := $(SKJEGG)backend/regalloc_cf.c $(SKJEGG)backend/cf_emit.c
-SKJ_RV := $(SKJEGG)backend/regalloc_rv.c $(SKJEGG)backend/rv_emit.c
+SKJ_RV := $(SKJEGG)backend/regalloc_rv.c $(SKJEGG)backend/rv_select.c $(SKJEGG)backend/rv_mc_text.c
 SKJ_MOO := $(SKJEGG)moo/lex.c $(SKJEGG)moo/parse.c $(SKJEGG)moo/typecheck.c \
            $(SKJEGG)moo/lower.c $(SKJEGG)moo/main.c
 SKJ_CC := $(SKJEGG)cc/lex.c $(SKJEGG)cc/parse.c $(SKJEGG)cc/type.c \
@@ -75,10 +74,6 @@ $(BUILD)/skj-cc: $(SKJ_IR) $(SKJ_CF) $(SKJ_CC) $(SKJ_CPP_LIB) | $(BUILD)
 SKJ_ALL += $(BUILD)/skj-cc-rv
 $(BUILD)/skj-cc-rv: $(SKJ_IR) $(SKJ_RV) $(SKJ_CC) $(SKJ_CPP_LIB) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(SKJEGG)cc -I$(SKJEGG)cpp -I$(SKJEGG)ir -o $@ $(SKJ_IR) $(SKJ_RV) $(SKJ_CC) $(SKJ_CPP_LIB)
-
-SKJ_ALL += $(BUILD)/skj-cc-rv-psabi
-$(BUILD)/skj-cc-rv-psabi: $(SKJ_IR) $(SKJ_RV) $(SKJ_CC) $(SKJ_CPP_LIB) | $(BUILD)
-	$(CC) $(CFLAGS) -DCC_PSABI -I$(SKJEGG)cc -I$(SKJEGG)cpp -I$(SKJEGG)ir -o $@ $(SKJ_IR) $(SKJ_RV) $(SKJ_CC) $(SKJ_CPP_LIB)
 
 SKJ_ALL += $(BUILD)/skj-cpp
 $(BUILD)/skj-cpp: $(SKJEGG)cpp/main.c $(SKJ_CPP_LIB) $(SKJEGG)ir/util.c $(SKJEGG)ir/arena.c | $(BUILD)

@@ -19,7 +19,7 @@ and integration with prototype-OO MUD engines (target: smolmoo).
 | `nil`     | 0      | Null value for obj/str/list          |
 
 Most values fit in a machine word (32-bit value or pointer). `float`
-is 64-bit (two 32-bit words on RV32). Strings and lists are arena-allocated
+is 64-bit (two words on m68k). Strings and lists are arena-allocated
 and immutable -- no GC needed.
 
 ### Boxed Properties (`prop`)
@@ -379,11 +379,9 @@ struct moo_list *__moo_obj_contents(const char *obj);
 int         __moo_obj_has_prop(const char *obj, struct moo_str *name);
 int         __moo_obj_has_verb(const char *obj, struct moo_str *name);
 
-// verb dispatch. `typemask` carries two routing bits per argument, set by
-// the compiler from each argument's static type (2 = object, 1 = string,
-// 0 = other), so the host can place them in the called verb's context.
+// verb dispatch
 void        __moo_verb_call(const char *obj, struct moo_str *verb,
-                            int argc, int typemask, ...);
+                            int argc, ...);
 ```
 
 `__moo_prop_get` returns `struct moo_prop *` (arena-allocated boxed
@@ -448,10 +446,8 @@ emit `IR_CALL` with the link name as the symbol.
 ### Host Implementation
 
 The host provides C functions matching the declared signatures, following
-the same calling convention as `__moo_*` functions. The RV32 backend passes
-arguments on the stack (arg0 at 0(sp), arg1 at 4(sp), ...) and returns the
-result in a0, so in smolmoo these host functions are built with `skj-cc-rv`,
-which uses that convention:
+the same calling convention as `__moo_*` functions (args pushed
+right-to-left on stack, return value in d0/a0):
 
 ```c
 int random_range(int lo, int hi)
@@ -573,22 +569,11 @@ of all modules on any source change. A dependency scanner or compiler
 
 ### smolmoo Implementation
 
-For smolmoo, compiled verbs are RISC-V RV32 ELF binaries loaded into
-the VM's 128 KB memory space. The `__moo_*` functions are ordinary RV32
-functions linked into the verb; they reach the host through `ecall`
-syscalls (`sys_getprop`, `sys_setprop`, `sys_move`, and the rest), not
-through a trap-word hypercall. The MooScript backend uses a stack calling
-convention, so the host bridge and runtime libraries are compiled with
-`skj-cc-rv` (matching that convention) and call the syscalls through
-stack-convention `ecall` stubs, distinct from the register/psABI stubs
-the C verbs use.
-
-`vm_args` at fixed address 0x380 provides the verb invocation context
-(player, room, this, dobj, iobj, argument string). A small runtime
-(`moo_rt.c`) supplies `_start`, reads `vm_args`, sets up the bump arena,
-and calls the verb's `main`, which the backend emits from `verb main(...)`.
-Verb ELFs are stored by BLAKE2b hash in a content-addressable depot, the
-same path the C verbs use.
+For smolmoo, compiled verbs are ColdFire ELF binaries loaded into
+the VM's 128KB memory space. The `__moo_*` functions are implemented
+as LINE_A hypercalls (trap into the host). `vm_args` at fixed address
+0x380 provides the verb invocation context. Verb ELFs are stored in
+a content-addressable depot.
 
 ## Compilation Pipeline
 
@@ -612,58 +597,61 @@ same path the C verbs use.
         ▼
     Register allocator (linear scan)
         │
-        ├──► RISC-V RV32 backend (rv_emit.c) ──► RV32 assembly ──► ELF  (smolmoo)
         ├──► ColdFire backend (cf_emit.c) ──► m68k assembly ──► ELF
+        ├──► Bytecode backend ──► stack VM bytecode (development)
         └──► (future: WASM, Q3VM, etc.)
-
-The backend is selected at build time: `skj-mooc-rv` links the RV32
-backend (smolmoo's target), `skj-mooc` the ColdFire backend.
 
 ## Building
 
-The compiler and its RISC-V toolchain build with a host C compiler only.
-No cross-compiler or QEMU is required. In smolmoo, `make sdk` builds the
-compiler driver (`skj-mooc-rv`), the assembler (`skj-as-rv`), the linker
-(`skj-ld-rv`), the standalone guest runner (`skj-run`), and the MooScript
-verb runtime objects.
+### Prerequisites
 
-### Compiling a verb
+Install the m68k cross-compilation toolchain and QEMU user-mode emulator:
 
-    skj-mooc-rv -o out.s input.moo     # MooScript -> RV32 assembly
-    skj-as-rv   -o out.o out.s         # assemble
-    skj-ld-rv   -T vm_rv.ld -o verb.elf out.o \
-                moo_rt.o host_vm.o str.o list.o moo_syscall_rv.o
+    sudo apt install gcc-m68k-linux-gnu binutils-m68k-linux-gnu qemu-user
 
-`smolmoo install verbs.conf` runs this pipeline for each `.moo` verb and
-stores the resulting ELF in the depot by hash.
+### Host compiler
 
-### Running standalone
+    make                    # builds build/mooc (native x86-64)
 
-`skj-run` executes a linked ELF outside the server; it reads the ELF header
-to pick the architecture. The `__moo_*` host glue then resolves against a
-test host (`runtime/toy_host.c` or `runtime/host_stub.c`) rather than the
-smolmoo syscalls. Inside the game, MooScript verbs are exercised through the
-live server by the smoke suite (`make test`).
+### Cross-compiled compiler
+
+    make mooc-m68k          # builds build/mooc-m68k (static m68k ELF)
+    qemu-m68k build/mooc-m68k -o out.s input.moo
+
+The m68k build is statically linked against glibc so it runs under
+`qemu-m68k` with no sysroot needed.  It produces byte-identical assembly
+to the native host compiler.
+
+### Test programs
+
+    make check              # compile all tests/*.moo, link with m68k runtime,
+                            # run under qemu-m68k, verify exit codes
+
+Each `.moo` test is compiled to m68k assembly by `build/mooc`, assembled
+and linked with the bare-metal runtime (`runtime/start.S`, `str.c`,
+`list.c`, and a host stub), then executed under `qemu-m68k`.
 
 ## Verb Dispatch at Runtime
 
-In smolmoo a verb runs to completion in a fresh VM instance per invocation.
-There is no long-lived handler-registration protocol. The host loads the
-verb ELF, writes the `vm_args` context at 0x380, and jumps to the ELF entry.
-The runtime's `_start` (`moo_rt.c`) reads `vm_args`, resets the arena, and
-calls the verb's `main` with the invocation arguments:
+### Development (qemu-m68k, bytecode VM)
 
-    // moo_rt.c _start, in effect
+Option A: verb name passed as argv[1] (or register d0 pointing to
+string). `_start` contains a jump table dispatching to verb functions.
+Each invocation is a process execution.
+
+### Production (bare metal ColdFire)
+
+Option C: long-running task. `_start` registers verb handlers with the
+host (like signal handler registration). Host sends verb invocations as
+messages. Task stays alive, each invocation gets a fresh arena.
+
+    // pseudocode for _start under Option C
     _start:
-        __moo_arena_reset();
-        main(player, room, this, dobj, iobj, arg);
-        _exit(0);
-
-A source file's entry verb is `verb main(...)`, emitted by the backend as a
-global `main` symbol. The verb word players type is set on the verb object
-(`verbs.conf`), independent of the `main` symbol, so one word maps to one
-compiled verb. A verb declares only the leading parameters it uses; the
-trailing ones are ignored.
+        register_verb("look", _verb_look)
+        register_verb("take", _verb_take)
+        register_verb("drop", _verb_drop)
+        ready()    // signal host: ready for invocations
+        // host calls registered functions directly from here
 
 ## Built-in Functions
 
@@ -725,10 +713,11 @@ For computed debug messages with variable interpolation:
 
 ### Backend mapping
 
-| Target                | Both forms emit                            |
-|-----------------------|--------------------------------------------|
-| RISC-V RV32 (smolmoo) | `write(2, data, len)` via `ecall`          |
-| ColdFire bare metal   | HC_PRINT hypervisor call                   |
+| Target              | Both forms emit                              |
+|---------------------|----------------------------------------------|
+| ColdFire bare metal | HC_PRINT hypervisor call                     |
+| qemu-m68k           | `write(STDERR_FILENO, data, len)`            |
+| Bytecode VM         | host callback to stderr or log sink          |
 
 `///` comments are cheap — the string literal is baked into the
 binary's rodata and written directly. `trace` statements with

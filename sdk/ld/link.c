@@ -1,6 +1,4 @@
-/* link.c : section merge, symbol resolution, relocation application
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* link.c : section merge, symbol resolution, relocation application */
 
 #include "ld.h"
 

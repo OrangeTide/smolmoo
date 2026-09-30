@@ -1,6 +1,4 @@
-/* elf_read.c : ELF32 big-endian relocatable object reader
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* elf_read.c : ELF32 big-endian relocatable object reader */
 
 #include "ld.h"
 

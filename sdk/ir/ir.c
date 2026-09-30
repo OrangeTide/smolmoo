@@ -1,6 +1,4 @@
-/* ir.c : IR construction helpers
- * Copyright (c) 2026 Jon Mayo
- * SPDX-License-Identifier: 0BSD OR CC0-1.0 */
+/* ir.c : IR construction helpers */
 
 #include "ir.h"
 
@@ -32,7 +30,7 @@ ir_op_is_float_def(int op)
 {
     switch (op) {
     case IR_FADD: case IR_FSUB: case IR_FMUL: case IR_FDIV:
-    case IR_FNEG: case IR_FABS:
+    case IR_FNEG: case IR_FABS: case IR_FSQRT:
     case IR_ITOF:
     case IR_F32TOF64: case IR_F64TOF32:
     case IR_FLS: case IR_FLD:
@@ -51,6 +49,7 @@ ir_op_is_i64_def(int op)
     switch (op) {
     case IR_LIC64:
     case IR_ADD64: case IR_SUB64: case IR_MUL64:
+    case IR_DIVS64: case IR_DIVU64: case IR_MODS64: case IR_MODU64:
     case IR_AND64: case IR_OR64: case IR_XOR64:
     case IR_SHL64: case IR_SHRS64: case IR_SHRU64:
     case IR_NEG64:

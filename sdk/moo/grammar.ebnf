@@ -1,6 +1,4 @@
 (* MooScript Grammar — EBNF *)
-(* Copyright (c) 2026 Jon Mayo *)
-(* SPDX-License-Identifier: 0BSD OR CC0-1.0 *)
 (* A statically-typed scripting language for MUD/MOO systems *)
 
 program         = [ module_decl ] { import_decl } { top_level } ;
