@@ -1295,7 +1295,7 @@ the status line vitals, and the reaper defibrillator that must take a lethal hit
 thirty-run stress passed clean after the sweep, where earlier batches surfaced a fresh flake from
 this class every dozen-odd runs.
 
-## Milestone 57: Re-vendor skjegg v0.7.0 and runaway watchdog (6af81fe, c56f9a4)
+## Milestone 57: Re-vendor skjegg v0.7.0 and runaway watchdog (6af81fe, c56f9a4, 7780bd3, d26908d)
 
 The verb toolchain and RV32 core were re-vendored from skjegg v0.5.0 to v0.7.0, which retired the RV32
 stack calling convention: every verb now builds with the ILP32 psABI. `skj-cc-rv-psabi` merged into
@@ -1326,6 +1326,22 @@ instructions while the server kept running, and a clean full suite with no legit
 budget. `FUTURE.md` records the remaining skjegg process-sandbox features (the memory-pool cap, guard
 pages, the access-check probe, spawn handles, and the per-CPU decoder cache) as evaluated and set aside,
 each redundant with or a poor fit for smolmoo's fixed-RAM, many-short-task model.
+
+Slice c trims the unused ColdFire toolchain from the vendored SDK. The server never runs a ColdFire
+guest and builds every verb with the RISC-V psABI toolchain, so `COMPONENTS` in `update-sdk.sh` drops to
+`riscv moo cc as-rv ld-rv cpp emu-rv` and the re-vendor removes 14 files (the ColdFire backend, the `as/`
+and `ld/` ColdFire front-ends and tools, the ColdFire emulator, and the m68k crt), a net cut of about
+8,980 lines. The shared assembler and linker skeleton (`asm_lex`, `asm_obj`, `link`, `script`, `mapfile`)
+stays, carried by the RISC-V tools; `skj-run` now compiles RV32-only. The `SKJ_SKIP_M68K_RUNTIME` guard,
+which had wrapped the m68k runtime rules, now wraps the sole remaining GNU-cross rule (`start_rv.o`), which
+smolmoo does not use. Suite still 496 green.
+
+Slice d turns the `moo/lower.c` typemask edit into `patches/moo-lower-typemask.patch`, a git patch against
+pristine upstream, that `update-sdk.sh` applies automatically after the vendor copy. A failed apply aborts
+the vendor (`set -eu` plus an explicit `die`), so upstream moving under the patch is caught loudly rather
+than silently dropping the typemask, the way slice a's hand-re-application could. This removes the one
+post-vendor step that still needed manual source editing; the remaining steps are restores of
+smolmoo-authored files and are done with `git checkout`.
 
 ---
 
