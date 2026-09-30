@@ -31,16 +31,18 @@
 #          git checkout HEAD -- sdk/LICENSE
 #        A human may then normalize the vendored source headers to add the
 #        smolmoo copyright line above each SPDX tag; that is left to a human.
-#   4. Re-apply smolmoo's local MooScript patch to sdk/moo/lower.c: the
-#        verb-call lowering (N_VCALL) emits __moo_verb_call(obj, verb, argc,
-#        typemask, args...) with a per-argument typemask (2 bits/arg: 2 =
-#        object, 1 = string, 0 = other), which host_vm.c uses to route object
-#        args to dobj/iobj and a string arg to argstr.  Upstream skjegg has no
-#        typemask.  The other toolchain patches smolmoo once carried (assembler
-#        immediate-range checks, the backend's large frame-offset lowering)
-#        are upstream as of v0.7.0 and no longer need re-applying.
-#   5. Copy the server-embedded CPU core to the top level:
+#   4. Copy the server-embedded CPU core to the top level:
 #        cp sdk/emu/rv32.c sdk/emu/rv32.h .
+#
+# This script itself applies smolmoo's source patches from patches/ during the
+# vendor, so they are not manual steps.  Currently that is
+# patches/moo-lower-typemask.patch: it makes the MooScript verb-call lowering
+# (N_VCALL) emit __moo_verb_call(obj, verb, argc, typemask, args...) with a
+# per-argument typemask (2 bits/arg: 2 = object, 1 = string, 0 = other), which
+# host_vm.c uses to route object args to dobj/iobj and a string arg to argstr.
+# Upstream skjegg has no typemask.  The other toolchain patches smolmoo once
+# carried (assembler immediate-range checks, the backend's large frame-offset
+# lowering) are upstream as of v0.7.0 and were dropped.
 #   RISC-V RV32 is the verb engine.  As of skjegg v0.7.0 the RV stack calling
 #   convention was retired: the server builds every verb with the psABI
 #   toolchain (skj-cc-rv, skj-as-rv, skj-ld-rv).  The ColdFire backend,
@@ -309,6 +311,19 @@ fi
 # LICENSE
 if [ -f "$S/LICENSE" ]; then
     cp "$S/LICENSE" "$DEST/"
+fi
+
+# ---- apply smolmoo-local source patches ----
+# Modifications smolmoo carries on top of pristine vendored files, kept as git
+# patches against the upstream original so a re-vendor re-applies them here
+# instead of by hand. Paths inside each patch are DEST-relative to the repo
+# root, so this script must run from there (where DEST is "sdk"). A failure
+# means upstream moved under a patch: fix the patch, never skip it.
+_patches="$(dirname "$0")/patches"
+if [ "$has_moo" -eq 1 ] && [ -f "$_patches/moo-lower-typemask.patch" ]; then
+    printf 'Applying local patch: moo-lower-typemask.patch\n'
+    git apply "$_patches/moo-lower-typemask.patch" \
+        || die "moo-lower-typemask.patch did not apply (upstream $DEST/moo/lower.c changed?)"
 fi
 
 # ---- generate update-skjegg.sh ----

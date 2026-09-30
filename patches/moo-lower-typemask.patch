@@ -1,0 +1,51 @@
+--- a/sdk/moo/lower.c
++++ b/sdk/moo/lower.c
+@@ -1089,13 +1089,19 @@
+         struct val recv;
+         int argc;
+         int args[18];
++        int argtype[18];
+ 
+         recv = deref_prop(lower_expr(n->a));
+         argc = 0;
+         for (struct node *a = n->b; a; a = a->next) {
++            struct val av;
++
+             if (argc >= 16)
+                 die("lower: too many verb call arguments");
+-            args[argc++] = deref_prop(lower_expr(a)).temp;
++            av = deref_prop(lower_expr(a));
++            args[argc] = av.temp;
++            argtype[argc] = av.type;
++            argc++;
+         }
+ 
+         if (recv.type == T_TSTR) {
+@@ -1207,14 +1213,24 @@
+         {
+             int vname = lower_strlit(n->name,
+                                      strlen(n->name));
+-            int callargs[18];
++            int callargs[20];
++            int typemask = 0;
+             int i;
++            /* Two routing bits per argument so the host can place values in
++             * the verb's context: 2 = object (-> dobj then iobj), 1 = string
++             * (-> argstr), 0 = anything else (not marshalled). */
++            for (i = 0; i < argc; i++) {
++                int cat = argtype[i] == T_TOBJ ? 2 :
++                          argtype[i] == T_TSTR ? 1 : 0;
++                typemask |= cat << (2 * i);
++            }
+             callargs[0] = recv.temp;
+             callargs[1] = vname;
+             callargs[2] = lower_const(argc);
++            callargs[3] = lower_const(typemask);
+             for (i = 0; i < argc; i++)
+-                callargs[3 + i] = args[i];
+-            emit_rtcall("__moo_verb_call", 3 + argc, callargs);
++                callargs[4 + i] = args[i];
++            emit_rtcall("__moo_verb_call", 4 + argc, callargs);
+         }
+         return (struct val){ lower_const(0), T_TINT };
+     }
