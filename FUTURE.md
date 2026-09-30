@@ -163,3 +163,47 @@ compression on top.
 
 Leans on: `cas-pack` (already vendored), plus an offline rebuild or new
 vendored repack calls; optionally the miniz codec for compression.
+
+## Verb sandbox hardening
+
+The verb VM already isolates a verb well: each task runs in its own 128 KB
+guest RAM, a fixed array that is bounds-checked on every access, under a
+cooperative round-robin scheduler that runs each ready task a quantum at a
+time. Re-vendoring skjegg's RV32 core (v0.7.0) also brought the `rv_run`
+reason contract, so the scheduler now reaps a task that halts or takes a
+trap instead of respinning it.
+
+### Runaway instruction watchdog (shipped)
+
+A verb that never yields (an infinite loop) used to hold its task slot and
+burn a scheduler slice every tick forever. `task_step` now sums the
+instructions `rv_run` retires and reaps a task that runs `VM_INSN_BUDGET`
+instructions without yielding, logging a `[vm] task N killed` line. The
+budget resets whenever a verb yields (finishes or calls `sys_suspend`), so a
+long-lived agent that ticks and suspends is never charged for its lifetime.
+Only continuous execution counts against the budget.
+
+### Deferred: the rest of skjegg's process sandbox
+
+skjegg's `emu/rv_user.c` plus `emu/guest.c` implement a fuller process
+sandbox. Its remaining pieces were evaluated and set aside, since smolmoo's
+model already covers what they protect:
+
+- Aggregate memory-pool cap (`gm_pool`, `--total-mem`): not applicable.
+  smolmoo's memory is statically bounded by `MAX_TASK` times a fixed
+  per-task RAM size, so there is no dynamic commit to cap.
+- Guard pages and `gm_mmap`: not applicable. smolmoo has no dynamic guest
+  mmap. Its flat guest RAM is already bounds-checked on every access.
+- Access-check probe callback (`cpu->probe`): available in the new core, but
+  smolmoo's inline bounds checks already cover it. It would only matter for
+  finer in-region protection the current design does not need.
+- Spawn with generation handles: smolmoo has its own higher-level
+  `sys_spawn` task model and does not hand raw slot handles to verbs, so the
+  stale-handle protection has nothing to guard here.
+- Predecoded-instruction cache (`rv_dec_enable`): a large speedup for a few
+  long-lived guests, but it allocates a 768 KB cache per CPU. With up to
+  `MAX_TASK` short-lived verb tasks that is the wrong trade, so it stays off.
+
+Revisit the probe callback only if a future verb feature needs sub-region
+memory protection, and the decoder cache only if the VM model shifts toward a
+few long-running guests rather than many short-lived tasks.

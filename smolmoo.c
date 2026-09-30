@@ -2197,6 +2197,13 @@ room_broadcast(int from, int room, const char *msg)
 #define VM_STR_ADDR    0x3B0
 #define VM_STR_MAX     208
 #define VM_MAX_INSN    100000
+/* Runaway watchdog: the most instructions a verb may run without yielding
+   (finishing or calling sys_suspend) before it is killed. A cooperative verb
+   resets this every time it suspends, so a long-lived agent that ticks and
+   yields is never charged for its lifetime; only continuous execution counts.
+   Set well above VM_MAX_INSN so a heavy but bounded verb finishes, while an
+   infinite loop is reaped rather than holding its task slot forever. */
+#define VM_INSN_BUDGET 5000000
 
 struct vm_event {
     int type;
@@ -2245,6 +2252,7 @@ struct vm_task {
     int id;
     int timer_id;
     int suspended;
+    int64_t insn_run;              /* instructions run since the last yield */
     int handler_obj;               /* object whose events route here, or 0 */
     struct host_event mbox[MBOX_MAX];
     int mbox_head, mbox_count, mbox_drops;
@@ -3122,25 +3130,37 @@ task_step(int ti, int quantum)
 {
     struct vm_task *t = &tasks[ti];
     enum rv_run_reason reason;
+    int retired = 0;
 
     t->suspended = 0;
     t->vm.cpu.halted = 0;
     t->vm.outlen = 0;
     task_current = ti;
-    reason = rv_run(&t->vm.cpu, quantum, NULL);
+    reason = rv_run(&t->vm.cpu, quantum, &retired);
     vm_flush_output(&t->vm);
     task_current = -1;
 
+    t->insn_run += retired;
+
     if (t->suspended) {
-        /* sys_suspend set the state already (it halts the hart to yield). */
+        /* sys_suspend set the state already (it halts the hart to yield). A
+           yield ends this run of continuous execution, so clear the budget. */
+        t->insn_run = 0;
     } else if (reason == RV_RUN_HALT || reason == RV_RUN_TRAP) {
         /* A clean exit halts; a trap is fatal here because a verb installs no
          * handler, so rv_run redirects to mtvec (0) and reports the trap
          * rather than halting. Reap the task on either. */
         task_free(ti);
+    } else if (t->insn_run > VM_INSN_BUDGET) {
+        /* RV_RUN_BUDGET, but the verb has run VM_INSN_BUDGET instructions
+           without yielding: treat it as a runaway and reap it rather than let
+           it hold its slot and burn a slice every tick forever. */
+        fprintf(stderr, "[vm] task %d killed: ran %lld instructions without "
+                "yielding (runaway)\n", t->id, (long long)t->insn_run);
+        task_free(ti);
     }
-    /* else RV_RUN_BUDGET: preempted mid-slice, stays TASK_READY. (RV_RUN_YIELD
-       cannot occur: verbs yield through sys_suspend, never wfi.) */
+    /* else RV_RUN_BUDGET under budget: preempted mid-slice, stays TASK_READY.
+       (RV_RUN_YIELD cannot occur: verbs yield through sys_suspend, never wfi.) */
 }
 
 static void
