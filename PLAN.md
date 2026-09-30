@@ -1295,6 +1295,38 @@ the status line vitals, and the reaper defibrillator that must take a lethal hit
 thirty-run stress passed clean after the sweep, where earlier batches surfaced a fresh flake from
 this class every dozen-odd runs.
 
+## Milestone 57: Re-vendor skjegg v0.7.0 and runaway watchdog (6af81fe, c56f9a4)
+
+The verb toolchain and RV32 core were re-vendored from skjegg v0.5.0 to v0.7.0, which retired the RV32
+stack calling convention: every verb now builds with the ILP32 psABI. `skj-cc-rv-psabi` merged into
+`skj-cc-rv`, the RV backend split `rv_emit.c` into `rv_select.c` and `rv_mc_text.c`, and `update-sdk.sh`
+was regenerated from the new `vendor.sh` with the local post-vendor steps re-applied (the
+`SKJ_SKIP_M68K_RUNTIME` guard, the smolmoo `sdk/LICENSE`, the `skjegg.mk` SPDX tag). The assembler
+immediate-range checks and the backend large frame-offset lowering smolmoo once carried as local patches
+had been upstreamed by v0.7.0 and were dropped.
+
+The ABI change reached three smolmoo-owned pieces. `moo_syscall_rv.S` was rewritten from the stack
+convention to the register convention, matching the C-verb stubs. `__moo_verb_call` in `host_vm.c` was
+rewritten to take fixed psABI parameters rather than the old `&typemask + 1` stack walk, since the RV
+backend has no variadic-callee support. And smolmoo's local `moo/lower.c` typemask patch, which the
+re-vendor wiped, was re-applied: it is what tells `host_vm.c` how to route object arguments to dobj and
+iobj and a string argument to argstr, and its loss was the root cause of five MooScript marshalling
+failures seen mid-migration. The emulator's `rv_run` now returns a reason enum plus a retired count;
+`task_step` reaps a task on HALT or TRAP, since a trap no longer sets `halted` and the old halted-only
+check would have respun a trapping verb every slice forever. The suite stayed at 496 checks, all green.
+
+Slice b adds a runaway watchdog on the new reason contract. A verb that never yields held its task slot
+and burned a scheduler slice every tick forever, since `vm_exec` caps only the initial synchronous slice.
+`task_step` now sums the retired instruction count into `vm_task.insn_run` and reaps a task that runs
+`VM_INSN_BUDGET` (5M) instructions without yielding, logging a `[vm] task N killed` line. The counter
+resets on every yield (a finish or `sys_suspend`), so a long-lived agent that ticks and suspends is never
+charged for its lifetime; only continuous execution counts, and the budget sits well above `VM_MAX_INSN`
+so a heavy but bounded verb still finishes. Verified with a `while(1)` MooScript verb reaped at about 5M
+instructions while the server kept running, and a clean full suite with no legitimate verb tripping the
+budget. `FUTURE.md` records the remaining skjegg process-sandbox features (the memory-pool cap, guard
+pages, the access-check probe, spawn handles, and the per-CPU decoder cache) as evaluated and set aside,
+each redundant with or a poor fit for smolmoo's fixed-RAM, many-short-task model.
+
 ---
 
 # Future Milestones
