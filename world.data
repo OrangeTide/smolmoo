@@ -966,3 +966,159 @@ room=#153
 proto=#234
 count=1
 area=#924
+
+#162 #100
+owner=#0
+name=The Grow Dome
+description=A geodesic grow-dome off the concourse, racks of hydroponic greens under sodium glare. A steward of the growers' co-op works a clipboard. A nursery and a press house open off the floor.
+
+#163 #100
+owner=#0
+name=The Nursery
+description=Seedling trays in warm mist, half of them gnawed to stubs. Something has been breeding in the drainage runs.
+
+#164 #100
+owner=#0
+name=The Press House
+description=A pressing room of oil drums and seed crates, the air thick and green. A foreperson tallies the stacks.
+
+#165 #100
+owner=#0
+name=The Cistern
+description=The dome's water cistern, a vaulted tank room dripping and dim. An overseer keeps watch from the catwalk.
+
+#166 #100
+owner=#0
+name=greens
+description=A pressure hatch into the growers' dome, warm wet air spilling out.
+location=#120
+dest=162
+
+#167 #100
+owner=#0
+name=concourse
+description=Back out of the dome to the concourse.
+location=#162
+dest=120
+
+#168 #100
+owner=#0
+name=nursery
+description=A low door into the seedling nursery.
+location=#162
+dest=163
+
+#169 #100
+owner=#0
+name=dome
+description=Back out to the grow dome.
+location=#163
+dest=162
+
+#170 #100
+owner=#0
+name=press
+description=The way into the press house.
+location=#162
+dest=164
+
+#171 #100
+owner=#0
+name=dome
+description=Back out to the grow dome.
+location=#164
+dest=162
+
+#172 #100
+owner=#0
+name=cistern
+description=A service stair down to the water cistern.
+location=#164
+dest=165
+
+#173 #100
+owner=#0
+name=press
+description=Back up to the press house.
+location=#165
+dest=164
+
+#235 #200
+owner=#0
+name=steward
+description=A co-op steward with a clipboard and dirt under the nails, short of hands for the dirty jobs.
+location=#162
+job=1
+job_desc=Clear the blight-rat breeding in the nursery.
+job_target=rat
+job_creds=110
+job_cp=2
+job_standing=growers:1
+
+#236 #200
+owner=#0
+name=rat
+description=A bloated blight-rat, slick and fast, bred fat on the seedlings.
+grade=tough
+mig=7
+
+#237 #200
+owner=#0
+name=foreperson
+description=The press-house foreperson, tallying seed crates, trusting of hands the co-op already knows.
+location=#164
+job=1
+job_desc=Haul the seed crates down to the cistern.
+job_dest=165
+job_min=growers:1
+job_creds=140
+job_cp=2
+job_standing=growers:1
+job_grant=greens_trusted
+
+#238 #200
+owner=#0
+name=overseer
+description=The cistern overseer, watching the water, jaw set, waiting on someone the co-op trusts.
+location=#165
+job=1
+job_desc=Put down the reaver fouling the cistern.
+job_target=reaver
+job_need=greens_trusted
+job_creds=280
+job_cp=4
+job_standing=growers:2
+
+#239 #200
+owner=#0
+name=reaver
+description=A gaunt water-reaver holed up in the tank room, wet blade in hand, spoiling for a fight.
+grade=tough
+mig=9
+
+#328 #300
+owner=#0
+name=crate
+description=A seed crate bound for the cistern, awkward but not heavy.
+location=#164
+weight=5
+
+#927 #900
+owner=#0
+name=The Greens
+description=The growers' co-op grow-dome off the waystation concourse.
+autoreset=300
+
+#928 #910
+owner=#0
+room=#163
+proto=#236
+count=1
+area=#927
+
+#929 #910
+owner=#0
+room=#165
+proto=#239
+count=1
+area=#927

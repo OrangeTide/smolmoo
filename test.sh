@@ -3858,6 +3858,63 @@ JD3=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=job_done&sid=$SID1")
 curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'inspector pays you 300 creds and 4 CP' "spur: the arc's final reward lands"
 
+# --- The Greens (M62): a three-step job arc gated by faction standing the arc
+# itself earns, authored into the world.data seed. The growers' co-op steward
+# offers an ungated opener that pays growers standing; the foreperson's run is
+# gated on that standing; the overseer's finale is gated on a flag the run
+# grants. Walk the whole arc from the wizard session (the standing gate is a
+# game-mechanic check, not a permission one, so admin does not mask it).
+curl -sf -X POST -d "$SID1 @go #120" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go greens" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '=== The Grow Dome ===' "greens: reachable from the concourse hatch"
+# the foreperson's run is visible but locked until growers standing is earned
+curl -sf -X POST -d "$SID1 go press" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'locked: needs growers Known' "greens: the foreperson run is locked below growers standing"
+curl -sf -X POST -d "$SID1 accept foreperson" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'do not rank for that job' "greens: accept refuses the run below the standing gate"
+# step 1: the steward's ungated bounty, which pays the growers standing
+curl -sf -X POST -d "$SID1 go dome" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 accept steward" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'take the job from steward' "greens: the opening bounty is accepted"
+curl -sf -X POST -d "$SID1 go nursery" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '=== The Nursery ===' "greens: the nursery is reachable"
+curl -sf -X POST -d "$SID1 @reset #927" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack rat" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+fight_over rat || true
+JD=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=job_done&sid=$SID1")
+[ "$JD" = "1" ] && pass "greens: downing the blight-rat completes the opening bounty" \
+	|| fail "greens: downing the blight-rat completes the opening bounty (job_done '$JD')"
+curl -sf -X POST -d "$SID1 go dome" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'steward pays you 110 creds and 2 CP' "greens: the opening bounty pays growers standing"
+# step 2: the courier run now opens on the earned standing, and grants a flag
+curl -sf -X POST -d "$SID1 go press" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 accept foreperson" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'take the job from foreperson' "greens: the run unlocks once growers standing is met"
+curl -sf -X POST -d "$SID1 go cistern" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '=== The Cistern ===' "greens: the cistern is reachable"
+JD2=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=job_done&sid=$SID1")
+[ "$JD2" = "1" ] && pass "greens: reaching the cistern completes the run" \
+	|| fail "greens: reaching the cistern completes the run (job_done '$JD2')"
+curl -sf -X POST -d "$SID1 go press" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'foreperson pays you 140 creds and 2 CP' "greens: the run pays out"
+# step 3: the finale, unlocked by the greens_trusted grant
+curl -sf -X POST -d "$SID1 go cistern" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 accept overseer" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'take the job from overseer' "greens: the finale unlocks once greens_trusted is granted"
+curl -sf -X POST -d "$SID1 @reset #927" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack reaver" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+fight_over reaver || true
+JD3=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=job_done&sid=$SID1")
+[ "$JD3" = "1" ] && pass "greens: downing the reaver completes the finale" \
+	|| fail "greens: downing the reaver completes the finale (job_done '$JD3')"
+curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'overseer pays you 280 creds and 4 CP' "greens: the arc's final reward lands"
+
 # M48c: a foreign-signed head to plant into the isolated history instances below.
 # The @rewind, agent-persistence, and @gc tests each copy depot/, which can carry a
 # head signed by a different key (a stale depot, or a restored backup). Planting one

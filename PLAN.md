@@ -1,26 +1,5 @@
 # Completed Milestones
 
-## Milestone 60: The Underdeck starter sub-area
-
-The Underdeck is a maintenance sub-level reached by a service stair off the waystation concourse (#120),
-adding playable content to the starter district. It was authored entirely in-game through the OLC builder
-rather than hand-written into the seed: `build_underdeck.sh` drives a throwaway server with `@create`,
-`@set`, `@move`, and `@dig` to build the area, then `smolmoo export` captures the result in `world.data`
-seed format. This dogfoods the builder toolkit and proves OLC can construct a full zone with no gaps.
-
-The sub-area is 18 objects: three rooms (The Underdeck, a Salvage Market, and a flooded Sump) wired by six
-descriptive exits; a salvage dealer vendor stocking a melee pipe and scrap plating armor; a dockers
-scrapper offering an ungated clear-out contract (140 creds, 2 CP, and a +1 dockers standing reward); a
-tough squatter an area reset spawns into the sump; and a few ambient items. The test suite grew from 503
-to 512 checks, a nine-check block that walks the whole chain from the wizard session: reach each room,
-accept the contract, list the vendor stock, spawn and defeat the squatter, and turn in for the reward.
-
-Authoring surfaced a seed-format trap. `world.data` has no comment syntax: the migrate parser reads any
-line beginning with `#` as an object header, so a `# note` line parses as object `#0` (the id atoi-reads
-as zero) and overwrites the System Object, wiping its `verb=#400` pointer. That made every verb resolve as
-"Unknown command" while C builtins still worked. Provenance notes stay in the commit message and here, not
-in the seed.
-
 ## Milestone 61: The Transit Spur job arc
 
 The Transit Spur is a new zone off the waystation concourse (#120) carrying a three-step job arc, the
@@ -43,6 +22,26 @@ organized by type, and OLC's zone-building completeness was already proven. The 
 526 checks, a fourteen-check block that walks the whole arc from the wizard session: reachability, the
 courier run showing locked before its clearance, and accept, objective, and reward for each of the three
 steps.
+
+## Milestone 62: The Greens job arc
+
+The Greens is a hydroponics grow-dome off the waystation concourse (#120) carrying a second three-step job
+arc. Where the Transit Spur chained purely on campaign flags, this arc is gated by faction standing it
+earns itself, introducing a `growers` co-op faction and demonstrating the full gating spectrum in one
+line: an ungated opener, a standing-gated middle step, and a flag-gated finale.
+
+The co-op steward offers the ungated opener, clearing a blight-rat from the nursery for 110 creds and a
+`growers` standing step. That standing opens the foreperson's courier run, a standing-gated (`job_min`
+growers:1) haul to the cistern that pays more standing and grants the `greens_trusted` flag. The flag in
+turn opens the overseer's finale, putting down a reaver in the cistern for 280 creds and 4 CP. The zone is
+21 seed objects: four rooms wired by eight exits, three job givers, two reset-spawned combat mobs, a
+flavor seed-crate, and the area with its two reset rules.
+
+The standing gate confirms a mechanic the flag arc did not: it is a game-mechanic check read through the
+giver's disposition, not a permission check, so the admin wizard does not mask it and must actually earn
+the standing. The suite grew from 526 to 540 checks, a fourteen-check block that walks the whole arc from
+the wizard session, including the standing-locked offer and the `accept` refusal below the gate before the
+opener is cleared.
 
 ---
 
