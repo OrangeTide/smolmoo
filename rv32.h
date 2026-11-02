@@ -137,7 +137,11 @@ typedef int (*rv_probe_fn)(void *ctx, uint32_t addr, int size, int is_write);
 
 /* Environment call callback: invoked on ECALL before the trap is taken.
  * The callback reads arguments from cpu->x[]/cpu->f[] and writes results
- * back. Return 0 if handled, nonzero to fall through to the ECALL trap. */
+ * back. Return RV_ECALL_OK if handled, RV_ECALL_RETRY to park without
+ * advancing the PC (the ECALL re-executes on the next run), or any other
+ * value to fall through to the ECALL trap. */
+#define RV_ECALL_OK     0       /* handled; advance past the ECALL */
+#define RV_ECALL_RETRY  (-1)    /* parked; re-execute the ECALL next time */
 struct rv_cpu;
 typedef int (*rv_ecall_fn)(struct rv_cpu *cpu, void *ctx);
 
@@ -146,8 +150,11 @@ typedef struct rv_cpu {
     uint32_t x[32];         /* x0-x31; x0 is hardwired to zero */
     uint32_t pc;            /* program counter */
 
-    /* F extension: 32 single-precision registers held as raw bit patterns */
-    uint32_t f[32];
+    /* F and D: 32 floating-point registers, FLEN = 64.  A double occupies the
+     * whole word; a single-precision value lives NaN-boxed in the low 32 bits
+     * (the high 32 all ones), and an operand that is not so boxed reads as the
+     * canonical single NaN, per the spec. */
+    uint64_t f[32];
     uint32_t fcsr;          /* frm in bits 7:5, fflags in bits 4:0 */
 
     /* Machine-mode CSRs */
@@ -206,6 +213,22 @@ typedef struct rv_cpu {
      * the specification's dependency: with those extensions off, those
      * forms raise the illegal-instruction trap after expansion. */
     int      zcb;
+
+    /* The D extension: double-precision floating point.  Unlike the F path,
+     * which computes every single-precision result through host-independent
+     * software rounding to stay bit-reproducible on any host, double arithmetic
+     * is done directly in the host's `double`.  So a double result is only as
+     * portable as the host FPU: the common IEEE-754 operations agree everywhere,
+     * but NaN payloads, and anything that would depend on the host rounding
+     * mode or on fused multiply-add, are not guaranteed bit-identical across
+     * hosts.  That is a deliberate trade (no softfloat core, no rounding
+     * tricks): it is on by default because the hosts that run doubles, boris
+     * and smolmoo, do not synchronise floating-point state between machines.
+     * The one consumer that does, aldeby's client/server prediction, is a
+     * single program that must clear this for a reproducible double, or pin its
+     * prediction math to single precision.  Clearing it makes a plain RV32IMFC
+     * machine whose double instructions trap as illegal. */
+    int      dp;
 
     uint64_t cycles;        /* retired instruction counter */
     rv_trace_t trace;       /* diagnostic event ring buffer */

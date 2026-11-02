@@ -13,8 +13,14 @@ OBJS := $(B)/smolmoo.o $(B)/rv32.o $(B)/monocypher.o $(SMOLVFS_OBJS)
 all: $(B)/smolmoo
 .DEFAULT_GOAL := all
 
-SKJ_SKIP_M68K_RUNTIME := 1
 include sdk/skjegg.mk
+# The verb toolchain smolmoo drives at runtime. Depending on these binaries
+# (not skjegg.mk's "skjegg" aggregate) keeps the build off the targets smolmoo
+# does not use: the skjcc driver, the vdso, and the start_rv.o/va_rv.o rules
+# that need a GNU RISC-V assembler. skj-run is not built either; the server
+# embeds rv32.c as the verb engine.
+SKJ_TOOLS := $(BUILD)/skj-cc-rv $(BUILD)/skj-mooc-rv $(BUILD)/skj-as-rv \
+	$(BUILD)/skj-ld-rv $(BUILD)/skj-cpp
 $(B)/smolmoo: $(OBJS) | $(B)
 	$(CC) -o $@ $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -lm -pthread
 	$(OBJCOPY) --only-keep-debug $@ $@.debug
@@ -48,7 +54,7 @@ $(B)/smolvfs/cas-sign-monocypher.o : smolvfs/cas-sign-monocypher.c smolvfs/cas-s
 # ILP32 psABI) and the stubs use the register convention, same as the C verbs.
 MOO_RT_OBJS := $(BUILD)/moo_rt.o $(BUILD)/host_vm.o $(BUILD)/str.o \
 	$(BUILD)/list.o $(BUILD)/moo_syscall_rv.o
-sdk: skjegg $(BUILD)/verb_rt_rv.o $(BUILD)/verbmain.o $(MOO_RT_OBJS) $(BUILD)/mulibc.h
+sdk: $(SKJ_TOOLS) $(BUILD)/verb_rt_rv.o $(BUILD)/verbmain.o $(MOO_RT_OBJS) $(BUILD)/mulibc.h
 
 # The C-verb header travels with the SDK so `@program` can compile a C verb
 # in a serve-only deployment, where the repo tree is not present.
@@ -60,15 +66,15 @@ $(BUILD)/verb_rt_rv.o: sdk/runtime/verb_rt_rv.S | $(BUILD)
 
 # libverbmain: the generic event-loop main() an agent (agent_*.c) links against.
 # Built with the psABI C compiler, like the C verbs it links with.
-$(BUILD)/verbmain.o: sdk/runtime/verbmain.c mulibc.h | skjegg $(BUILD)
+$(BUILD)/verbmain.o: sdk/runtime/verbmain.c mulibc.h | $(SKJ_TOOLS) $(BUILD)
 	$(BUILD)/skj-cc-rv -I. -I sdk/runtime -o $(BUILD)/verbmain.s $< && \
 		$(BUILD)/skj-as-rv -o $@ $(BUILD)/verbmain.s
 
-$(BUILD)/moo_syscall_rv.o: sdk/runtime/moo_syscall_rv.S | skjegg $(BUILD)
+$(BUILD)/moo_syscall_rv.o: sdk/runtime/moo_syscall_rv.S | $(SKJ_TOOLS) $(BUILD)
 	$(BUILD)/skj-as-rv -o $@ $<
 
 $(BUILD)/moo_rt.o $(BUILD)/host_vm.o $(BUILD)/str.o $(BUILD)/list.o: \
-$(BUILD)/%.o: sdk/runtime/%.c | skjegg $(BUILD)
+$(BUILD)/%.o: sdk/runtime/%.c | $(SKJ_TOOLS) $(BUILD)
 	$(BUILD)/skj-cc-rv -o $(BUILD)/$*.s $< && $(BUILD)/skj-as-rv -o $@ $(BUILD)/$*.s
 
 install: $(B)/smolmoo sdk

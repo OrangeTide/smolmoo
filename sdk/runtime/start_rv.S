@@ -13,158 +13,64 @@
  * in a0..a7.  The syscall wrappers pass them straight through: write's
  * (fd, buf, n) are already in a0, a1, a2, which is the ecall order too.
  *
- * _start drops argc/argv (tests take no arguments), calls main, then
- * passes main's return value to _exit.
+ * _start (in the shared crt_entry_rv.S) reads argc/argv/envp from the entry
+ * stack, passes argc/argv to main and sets environ, then passes main's return
+ * value to _exit.
  */
 
 	.text
-	.globl _start
-	.globl write
-	.globl read
-	.globl exit
-	.globl _exit
+	/* _start and the argv/entry contract are shared with the Kobold
+	   freestanding crt (kobold/kp_crt_rv.S); both include this fragment.  This
+	   file provides stack_top (in bss below) and the C program provides main. */
+	.include "crt_entry_rv.S"
 
-_start:
-	la	sp, stack_top
-	addi	sp, sp, -16
-	jal	ra, main
-	li	a7, 93
-	ecall
-1:	j	1b
+	/* the syscall wrappers are shared with the Kobold freestanding runtime:
+	   write/read/open/close/lseek/exit/_exit, getdents64, and the file-metadata
+	   and path syscalls (statx and the mkdirat/unlinkat/fchmodat/renameat2 *at
+	   forms the libc stat.c/fileops.c wrap). */
+	.include "syscall_rv.S"
 
-/* int write(int fd, const char *buf, int n); */
-write:
-	li	a7, 64
-	ecall
-	ret
+/* __sys_brk (the raw Linux brk) lives in the shared seam syscall_rv.S, included
+   above, since both libc/sbrk.c and the Kobold freestanding gheap grow their
+   heap through it. */
 
-/* int read(int fd, char *buf, int n); */
-read:
-	li	a7, 63
-	ecall
-	ret
+/* The 64-bit stack-ABI helpers (multiply and the shift family) are shared with
+   the JIT, so their bodies live once in i64_rv.S under the internal skj_jit_*
+   names.  Pull them in and expose the public libgcc names the rv32 backend emits
+   (__muldi3 / __ashldi3 / __ashrdi3 / __lshrdi3) as tail-jumps into them.  tail
+   leaves sp and ra untouched, so the stack-passed arguments and the return
+   address reach the body unchanged.  This is the freestanding C runtime, so no
+   register-ABI libgcc __muldi3 is linked to collide with these definitions. */
+	.include "runtime/i64_rv.S"
 
-/* void exit(int status); */
-exit:
-_exit:
-	li	a7, 93
-	ecall
-1:	j	1b
-
-/* __muldi3(a_lo, a_hi, b_lo, b_hi) -> a0:a1
- *   64-bit multiply (low 64 bits of result).
- *   Stack: 8(sp)=a_lo, 12(sp)=a_hi, 0(sp)=b_lo, 4(sp)=b_hi
- *   Result: a0=lo, a1=hi */
 	.globl __muldi3
+	.type	__muldi3,@function
 __muldi3:
-	lw	a0, 8(sp)		/* a0 = a_lo */
-	lw	a1, 12(sp)		/* a1 = a_hi */
-	lw	a2, 0(sp)		/* a2 = b_lo */
-	lw	a3, 4(sp)		/* a3 = b_hi */
-	/* result_lo = a_lo * b_lo (low 32 bits) */
-	/* result_hi = mulhu(a_lo, b_lo) + a_hi*b_lo + a_lo*b_hi */
-	mulhu	t0, a0, a2		/* t0 = hi32(a_lo * b_lo) */
-	mul	t1, a1, a2		/* t1 = lo32(a_hi * b_lo) */
-	add	t0, t0, t1
-	mul	t1, a0, a3		/* t1 = lo32(a_lo * b_hi) */
-	add	a1, t0, t1		/* a1 = result_hi */
-	mul	a0, a0, a2		/* a0 = result_lo */
-	ret
+	tail	skj_jit_muldi3
+	.size	__muldi3,.-__muldi3
 
-/* __ashldi3(a_lo, a_hi, shift) -> a0:a1
- *   64-bit left shift.
- *   Stack: 0(sp)=shift, 4(sp)=a_lo, 8(sp)=a_hi */
 	.globl __ashldi3
+	.type	__ashldi3,@function
 __ashldi3:
-	lw	a2, 0(sp)		/* a2 = shift */
-	lw	a0, 4(sp)		/* a0 = a_lo */
-	lw	a1, 8(sp)		/* a1 = a_hi */
-	li	t0, 32
-	bge	a2, t0, .Lashl_ge32
-	beqz	a2, .Lashl_done
-	/* shift < 32 */
-	sll	a1, a1, a2		/* a1 = a_hi << n */
-	sub	t1, t0, a2		/* t1 = 32 - n */
-	srl	t2, a0, t1		/* t2 = a_lo >> (32-n) */
-	or	a1, a1, t2		/* a1 |= carry bits */
-	sll	a0, a0, a2		/* a0 = a_lo << n */
-	ret
-.Lashl_ge32:
-	li	t0, 64
-	bge	a2, t0, .Lashl_zero
-	addi	a2, a2, -32
-	sll	a1, a0, a2		/* a1 = a_lo << (n-32) */
-	li	a0, 0
-	ret
-.Lashl_zero:
-	li	a0, 0
-	li	a1, 0
-.Lashl_done:
-	ret
+	tail	skj_jit_ashldi3
+	.size	__ashldi3,.-__ashldi3
 
-/* __ashrdi3(a_lo, a_hi, shift) -> a0:a1
- *   64-bit arithmetic right shift. */
 	.globl __ashrdi3
+	.type	__ashrdi3,@function
 __ashrdi3:
-	lw	a2, 0(sp)		/* a2 = shift */
-	lw	a0, 4(sp)		/* a0 = a_lo */
-	lw	a1, 8(sp)		/* a1 = a_hi */
-	li	t0, 32
-	bge	a2, t0, .Lashr_ge32
-	beqz	a2, .Lashr_done
-	/* shift < 32 */
-	srl	a0, a0, a2		/* a0 = a_lo >> n */
-	sub	t1, t0, a2		/* t1 = 32 - n */
-	sll	t2, a1, t1		/* t2 = a_hi << (32-n) */
-	or	a0, a0, t2		/* a0 |= carry bits */
-	sra	a1, a1, a2		/* a1 = a_hi >> n (arithmetic) */
-	ret
-.Lashr_ge32:
-	li	t0, 64
-	bge	a2, t0, .Lashr_sign
-	addi	a2, a2, -32
-	sra	a0, a1, a2		/* a0 = a_hi >> (n-32) */
-	srai	a1, a1, 31		/* sign extension */
-	ret
-.Lashr_sign:
-	srai	a1, a1, 31
-	mv	a0, a1
-.Lashr_done:
-	ret
+	tail	skj_jit_ashrdi3
+	.size	__ashrdi3,.-__ashrdi3
 
-/* __lshrdi3(a_lo, a_hi, shift) -> a0:a1
- *   64-bit logical right shift. */
 	.globl __lshrdi3
+	.type	__lshrdi3,@function
 __lshrdi3:
-	lw	a2, 0(sp)		/* a2 = shift */
-	lw	a0, 4(sp)		/* a0 = a_lo */
-	lw	a1, 8(sp)		/* a1 = a_hi */
-	li	t0, 32
-	bge	a2, t0, .Llshr_ge32
-	beqz	a2, .Llshr_done
-	/* shift < 32 */
-	srl	a0, a0, a2		/* a0 = a_lo >> n */
-	sub	t1, t0, a2		/* t1 = 32 - n */
-	sll	t2, a1, t1		/* t2 = a_hi << (32-n) */
-	or	a0, a0, t2
-	srl	a1, a1, a2		/* a1 = a_hi >> n */
-	ret
-.Llshr_ge32:
-	li	t0, 64
-	bge	a2, t0, .Llshr_zero
-	addi	a2, a2, -32
-	srl	a0, a1, a2		/* a0 = a_hi >> (n-32) */
-	li	a1, 0
-	ret
-.Llshr_zero:
-	li	a0, 0
-	li	a1, 0
-.Llshr_done:
-	ret
+	tail	skj_jit_lshrdi3
+	.size	__lshrdi3,.-__lshrdi3
 
 /* void *__moo_arena_alloc(int size);
  *   Bump allocator.  Aligns size up to 4 bytes.  Returns pointer in a0. */
 	.globl __moo_arena_alloc
+	.type	__moo_arena_alloc,@function
 __moo_arena_alloc:
 	addi	a0, a0, 3
 	andi	a0, a0, -4
@@ -174,14 +80,17 @@ __moo_arena_alloc:
 	sw	t2, 0(t0)
 	mv	a0, t1
 	ret
+	.size	__moo_arena_alloc,.-__moo_arena_alloc
 
 /* void __moo_arena_reset(void); */
 	.globl __moo_arena_reset
+	.type	__moo_arena_reset,@function
 __moo_arena_reset:
 	la	t0, __moo_arena_ptr
 	la	t1, __moo_arena
 	sw	t1, 0(t0)
 	ret
+	.size	__moo_arena_reset,.-__moo_arena_reset
 
 /* __cont_capture()
  *   Called by IR_CAPTURE inline code after pushing s1-s11.
@@ -197,6 +106,7 @@ __moo_arena_reset:
  *              ra = return address to IR_CAPTURE resume point
  *   Clobbers:  all regs (callee-saves are in the captured segment) */
 	.globl __cont_capture
+	.type	__cont_capture,@function
 __cont_capture:
 	addi	sp, sp, -4
 	sw	ra, 0(sp)		/* save return address on stack */
@@ -245,6 +155,7 @@ __cont_capture:
 	mv	s0, t4			/* restore mark's FP */
 	mv	sp, t5			/* restore mark's SP */
 	jr	t6			/* a0 = buf (nonzero) */
+	.size	__cont_capture,.-__cont_capture
 
 /* __cont_resume(buf, value)
  *   Restores the captured stack segment and returns into it.
@@ -253,6 +164,7 @@ __cont_capture:
  *
  *   On entry:  0(sp) = buf pointer, 4(sp) = resume value */
 	.globl __cont_resume
+	.type	__cont_resume,@function
 __cont_resume:
 	lw	a3, 0(sp)		/* a3 = buf */
 	lw	a1, 4(sp)		/* a1 = resume value */
@@ -283,6 +195,7 @@ __cont_resume:
 	lw	ra, 0(sp)		/* restore ra (saved by __cont_capture) */
 	addi	sp, sp, 4
 	ret				/* return to IR_CAPTURE resume point */
+	.size	__cont_resume,.-__cont_resume
 
 	.data
 	.align	4

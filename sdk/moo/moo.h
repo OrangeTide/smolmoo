@@ -111,4 +111,10 @@ void typecheck_program(struct arena *a, struct node *ast);
 
 struct ir_program *lower_program(struct arena *a, struct node *ast);
 
+/* Debug info (-g): when moo_debug is set, lowering emits an IR_LOC per statement
+   and records moo_src_file on each function for the line table.  Set by the
+   driver before lower_program. */
+extern int moo_debug;
+extern const char *moo_src_file;
+
 #endif /* MOO_H */

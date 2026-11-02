@@ -13,6 +13,11 @@ static struct arena *lower_arena;
 static struct ir_func *cur_fn;
 static struct ir_program *cur_prog;
 
+/* Debug info (-g), see moo.h. */
+int moo_debug = 0;
+const char *moo_src_file = NULL;
+static int last_loc_line;               /* last line marked in this function */
+
 struct val {
     int temp;
     int type;
@@ -1438,6 +1443,15 @@ lower_stmt(struct node *n)
     if (!n)
         return;
 
+    /* Debug info (-g): mark the source line at the head of each statement, once
+       per distinct line, so the backend builds an address-to-line table.  A
+       block carries no line of its own; its inner statements each mark theirs. */
+    if (moo_debug && n->line > 0 && n->line != last_loc_line
+        && n->kind != N_BLOCK) {
+        ir_loc(cur_fn, n->line);
+        last_loc_line = n->line;
+    }
+
     switch (n->kind) {
     case N_BLOCK:
         for (struct node *s = n->a; s; s = s->next)
@@ -2057,6 +2071,8 @@ lower_function(struct node *fn_ast)
 
     fn = ir_new_func(lower_arena, fn_ast->name);
     fn->is_local = (fn_ast->kind == N_FUNC && !fn_ast->exported);
+    fn->src_file = moo_debug ? moo_src_file : NULL;
+    last_loc_line = 0;
     cur_fn = fn;
     nloops = 0;
     nlsyms = 0;
@@ -2184,7 +2200,8 @@ lower_function(struct node *fn_ast)
 
     fn->nslots = nslots;
     fn->slot_size = arena_alloc(lower_arena, nslots * sizeof(int));
-    memcpy(fn->slot_size, slot_sizes, nslots * sizeof(int));
+    if (nslots)
+        memcpy(fn->slot_size, slot_sizes, nslots * sizeof(int));
     return fn;
 }
 

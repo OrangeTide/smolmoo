@@ -517,6 +517,71 @@ f32_sign(uint32_t b)
     return (int)(b >> 31);
 }
 
+/****************************************************************
+ * Double precision (D) and NaN-boxing of single precision
+ *
+ * The f-registers are FLEN = 64.  A single-precision value is NaN-boxed in the
+ * low 32 bits (the high half all ones); reading a single operand from a
+ * register that is not so boxed yields the canonical single NaN.  Double
+ * arithmetic is host `double`, not the software-rounded path the single-
+ * precision helpers use (see the rv_cpu.dp note): the ordinary IEEE-754
+ * operations agree across hosts, NaN payloads and rounding-mode- or FMA-
+ * dependent corners do not.
+ ****************************************************************/
+
+#define F64_QNAN     0x7ff8000000000000ull  /* canonical quiet NaN */
+#define RV_F64_SIGN  0x8000000000000000ull  /* the sign bit, for fsgnj.d */
+
+/* NaN-box a 32-bit single into a 64-bit register. */
+static inline uint64_t
+nanbox(uint32_t v)
+{
+    return 0xffffffff00000000ull | v;
+}
+
+/* Read a single operand from a register: the low 32 bits when properly boxed,
+ * the canonical single NaN otherwise. */
+static inline uint32_t
+unbox(uint64_t v)
+{
+    return (v >> 32) == 0xffffffffu ? (uint32_t)v : 0x7fc00000u;
+}
+
+static inline uint64_t
+f64_bits(double d)
+{
+    uint64_t b;
+    memcpy(&b, &d, sizeof(b));
+    return b;
+}
+
+static inline double
+f64_val(uint64_t bits)
+{
+    double d;
+    memcpy(&d, &bits, sizeof(d));
+    return d;
+}
+
+static inline int
+f64_is_nan(uint64_t b)
+{
+    return (b & 0x7ff0000000000000ull) == 0x7ff0000000000000ull &&
+           (b & 0x000fffffffffffffull) != 0;
+}
+
+static inline int
+f64_is_snan(uint64_t b)
+{
+    return f64_is_nan(b) && (b & 0x0008000000000000ull) == 0;
+}
+
+static inline int
+f64_sign(uint64_t b)
+{
+    return (int)(b >> 63);
+}
+
 static inline void
 fflags_set(rv_cpu *cpu, uint32_t flags)
 {
@@ -993,6 +1058,79 @@ fp_class(uint32_t a)
         return sign ? (1u << 2) : (1u << 5);
     }
     return sign ? (1u << 1) : (1u << 6);
+}
+
+/** fcvt.w.d / fcvt.wu.d: a double to a 32-bit integer, rounded per rm, with the
+ * invalid flag on NaN, infinity, or an out-of-range result and inexact on a
+ * fractional one.  Host double is wide enough to hold any int32, so the range
+ * test is exact. */
+static uint32_t
+d_to_int(rv_cpu *cpu, uint64_t a, int is_unsigned, int rm)
+{
+    double d, r, lim_lo, lim_hi;
+
+    if (f64_is_nan(a)) {
+        fflags_set(cpu, RV_FFLAG_NV);
+        return is_unsigned ? 0xffffffffu : 0x7fffffffu;
+    }
+    lim_lo = is_unsigned ? 0.0 : -2147483648.0;
+    lim_hi = is_unsigned ? 4294967295.0 : 2147483647.0;
+
+    d = f64_val(a);
+    if (d_is_inf(d)) {
+        fflags_set(cpu, RV_FFLAG_NV);
+        if (f64_sign(a))
+            return is_unsigned ? 0u : 0x80000000u;
+        return is_unsigned ? 0xffffffffu : 0x7fffffffu;
+    }
+
+    r = round_integral(d, rm);
+    if (r < lim_lo) {
+        fflags_set(cpu, RV_FFLAG_NV);
+        return is_unsigned ? 0u : 0x80000000u;
+    }
+    if (r > lim_hi) {
+        fflags_set(cpu, RV_FFLAG_NV);
+        return is_unsigned ? 0xffffffffu : 0x7fffffffu;
+    }
+    if (r != d)
+        fflags_set(cpu, RV_FFLAG_NX);
+
+    if (is_unsigned)
+        return (uint32_t)r;
+    return (uint32_t)(int32_t)r;
+}
+
+/** fclass.d: the ten-bit classification of a double operand. */
+static uint32_t
+d_class(uint64_t a)
+{
+    int sign = f64_sign(a);
+    uint32_t exp = (uint32_t)((a >> 52) & 0x7ff);
+    uint64_t man = a & 0x000fffffffffffffull;
+
+    if (exp == 0x7ff) {
+        if (man == 0)
+            return sign ? (1u << 0) : (1u << 7);
+        return (man & 0x0008000000000000ull) ? (1u << 9) : (1u << 8);
+    }
+    if (exp == 0) {
+        if (man == 0)
+            return sign ? (1u << 3) : (1u << 4);
+        return sign ? (1u << 2) : (1u << 5);
+    }
+    return sign ? (1u << 1) : (1u << 6);
+}
+
+/* Canonicalise a double result: a NaN out of the host FPU becomes the single
+ * canonical quiet NaN, so a result is deterministic on every host even though
+ * the payload of a host NaN is not. */
+static inline uint64_t
+d_result(double r)
+{
+    uint64_t b = f64_bits(r);
+
+    return f64_is_nan(b) ? F64_QNAN : b;
 }
 
 /****************************************************************
@@ -2150,147 +2288,300 @@ step:
         break;
 
     case OP_LOAD_FP:
-        if (f3 != 2) {
+        if (f3 == 2) {                          /* flw */
+            addr = a + (uint32_t)imm_i(insn);
+            if (mem_read(cpu, addr, 4, &val))
+                goto retire;
+            cpu->f[rd] = nanbox(val);
+        } else if (f3 == 3 && cpu->dp) {        /* fld: two 32-bit reads */
+            uint32_t lo, hi;
+            addr = a + (uint32_t)imm_i(insn);
+            if (mem_read(cpu, addr, 4, &lo))
+                goto retire;
+            if (mem_read(cpu, addr + 4, 4, &hi))
+                goto retire;
+            cpu->f[rd] = ((uint64_t)hi << 32) | lo;
+        } else {
             illegal(cpu, insn);
             goto retire;
         }
-        addr = a + (uint32_t)imm_i(insn);
-        if (mem_read(cpu, addr, 4, &val))
-            goto retire;
-        cpu->f[rd] = val;
         break;
 
     case OP_STORE_FP:
-        if (f3 != 2) {
+        if (f3 == 2) {                          /* fsw: low 32 bits */
+            addr = a + (uint32_t)imm_s(insn);
+            mem_write(cpu, addr, 4, (uint32_t)cpu->f[rs2]);
+        } else if (f3 == 3 && cpu->dp) {        /* fsd: two 32-bit writes */
+            addr = a + (uint32_t)imm_s(insn);
+            mem_write(cpu, addr, 4, (uint32_t)cpu->f[rs2]);
+            mem_write(cpu, addr + 4, 4, (uint32_t)(cpu->f[rs2] >> 32));
+        } else {
             illegal(cpu, insn);
             goto retire;
         }
-        addr = a + (uint32_t)imm_s(insn);
-        mem_write(cpu, addr, 4, cpu->f[rs2]);
         break;
 
     case OP_MADD:
     case OP_MSUB:
     case OP_NMSUB:
     case OP_NMADD: {
-        uint32_t fa = cpu->f[rs1], fb = cpu->f[rs2], fc = cpu->f[RS3(insn)];
+        uint32_t fmt = (insn >> 25) & 3;
 
-        if (((insn >> 25) & 3) != 0) {  /* fmt must be S */
-            illegal(cpu, insn);
-            goto retire;
-        }
         rm = resolve_rm(cpu, f3);
         if (rm < 0) {
             illegal(cpu, insn);
             goto retire;
         }
-        switch (OPCODE(insn)) {
-        case OP_MADD:
-            break;                              /* a * b + c */
-        case OP_MSUB:
-            fc ^= 0x80000000u;                  /* a * b - c */
-            break;
-        case OP_NMSUB:
-            fa ^= 0x80000000u;                  /* -(a * b) + c */
-            break;
-        default:
-            fa ^= 0x80000000u;                  /* -(a * b) - c */
-            fc ^= 0x80000000u;
-            break;
+        if (fmt == 0) {                 /* single precision */
+            uint32_t fa = unbox(cpu->f[rs1]);
+            uint32_t fb = unbox(cpu->f[rs2]);
+            uint32_t fc = unbox(cpu->f[RS3(insn)]);
+            switch (OPCODE(insn)) {
+            case OP_MADD:  break;                       /* a * b + c */
+            case OP_MSUB:  fc ^= 0x80000000u; break;    /* a * b - c */
+            case OP_NMSUB: fa ^= 0x80000000u; break;    /* -(a * b) + c */
+            default:       fa ^= 0x80000000u;           /* -(a * b) - c */
+                           fc ^= 0x80000000u; break;
+            }
+            cpu->f[rd] = nanbox(fp_fma(cpu, fa, fb, fc, rm));
+        } else if (fmt == 1 && cpu->dp) {       /* double precision */
+            uint64_t ba = cpu->f[rs1], bb = cpu->f[rs2], bc = cpu->f[RS3(insn)];
+            double x, y, z, r;
+            if (f64_is_snan(ba) || f64_is_snan(bb) || f64_is_snan(bc))
+                fflags_set(cpu, RV_FFLAG_NV);
+            x = f64_val(ba);
+            y = f64_val(bb);
+            z = f64_val(bc);
+            /* Host double, multiply-then-add (two roundings, not a fused op);
+             * see the rv_cpu.dp note on the no-conformance trade. */
+            switch (OPCODE(insn)) {
+            case OP_MADD:  r =  x * y + z; break;
+            case OP_MSUB:  r =  x * y - z; break;
+            case OP_NMSUB: r = -(x * y) + z; break;
+            default:       r = -(x * y) - z; break;
+            }
+            cpu->f[rd] = d_result(r);
+        } else {
+            illegal(cpu, insn);
+            goto retire;
         }
-        cpu->f[rd] = fp_fma(cpu, fa, fb, fc, rm);
         break;
     }
 
     case OP_FP: {
-        uint32_t fa = cpu->f[rs1], fb = cpu->f[rs2];
+        uint32_t fmt = f7 & 3;          /* 0 = single, 1 = double */
+        uint32_t op5 = f7 >> 2;
 
-        if ((f7 & 3) != 0) {            /* fmt must be S */
-            illegal(cpu, insn);
-            goto retire;
-        }
-        switch (f7 >> 2) {
-        case 0x00:  /* fadd.s */
-        case 0x01:  /* fsub.s */
-        case 0x02:  /* fmul.s */
-        case 0x03:  /* fdiv.s */
-            rm = resolve_rm(cpu, f3);
-            if (rm < 0) { illegal(cpu, insn); goto retire; }
-            switch (f7 >> 2) {
-            case 0x00: cpu->f[rd] = fp_add(cpu, fa, fb, rm); break;
-            case 0x01: cpu->f[rd] = fp_add(cpu, fa, fb ^ 0x80000000u, rm);
-                       break;
-            case 0x02: cpu->f[rd] = fp_mul(cpu, fa, fb, rm); break;
-            default:   cpu->f[rd] = fp_div(cpu, fa, fb, rm); break;
-            }
-            break;
-        case 0x0b:  /* fsqrt.s */
-            if (rs2 != 0) { illegal(cpu, insn); goto retire; }
-            rm = resolve_rm(cpu, f3);
-            if (rm < 0) { illegal(cpu, insn); goto retire; }
-            cpu->f[rd] = fp_sqrt(cpu, fa, rm);
-            break;
-        case 0x04:  /* fsgnj.s / fsgnjn.s / fsgnjx.s */
-            switch (f3) {
-            case 0: cpu->f[rd] = (fa & 0x7fffffffu) | (fb & 0x80000000u);
-                    break;
-            case 1: cpu->f[rd] = (fa & 0x7fffffffu) |
-                                 (~fb & 0x80000000u); break;
-            case 2: cpu->f[rd] = fa ^ (fb & 0x80000000u); break;
-            default: illegal(cpu, insn); goto retire;
-            }
-            break;
-        case 0x05:  /* fmin.s / fmax.s */
-            if (f3 > 1) { illegal(cpu, insn); goto retire; }
-            cpu->f[rd] = fp_minmax(cpu, fa, fb, (int)f3);
-            break;
-        case 0x14:  /* feq.s / flt.s / fle.s */
-            if (f3 > 2) { illegal(cpu, insn); goto retire; }
-            if (f3 == 2) {                              /* feq.s */
-                if (f32_is_snan(fa) || f32_is_snan(fb))
-                    fflags_set(cpu, RV_FFLAG_NV);
-                cpu->x[rd] = (!f32_is_nan(fa) && !f32_is_nan(fb) &&
-                              f32_val(fa) == f32_val(fb));
-            } else {
-                if (f32_is_nan(fa) || f32_is_nan(fb)) {
-                    fflags_set(cpu, RV_FFLAG_NV);
-                    cpu->x[rd] = 0;
-                } else if (f3 == 1) {                   /* flt.s */
-                    cpu->x[rd] = f32_val(fa) < f32_val(fb);
-                } else {                                /* fle.s */
-                    cpu->x[rd] = f32_val(fa) <= f32_val(fb);
+        if (fmt == 0) {                 /* ---- single precision (F) ---- */
+            uint32_t fa = unbox(cpu->f[rs1]), fb = unbox(cpu->f[rs2]);
+
+            switch (op5) {
+            case 0x00:  /* fadd.s */
+            case 0x01:  /* fsub.s */
+            case 0x02:  /* fmul.s */
+            case 0x03:  /* fdiv.s */
+                rm = resolve_rm(cpu, f3);
+                if (rm < 0) { illegal(cpu, insn); goto retire; }
+                switch (op5) {
+                case 0x00: cpu->f[rd] = nanbox(fp_add(cpu, fa, fb, rm)); break;
+                case 0x01: cpu->f[rd] =
+                           nanbox(fp_add(cpu, fa, fb ^ 0x80000000u, rm)); break;
+                case 0x02: cpu->f[rd] = nanbox(fp_mul(cpu, fa, fb, rm)); break;
+                default:   cpu->f[rd] = nanbox(fp_div(cpu, fa, fb, rm)); break;
                 }
+                break;
+            case 0x0b:  /* fsqrt.s */
+                if (rs2 != 0) { illegal(cpu, insn); goto retire; }
+                rm = resolve_rm(cpu, f3);
+                if (rm < 0) { illegal(cpu, insn); goto retire; }
+                cpu->f[rd] = nanbox(fp_sqrt(cpu, fa, rm));
+                break;
+            case 0x04:  /* fsgnj.s / fsgnjn.s / fsgnjx.s */
+                switch (f3) {
+                case 0: cpu->f[rd] =
+                        nanbox((fa & 0x7fffffffu) | (fb & 0x80000000u)); break;
+                case 1: cpu->f[rd] =
+                        nanbox((fa & 0x7fffffffu) | (~fb & 0x80000000u)); break;
+                case 2: cpu->f[rd] = nanbox(fa ^ (fb & 0x80000000u)); break;
+                default: illegal(cpu, insn); goto retire;
+                }
+                break;
+            case 0x05:  /* fmin.s / fmax.s */
+                if (f3 > 1) { illegal(cpu, insn); goto retire; }
+                cpu->f[rd] = nanbox(fp_minmax(cpu, fa, fb, (int)f3));
+                break;
+            case 0x14:  /* feq.s / flt.s / fle.s */
+                if (f3 > 2) { illegal(cpu, insn); goto retire; }
+                if (f3 == 2) {                              /* feq.s */
+                    if (f32_is_snan(fa) || f32_is_snan(fb))
+                        fflags_set(cpu, RV_FFLAG_NV);
+                    cpu->x[rd] = (!f32_is_nan(fa) && !f32_is_nan(fb) &&
+                                  f32_val(fa) == f32_val(fb));
+                } else {
+                    if (f32_is_nan(fa) || f32_is_nan(fb)) {
+                        fflags_set(cpu, RV_FFLAG_NV);
+                        cpu->x[rd] = 0;
+                    } else if (f3 == 1) {                   /* flt.s */
+                        cpu->x[rd] = f32_val(fa) < f32_val(fb);
+                    } else {                                /* fle.s */
+                        cpu->x[rd] = f32_val(fa) <= f32_val(fb);
+                    }
+                }
+                break;
+            case 0x18:  /* fcvt.w.s / fcvt.wu.s */
+                if (rs2 > 1) { illegal(cpu, insn); goto retire; }
+                rm = resolve_rm(cpu, f3);
+                if (rm < 0) { illegal(cpu, insn); goto retire; }
+                cpu->x[rd] = fp_to_int(cpu, fa, (int)rs2, rm);
+                break;
+            case 0x1a:  /* fcvt.s.w / fcvt.s.wu */
+                if (rs2 > 1) { illegal(cpu, insn); goto retire; }
+                rm = resolve_rm(cpu, f3);
+                if (rm < 0) { illegal(cpu, insn); goto retire; }
+                if (rs2 == 0)
+                    cpu->f[rd] = nanbox(f32_round(cpu, (double)(int32_t)a, 0.0,
+                                                  rm, (int32_t)a < 0));
+                else
+                    cpu->f[rd] = nanbox(f32_round(cpu, (double)a, 0.0, rm, 0));
+                break;
+            case 0x08:  /* fcvt.s.d: narrow a double to single (host rounding) */
+                if (rs2 != 1 || !cpu->dp) { illegal(cpu, insn); goto retire; }
+                rm = resolve_rm(cpu, f3);
+                if (rm < 0) { illegal(cpu, insn); goto retire; }
+                {
+                    uint64_t bd = cpu->f[rs1];
+                    if (f64_is_snan(bd))
+                        fflags_set(cpu, RV_FFLAG_NV);
+                    if (f64_is_nan(bd))
+                        cpu->f[rd] = nanbox(0x7fc00000u);
+                    else
+                        cpu->f[rd] = nanbox(f32_bits((float)f64_val(bd)));
+                }
+                break;
+            case 0x1c:  /* fmv.x.w / fclass.s */
+                if (rs2 != 0) { illegal(cpu, insn); goto retire; }
+                if (f3 == 0)
+                    cpu->x[rd] = (uint32_t)cpu->f[rs1];   /* raw low 32 bits */
+                else if (f3 == 1)
+                    cpu->x[rd] = fp_class(fa);
+                else { illegal(cpu, insn); goto retire; }
+                break;
+            case 0x1e:  /* fmv.w.x */
+                if (rs2 != 0 || f3 != 0) { illegal(cpu, insn); goto retire; }
+                cpu->f[rd] = nanbox(a);
+                break;
+            default:
+                illegal(cpu, insn);
+                goto retire;
             }
-            break;
-        case 0x18:  /* fcvt.w.s / fcvt.wu.s */
-            if (rs2 > 1) { illegal(cpu, insn); goto retire; }
-            rm = resolve_rm(cpu, f3);
-            if (rm < 0) { illegal(cpu, insn); goto retire; }
-            cpu->x[rd] = fp_to_int(cpu, fa, (int)rs2, rm);
-            break;
-        case 0x1a:  /* fcvt.s.w / fcvt.s.wu */
-            if (rs2 > 1) { illegal(cpu, insn); goto retire; }
-            rm = resolve_rm(cpu, f3);
-            if (rm < 0) { illegal(cpu, insn); goto retire; }
-            if (rs2 == 0)
-                cpu->f[rd] = f32_round(cpu, (double)(int32_t)a, 0.0, rm,
-                                       (int32_t)a < 0);
-            else
-                cpu->f[rd] = f32_round(cpu, (double)a, 0.0, rm, 0);
-            break;
-        case 0x1c:  /* fmv.x.w / fclass.s */
-            if (rs2 != 0) { illegal(cpu, insn); goto retire; }
-            if (f3 == 0)
-                cpu->x[rd] = fa;
-            else if (f3 == 1)
-                cpu->x[rd] = fp_class(fa);
-            else { illegal(cpu, insn); goto retire; }
-            break;
-        case 0x1e:  /* fmv.w.x */
-            if (rs2 != 0 || f3 != 0) { illegal(cpu, insn); goto retire; }
-            cpu->f[rd] = a;
-            break;
-        default:
+        } else if (fmt == 1 && cpu->dp) {       /* ---- double precision (D) ---- */
+            uint64_t ba = cpu->f[rs1], bb = cpu->f[rs2];
+            double x = f64_val(ba), y = f64_val(bb), r;
+
+            switch (op5) {
+            case 0x00:  /* fadd.d */
+            case 0x01:  /* fsub.d */
+            case 0x02:  /* fmul.d */
+            case 0x03:  /* fdiv.d */
+                rm = resolve_rm(cpu, f3);
+                if (rm < 0) { illegal(cpu, insn); goto retire; }
+                if (f64_is_snan(ba) || f64_is_snan(bb))
+                    fflags_set(cpu, RV_FFLAG_NV);
+                switch (op5) {
+                case 0x00: r = x + y; break;
+                case 0x01: r = x - y; break;
+                case 0x02: r = x * y; break;
+                default:   r = x / y; break;
+                }
+                cpu->f[rd] = d_result(r);
+                break;
+            case 0x0b:  /* fsqrt.d */
+                if (rs2 != 0) { illegal(cpu, insn); goto retire; }
+                rm = resolve_rm(cpu, f3);
+                if (rm < 0) { illegal(cpu, insn); goto retire; }
+                if (f64_is_snan(ba) || (x < 0.0 && !f64_is_nan(ba)))
+                    fflags_set(cpu, RV_FFLAG_NV);
+                cpu->f[rd] = d_result(d_sqrt(x));
+                break;
+            case 0x04:  /* fsgnj.d / fsgnjn.d / fsgnjx.d */
+                switch (f3) {
+                case 0: cpu->f[rd] = (ba & ~RV_F64_SIGN) | (bb & RV_F64_SIGN);
+                        break;
+                case 1: cpu->f[rd] = (ba & ~RV_F64_SIGN) | (~bb & RV_F64_SIGN);
+                        break;
+                case 2: cpu->f[rd] = ba ^ (bb & RV_F64_SIGN); break;
+                default: illegal(cpu, insn); goto retire;
+                }
+                break;
+            case 0x05:  /* fmin.d / fmax.d */
+                if (f3 > 1) { illegal(cpu, insn); goto retire; }
+                if (f64_is_snan(ba) || f64_is_snan(bb))
+                    fflags_set(cpu, RV_FFLAG_NV);
+                if (f64_is_nan(ba) && f64_is_nan(bb))
+                    cpu->f[rd] = F64_QNAN;
+                else if (f64_is_nan(ba))
+                    cpu->f[rd] = bb;
+                else if (f64_is_nan(bb))
+                    cpu->f[rd] = ba;
+                else if (x == 0.0 && y == 0.0) {    /* order -0 below +0 */
+                    int sa = f64_sign(ba), sb = f64_sign(bb);
+                    if (sa == sb)       cpu->f[rd] = ba;
+                    else if (f3 == 0)   cpu->f[rd] = sa ? ba : bb;
+                    else                cpu->f[rd] = sa ? bb : ba;
+                } else {
+                    cpu->f[rd] = (f3 == 0) ? (x < y ? ba : bb)
+                                           : (x > y ? ba : bb);
+                }
+                break;
+            case 0x14:  /* feq.d / flt.d / fle.d */
+                if (f3 > 2) { illegal(cpu, insn); goto retire; }
+                if (f3 == 2) {                              /* feq.d */
+                    if (f64_is_snan(ba) || f64_is_snan(bb))
+                        fflags_set(cpu, RV_FFLAG_NV);
+                    cpu->x[rd] = (!f64_is_nan(ba) && !f64_is_nan(bb) && x == y);
+                } else {
+                    if (f64_is_nan(ba) || f64_is_nan(bb)) {
+                        fflags_set(cpu, RV_FFLAG_NV);
+                        cpu->x[rd] = 0;
+                    } else {
+                        cpu->x[rd] = (f3 == 1) ? (x < y) : (x <= y);
+                    }
+                }
+                break;
+            case 0x18:  /* fcvt.w.d / fcvt.wu.d */
+                if (rs2 > 1) { illegal(cpu, insn); goto retire; }
+                rm = resolve_rm(cpu, f3);
+                if (rm < 0) { illegal(cpu, insn); goto retire; }
+                cpu->x[rd] = d_to_int(cpu, ba, (int)rs2, rm);
+                break;
+            case 0x1a:  /* fcvt.d.w / fcvt.d.wu (int to double is exact) */
+                if (rs2 > 1) { illegal(cpu, insn); goto retire; }
+                if (rs2 == 0)
+                    cpu->f[rd] = f64_bits((double)(int32_t)a);
+                else
+                    cpu->f[rd] = f64_bits((double)a);
+                break;
+            case 0x08:  /* fcvt.d.s: widen a single to double (exact) */
+                if (rs2 != 0) { illegal(cpu, insn); goto retire; }
+                {
+                    uint32_t fs = unbox(cpu->f[rs1]);
+                    if (f32_is_snan(fs))
+                        fflags_set(cpu, RV_FFLAG_NV);
+                    if (f32_is_nan(fs))
+                        cpu->f[rd] = F64_QNAN;
+                    else
+                        cpu->f[rd] = f64_bits((double)f32_val(fs));
+                }
+                break;
+            case 0x1c:  /* fclass.d (fmv.x.d does not exist on RV32) */
+                if (rs2 != 0 || f3 != 1) { illegal(cpu, insn); goto retire; }
+                cpu->x[rd] = d_class(ba);
+                break;
+            default:
+                illegal(cpu, insn);
+                goto retire;
+            }
+        } else {
             illegal(cpu, insn);
             goto retire;
         }
@@ -2302,8 +2593,13 @@ step:
             if (insn == 0x00000073) {           /* ecall */
                 rv_trace_push(&cpu->trace, RV_TR_ECALL, cpu->pc, insn,
                               cpu->x[17], NULL);
-                if (cpu->ecall && cpu->ecall(cpu, cpu->ecall_ctx) == 0)
-                    break;
+                if (cpu->ecall) {
+                    int er = cpu->ecall(cpu, cpu->ecall_ctx);
+                    if (er == RV_ECALL_OK)
+                        break;              /* handled: advance past the ecall */
+                    if (er == RV_ECALL_RETRY)
+                        goto out;           /* parked: leave pc, re-run next time */
+                }
                 rv_trap(cpu, RV_CAUSE_ECALL_M, 0);
                 goto retire;
             }

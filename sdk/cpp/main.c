@@ -15,10 +15,10 @@ cleanup_cpp(void *p)
 }
 
 static void
-usage(void)
+usage(FILE *out, int code)
 {
-    fprintf(stderr, "usage: skj-cpp [-V] [-I dir] [-D name[=value]] [-o outfile] input.c\n");
-    exit(1);
+    fprintf(out, "usage: skj-cpp [-V] [-I dir] [-D name[=value]] [-o outfile] input.c\n");
+    exit(code);
 }
 
 int
@@ -65,17 +65,19 @@ main(int argc, char **argv)
             printf("skj-cpp %s\n", SKJ_VERSION);
             cpp_free(p);
             return 0;
+        } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            usage(stdout, 0);
         } else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
             outpath = argv[++i];
         } else if (argv[i][0] != '-') {
             inpath = argv[i];
         } else {
-            usage();
+            usage(stderr, 1);
         }
     }
 
     if (!inpath)
-        usage();
+        usage(stderr, 1);
 
     if (setjmp(util_die_env) != 0)
         return 1;

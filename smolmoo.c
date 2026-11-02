@@ -3028,7 +3028,10 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
         return 0;
     }
     }
-    return -1;
+    /* Unknown syscall: fall through to the ECALL trap. Any nonzero that is not
+       RV_ECALL_RETRY (-1) traps; -1 would instead park and re-execute the same
+       ECALL forever (skjegg v0.39.0 rv32.h), so return 1, not -1. */
+    return 1;
 
 #undef ARG
 #undef RET
@@ -3253,6 +3256,11 @@ task_setup(int ti, const char *hash, int player, int room_id,
 
     rv_init(&vm->cpu, vm_read8, vm_read16, vm_read32,
             vm_write8, vm_write16, vm_write32, vm);
+    /* Disable the D (double) extension. The core computes doubles in the host
+       FPU, which is not bit-reproducible across machines; smolmoo's world
+       history must replay identically, so a double instruction traps as
+       illegal instead. Verb math is integer-only. (skjegg v0.39.0 rv32.h) */
+    vm->cpu.dp = 0;
     rv_set_ecall(&vm->cpu, vm_ecall, vm);
     rv_reset(&vm->cpu, entry);
     /* RV has no memory reset vector for the stack; the verb's _start runs C

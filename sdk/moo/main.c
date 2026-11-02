@@ -342,15 +342,15 @@ dump(struct node *n, int depth)
  ****************************************************************/
 
 static void
-usage(const char *prog)
+usage(const char *prog, FILE *out, int code)
 {
-    fprintf(stderr, "usage: %s [options] <file.moo>\n", prog);
-    fprintf(stderr, "  -o <file>   output assembly file\n");
-    fprintf(stderr, "  -t          enable trace comments\n");
-    fprintf(stderr, "  -V          show version\n");
-    fprintf(stderr, "  --tokens    dump token stream and exit\n");
-    fprintf(stderr, "  --ast       dump AST and exit\n");
-    exit(1);
+    fprintf(out, "usage: %s [options] <file.moo>\n", prog);
+    fprintf(out, "  -o <file>   output assembly file\n");
+    fprintf(out, "  -t          enable trace comments\n");
+    fprintf(out, "  -V          show version\n");
+    fprintf(out, "  --tokens    dump token stream and exit\n");
+    fprintf(out, "  --ast       dump AST and exit\n");
+    exit(code);
 }
 
 int
@@ -374,27 +374,31 @@ main(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0) {
             if (++i >= argc)
-                usage(argv[0]);
+                usage(argv[0], stderr, 1);
             outfile = argv[i];
         } else if (strcmp(argv[i], "-V") == 0) {
             printf("skj-mooc %s\n", SKJ_VERSION);
             return 0;
+        } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            usage(argv[0], stdout, 0);
         } else if (strcmp(argv[i], "-t") == 0) {
             trace = 1;
+        } else if (strcmp(argv[i], "-g") == 0) {
+            moo_debug = 1;
         } else if (strcmp(argv[i], "--tokens") == 0) {
             tokens_only = 1;
         } else if (strcmp(argv[i], "--ast") == 0) {
             ast_only = 1;
         } else if (argv[i][0] == '-') {
-            usage(argv[0]);
+            usage(argv[0], stderr, 1);
         } else {
             if (filename)
-                usage(argv[0]);
+                usage(argv[0], stderr, 1);
             filename = argv[i];
         }
     }
     if (!filename)
-        usage(argv[0]);
+        usage(argv[0], stderr, 1);
 
     if (setjmp(util_die_env) != 0)
         return 1;
@@ -431,6 +435,8 @@ main(int argc, char **argv)
             struct ir_func *fn;
             FILE *out;
 
+            if (moo_debug)
+                moo_src_file = filename;
             prog = lower_program(&a, ast);
 
         for (fn = prog->funcs; fn; fn = fn->next)
@@ -449,8 +455,12 @@ main(int argc, char **argv)
         if (outfile)
             fclose(out);
         }
+
+        /* Run the cleanup list while the arena 'a' registered above is still
+           in scope; running it after this block closes would free an
+           out-of-scope stack object. */
+        util_cleanup_run();
     }
 
-    util_cleanup_run();
     return 0;
 }
