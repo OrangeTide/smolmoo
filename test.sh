@@ -210,6 +210,28 @@ check_log /tmp/smolmoo_p1.log 'data: +' "create acct 1"
 curl -sf -X POST -d "$SID2 create TestPlayer2 pass2 $INVITE" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p2.log 'data: +' "create acct 2"
 
+# --- M59: MooScript character-creation wizard (makechar), on TestPlayer2 ---
+# The wizard is written in MooScript (verb_makechar.moo). It walks attributes
+# and the hook, writing them to the sheet, then hands off to `chargen` for
+# skills. State lives in the sheet's cg_step, shared with `chargen`. It sets no
+# skills and never marks the character `made`, so the later medic block (which
+# grants TestPlayer2 Medicine via @teach) is unaffected.
+mc() { curl -sf -X POST -d "$SID2 makechar $1" http://localhost:$PORT/cmd >/dev/null; }
+mc ""
+check_log /tmp/smolmoo_p2.log 'Step 1/2 attributes' "makechar start (moo verb)"
+mc "3 3 3 3"
+check_log /tmp/smolmoo_p2.log 'must total 24 (you have 12)' "makechar attr sum (moo)"
+mc "9"
+check_log /tmp/smolmoo_p2.log 'Enter four numbers' "makechar too few numbers (moo)"
+mc "6 9 6 3"
+check_log /tmp/smolmoo_p2.log 'Attributes set.' "makechar attrs accepted (moo)"
+mc "bogus"
+check_log /tmp/smolmoo_p2.log 'Hook must be street' "makechar bad hook (moo)"
+mc "cyber"
+check_log /tmp/smolmoo_p2.log 'Hook set' "makechar hook accepted (moo)"
+mc ""
+check_log /tmp/smolmoo_p2.log 'Attributes and hook are set' "makechar hands off to chargen (moo)"
+
 # player 1 says something
 curl -sf -X POST -d "$SID1 say hello world" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'You say "hello world"' "say echo"

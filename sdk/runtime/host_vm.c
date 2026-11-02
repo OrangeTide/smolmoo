@@ -165,6 +165,17 @@ __moo_obj_valid(const char *obj)
     return obj != 0;
 }
 
+/* Turn a bare integer id into an object handle. Object handles in this host are
+ * the integer id itself, so this is an identity cast. A MooScript verb that
+ * reads an id from an int-valued property (such as a player's `charid`) has no
+ * int->obj cast in the language, so it converts the id through this extern.
+ * id <= 0 yields the nil handle. */
+const char *
+obj_of(int id)
+{
+    return id > 0 ? (const char *)id : 0;
+}
+
 void
 __moo_obj_move(const char *obj, const char *dest)
 {

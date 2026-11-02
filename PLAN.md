@@ -1,53 +1,5 @@
 # Completed Milestones
 
-## Milestone 57: Re-vendor skjegg v0.7.0 and runaway watchdog (6af81fe, c56f9a4, 7780bd3, d26908d)
-
-The verb toolchain and RV32 core were re-vendored from skjegg v0.5.0 to v0.7.0, which retired the RV32
-stack calling convention: every verb now builds with the ILP32 psABI. `skj-cc-rv-psabi` merged into
-`skj-cc-rv`, the RV backend split `rv_emit.c` into `rv_select.c` and `rv_mc_text.c`, and `update-sdk.sh`
-was regenerated from the new `vendor.sh` with the local post-vendor steps re-applied (the
-`SKJ_SKIP_M68K_RUNTIME` guard, the smolmoo `sdk/LICENSE`, the `skjegg.mk` SPDX tag). The assembler
-immediate-range checks and the backend large frame-offset lowering smolmoo once carried as local patches
-had been upstreamed by v0.7.0 and were dropped.
-
-The ABI change reached three smolmoo-owned pieces. `moo_syscall_rv.S` was rewritten from the stack
-convention to the register convention, matching the C-verb stubs. `__moo_verb_call` in `host_vm.c` was
-rewritten to take fixed psABI parameters rather than the old `&typemask + 1` stack walk, since the RV
-backend has no variadic-callee support. And smolmoo's local `moo/lower.c` typemask patch, which the
-re-vendor wiped, was re-applied: it is what tells `host_vm.c` how to route object arguments to dobj and
-iobj and a string argument to argstr, and its loss was the root cause of five MooScript marshalling
-failures seen mid-migration. The emulator's `rv_run` now returns a reason enum plus a retired count;
-`task_step` reaps a task on HALT or TRAP, since a trap no longer sets `halted` and the old halted-only
-check would have respun a trapping verb every slice forever. The suite stayed at 496 checks, all green.
-
-Slice b adds a runaway watchdog on the new reason contract. A verb that never yields held its task slot
-and burned a scheduler slice every tick forever, since `vm_exec` caps only the initial synchronous slice.
-`task_step` now sums the retired instruction count into `vm_task.insn_run` and reaps a task that runs
-`VM_INSN_BUDGET` (5M) instructions without yielding, logging a `[vm] task N killed` line. The counter
-resets on every yield (a finish or `sys_suspend`), so a long-lived agent that ticks and suspends is never
-charged for its lifetime; only continuous execution counts, and the budget sits well above `VM_MAX_INSN`
-so a heavy but bounded verb still finishes. Verified with a `while(1)` MooScript verb reaped at about 5M
-instructions while the server kept running, and a clean full suite with no legitimate verb tripping the
-budget. `FUTURE.md` records the remaining skjegg process-sandbox features (the memory-pool cap, guard
-pages, the access-check probe, spawn handles, and the per-CPU decoder cache) as evaluated and set aside,
-each redundant with or a poor fit for smolmoo's fixed-RAM, many-short-task model.
-
-Slice c trims the unused ColdFire toolchain from the vendored SDK. The server never runs a ColdFire
-guest and builds every verb with the RISC-V psABI toolchain, so `COMPONENTS` in `update-sdk.sh` drops to
-`riscv moo cc as-rv ld-rv cpp emu-rv` and the re-vendor removes 14 files (the ColdFire backend, the `as/`
-and `ld/` ColdFire front-ends and tools, the ColdFire emulator, and the m68k crt), a net cut of about
-8,980 lines. The shared assembler and linker skeleton (`asm_lex`, `asm_obj`, `link`, `script`, `mapfile`)
-stays, carried by the RISC-V tools; `skj-run` now compiles RV32-only. The `SKJ_SKIP_M68K_RUNTIME` guard,
-which had wrapped the m68k runtime rules, now wraps the sole remaining GNU-cross rule (`start_rv.o`), which
-smolmoo does not use. Suite still 496 green.
-
-Slice d turns the `moo/lower.c` typemask edit into `patches/moo-lower-typemask.patch`, a git patch against
-pristine upstream, that `update-sdk.sh` applies automatically after the vendor copy. A failed apply aborts
-the vendor (`set -eu` plus an explicit `die`), so upstream moving under the patch is caught loudly rather
-than silently dropping the typemask, the way slice a's hand-re-application could. This removes the one
-post-vendor step that still needed manual source editing; the remaining steps are restores of
-smolmoo-authored files and are done with `git checkout`.
-
 ## Milestone 58: Re-vendor skjegg v0.39.0
 
 The verb toolchain and RV32 core were re-vendored from skjegg v0.7.0 to v0.39.0. Upstream had grown far
@@ -89,6 +41,26 @@ The hosted libc was evaluated and set aside. skjegg's `libc/` is a POSIX-style h
 run under the world hypercall ABI instead (`sys_broadcast`, `sys_getprop`, `sys_spawn`, and the rest), so
 adopting it would mean implementing a POSIX syscall backend the server deliberately does not carry,
 against the minimize-source-size constraint. The 200-line `mulibc.h` is correctly sized and stays.
+
+## Milestone 59: MooScript character-creation wizard
+
+`makechar` is a character-creation wizard written in MooScript (`verb_makechar.moo`), a front end to
+the ChromeSix sheet that exercises the language and the object model rather than the C verb path. It
+walks the two opening creation steps, attributes (four values, each 3 to 9, totalling 24) then the hook
+(street, cyber, or awakened), validates each, writes them to the player's sheet, and hands off to
+`chargen` for skills and the finalize (kit and derived stats). Creation state lives in the sheet's
+`cg_step` property, the same one `chargen` uses, so the two verbs share one flow and interoperate step
+for step. The parsing is pure MooScript: a `token` helper over `length`, `substr`, and `index`, with
+`toint`/`tostr` for the numbers and property read/write for the sheet.
+
+The feature needed one host-bridge addition and no skjegg change. MooScript has no int-to-object cast,
+and smolmoo stores a player's `charid` as a bare integer, so `host_vm.c` gained `obj_of(id)`, a six-line
+identity extern that hands the verb the sheet's object handle. The language itself proved sufficient:
+property writes, `toint`/`substr`/`index`, arithmetic, and `extern func ... -> obj` all compile and run.
+The remaining MooScript limits found during the work (verb calls are fire-and-forget with no return, prop
+writes are string-only, there is no suspend/interactive model) are in smolmoo's own bridge, not skjegg,
+and none blocked this wizard, which uses the re-entrant `cg_step` pattern instead of a suspend loop.
+`verbs.conf` registers `makechar` as #480; the suite grew from 496 to 503 checks, all green.
 
 ---
 
