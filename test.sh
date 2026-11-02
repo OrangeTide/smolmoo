@@ -2054,7 +2054,7 @@ TS2=$(beacon_ticks)
 curl -sf -X POST -d "$SID1 @examine #$BEACON" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'awake = "0"' "@sleep clears the awake flag"
 
-# --- M33a: in-game agent authoring (@program #N agent, see M33.md) ---
+# --- M33a: in-game agent authoring (@program #N agent) ---
 # A builder writes an event-loop agent in the editor and compiles it with the
 # `agent` token, which links -lverbmain like an agent_*.c source. Prove the
 # compiled program runs as a real agent (its EV_TIMER fires), not a one-shot
@@ -2079,7 +2079,7 @@ check_log /tmp/smolmoo_p1.log 'the widget hums' \
 	"an in-game authored agent runs its event loop (EV_TIMER)"
 curl -sf -X POST -d "$SID1 @sleep #$WOBJ" http://localhost:$PORT/cmd >/dev/null
 
-# --- M33b: ownership quota (see M33.md) ---
+# --- M33b: ownership quota ---
 # Open building is capped per account so it cannot exhaust the id space.
 # Wizards are exempt, so this is checked as the non-admin TestPlayer3, who
 # already owns objects from the permission tests. #0.objquota tunes the cap
@@ -2119,7 +2119,7 @@ done
 	&& pass "raising the quota lets a builder create again" \
 	|| fail "raising the quota lets a builder create again"
 
-# --- M33c: prototype discovery (see M33.md) ---
+# --- M33c: prototype discovery ---
 # @proto list shows the prototypes registered on #0 so a builder can find a
 # parent for @create without reading source. Read-only and unprivileged, so
 # check it as the non-admin TestPlayer3. The prototype names are unique to this
@@ -2281,7 +2281,7 @@ check_log /tmp/smolmoo_p1.log 'not on that line' "call refuses a platform off th
 # clear the stray line so the lobby is not left pointing at a test vehicle
 curl -sf -X POST -d "$SID1 @set #101.line=" http://localhost:$PORT/cmd >/dev/null
 
-# --- M34: timed transit (see M34.md) ---
+# --- M34: timed transit ---
 # A vehicle with a positive `transit` takes travel time between stops instead of
 # hopping instantly: it departs, rides with its doors shut (moving=1), then
 # arrives. While under way board/disembark/floor/call are refused. Reuse the

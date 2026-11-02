@@ -473,7 +473,7 @@ TAP unit tests cover the arc end to end (274 smoke checks pass).
 ## Milestone 33: Builder self-sufficiency (OLC-8)
 
 Completes the OLC arc's promise: a builder runs a living, self-authored world
-without touching the repo tree. The full plan is `M33.md`; this is the summary.
+without touching the repo tree.
 Three slices shipped.
 
 M33a is in-game agent authoring (dcbd0a9). `@program #N agent` compiles a C
@@ -504,7 +504,7 @@ listing checked as the non-admin `TestPlayer3`.
 ## Milestone 34: Vehicles in transit
 
 Vehicles can take game time between stops instead of hopping instantly, and know
-where they are while under way. The full plan is `M34.md`; this is the summary.
+where they are while under way.
 Slice 1 (timed transit) shipped (e12152e), and slice 2 (spatial awareness)
 shipped in three parts (see below).
 
@@ -538,8 +538,7 @@ train's looping advance and the elevator's targeted step. A vehicle with no
 ## Milestone 35: Character advancement
 
 The ChromeSix growth loop that M25 designed but left inert now runs: play awards
-Character Points and CP buys a better sheet. The full plan is `M35.md`; this is
-the summary. It shipped in three slices (b098d44, 961d153, a8df506).
+Character Points and CP buys a better sheet. It shipped in three slices (b098d44, 961d153, a8df506).
 
 Slice a earns CP. The combat task (`verb_combat.c`) resolves both a fight and a
 social scene, and it declares a win at one point, when no foe is left up. That
@@ -564,8 +563,7 @@ row per future unlock. The suite grew to 302 checks.
 ## Milestone 36: The unlock roster
 
 M35 shipped `learn` but left its catalog nearly empty and its effects hardcoded.
-M36 fills the roster and finishes the machinery. The full plan is `M36.md`; this
-is the summary. It shipped in three slices (c6fe839, abe1252, 4be0109).
+M36 fills the roster and finishes the machinery. It shipped in three slices (c6fe839, abe1252, 4be0109).
 
 Slice a makes the catalog visible: `learn` with no id lists each unlock's CP
 cost, required hook, and status (owned, available, too dear, the wrong hook, or
@@ -589,7 +587,7 @@ the awakened hook `learn` gates on. The suite grew to 309 checks.
 The character systems could fight, talk, travel, and grow, but the world had no
 reason to do any of it. M37 adds a directed loop: a job giver offers a contract,
 completing it pays creds, CP, and standing. A job is data on a builder-authored
-object, not compiled content. The full plan is `M37.md`; this is the summary. It
+object, not compiled content. It
 shipped in three slices (f882e8e, a6dca55, 57b68d9).
 
 Slice a is the bookkeeping. A giver object marked `job=1` carries the contract in
@@ -620,8 +618,7 @@ combat) and shows the CP balance on the sheet.
 
 M37 lets a player earn faction standing, but the only consequence was vendor
 pricing. `chromesix.md` Section 14 promises more, and M38 builds it: standing now
-changes what the world lets a player do and how it treats them. The full plan is
-`M38.md`; this is the summary. It shipped in three slices (2f380cf, 470ab1d,
+changes what the world lets a player do and how it treats them. It shipped in three slices (2f380cf, 470ab1d,
 470ccb2).
 
 Slice a gates access. A job giver can carry an optional `job_min` "faction:step";
@@ -647,7 +644,7 @@ helper parses the sign itself. The suite grew to 329 checks.
 M25i built recovery from death (the paid `recover`, a death clock, ally revive),
 but a character who survived a fight hurt had no way to mend: the suite reset
 `bp` by hand after every fight. M39 adds recovery for the living, on a new clock
-the verbs had been missing. The full plan is `M39.md`; this is the summary. It
+the verbs had been missing. It
 shipped in three slices (56e1ed3, 9ae2e79, 05cfca9).
 
 Slice a adds the clock and the short rest. `sys_now` is host syscall 27, returning
@@ -679,8 +676,7 @@ framework and the highest-value conditions, so a fight is more than trading
 damage: a character can be knocked down, stunned, frightened, or set bleeding, and
 must act around it. A condition is a prop on the sheet, in the idiom of `downed`
 and `crash`, read where it bites: the turn grant for action-denial,
-`cs_attack_resolve` for pool and Passive Defense shifts. The full plan is `M40.md`;
-this is the summary. It shipped in three slices (6056e0c, ad3222b, 018dbd0).
+`cs_attack_resolve` for pool and Passive Defense shifts. It shipped in three slices (6056e0c, ad3222b, 018dbd0).
 
 Slice a builds the framework and Prone. `cs_cond_list` names the active conditions
 and the sheet prints a `Conditions:` line. `cs_attack_resolve` folds the Prone
@@ -712,7 +708,7 @@ branch, but only four unlocks filled it, leaving `learn` and the CP economy with
 almost nothing to buy. M41 stocks the shelf, adding a representative unlock for
 each active-effect family so every kind of option is proven end to end. It leans
 on two seams: the `cs_unlocks` catalog and its `use` dispatch (M36), and the
-condition framework (M40). The full plan is `M41.md`; this is the summary. It
+condition framework (M40). It
 shipped in three slices (5c1a808, 951f998, 1541db4).
 
 Slice a adds timed self-buffs. A buff is one prop carrying rounds remaining, so
@@ -744,8 +740,7 @@ mechanism, a defender-reaction check inside `cs_attack_resolve`, and lands the
 four reaction unlocks, largely closing out the ChromeSix combat engine. Each
 reaction is a `UEF_PASSIVE` catalog row read by id at the resolution point it
 bites, gated on a spare `react_left` and its cost, and firing only when reactions
-are allowed so a reaction's own strike cannot recurse. The full plan is `M42.md`;
-this is the summary. It shipped in three slices (a8e0a45, 8333f08, ea0ed39).
+are allowed so a reaction's own strike cannot recurse. It shipped in three slices (a8e0a45, 8333f08, ea0ed39).
 
 Slice a builds the hook at the Net Damage point and ships Reflex Governor
 (cyberware): the defender spends a reaction and 2 Grit to roll Wit plus Cybertech
@@ -774,8 +769,7 @@ After eight milestones that deepened the ChromeSix systems, M43 adds no mechanic
 It makes the existing depth approachable from inside the game: a glanceable status
 line, in-game help for the game commands, and a guided first few minutes for a new
 character. It is deliberately the lowest-code milestone of the run, wiring
-renderers and seeding content rather than building systems. The full plan is
-`M43.md`; this is the summary. It shipped in three slices (5ee9adb, f4133ef,
+renderers and seeding content rather than building systems. It shipped in three slices (5ee9adb, f4133ef,
 832e40a).
 
 Slice a adds a `status` verb (alias `st`) that draws the Section 12 vitals line,
@@ -807,8 +801,7 @@ district that ties chargen, movement, jobs, standing, combat, and the services
 into a loop a new character can actually play. It is mostly world content, which
 is data rather than source, so it validates the engine as a game without growing
 the codebase, and it shakes out integration the isolated tests never touch since
-those build their own objects while this drives the seeded ones. The full plan is
-`M44.md`; this is the summary. It shipped in three slices (93138a2, 6b9475f,
+those build their own objects while this drives the seeded ones. It shipped in three slices (93138a2, 6b9475f,
 6e07d35).
 
 Slice a seeds the hub and its services: a five-room waystation (concourse, bar,
@@ -845,8 +838,7 @@ so every family the rules lay out is proven end to end and `learn` and `use` hav
 the full shelf. No new mechanism: each item is a catalog row or a condition prop
 hung on a seam that already exists (the `cs_unlocks` catalog and `use` dispatch, the
 M40 condition framework, the `cs_attack_resolve` hooks, and the opposed-roll
-inflictor pattern from `trip` and `stun`). The full plan is `M45.md`; this is the
-summary. It shipped in three slices (55556d9, 3a36058, 3747a43).
+inflictor pattern from `trip` and `stun`). It shipped in three slices (55556d9, 3a36058, 3747a43).
 
 Slice a adds the first unlock that touches turn order rather than a hit. Wired
 Reflexes is a cyberware passive: a catalog row plus a `cs_has_unlock` read in the
@@ -885,8 +877,7 @@ because the reset machinery had no automatic driver and a seeded `#910` rule wou
 have perturbed the global `@reset` counts the OLC tests assert. M46 makes the
 district live: seeded encounters respawn on their own, on a timer, without breaking
 those tests. It is mostly wiring on machinery that already exists, plus a
-test-hygiene fix, and it unblocks respawn for every future district. The full plan
-is `M46.md`; this is the summary. It shipped in three slices (e9ece5e, 73ab9a5,
+test-hygiene fix, and it unblocks respawn for every future district. It shipped in three slices (e9ece5e, 73ab9a5,
 36cb0c3).
 
 Slice a factors the `@reset` reconcile loop into a reusable `world_reset(filter,
@@ -922,8 +913,7 @@ alone: gated only by standing and a cooldown, with nothing on the sheet recordin
 which jobs a character had finished, so no contract could require another. M47 adds a
 named-flag primitive so a contract can require an earlier one and grant a token on
 completion, then wires a short campaign arc into the district from it. It is
-content-light in code, building on the existing gate-and-turnin seams. The full plan
-is `M47.md`; this is the summary. It shipped in three slices (bd94cd8, 9630996,
+content-light in code, building on the existing gate-and-turnin seams. It shipped in three slices (bd94cd8, 9630996,
 ba01f81).
 
 Slice a adds the prerequisite gate. `cs_has_unlock` was refactored into a shared
@@ -964,8 +954,7 @@ topic seam that dead-ended a later `@rewind`. This bit the isolated `@rewind` te
 backup brought up under a new key. The M45 notes blamed the test symptom on the suite
 crossing `AUTOSAVE_MS`; that was the wrong cause. M48 makes history hermetic: an
 instance builds only on history in its own topic, re-basing a foreign chain to a fresh
-self-signed one at the current world root. The full plan is `M48.md`; this is the
-summary. It shipped in three slices (f33b2b1, 8522de7, 976c7b3).
+self-signed one at the current world root. It shipped in three slices (f33b2b1, 8522de7, 976c7b3).
 
 Slice a adds the core rule. `history_load_head` decodes the head record and compares
 its topic id to the local topic (`cas_sign_topic_id(server_pk)`); on a mismatch it
@@ -1017,7 +1006,7 @@ check for a game result to appear. A readiness gate that gave up proceeded anywa
 an empty session id, so every command in that block failed, turning one slow boot into
 a cluster of false failures; an outcome check that gave up failed a result that was
 merely late. M49 makes the waits robust so a loaded machine no longer fails a correct
-run. The full plan is `M49.md`; this is the summary. It shipped in three slices
+run. It shipped in three slices
 (ce08e23, 724e01b, 74444e3), with a follow-up slice d (370bfb6).
 
 Slice a removes the empty-id cascade. Two helpers in `test.sh` use a generous ceiling
@@ -1070,8 +1059,7 @@ the loops they replaced: the passive idle gate could not recover a scene that wa
 tear down (the original openers actively drained a lingering foe), the slower per-turn
 cadence let the multi-foe fight down the player, and the busier poll loops widened races
 even in untouched scenes. The work was reverted to the pre-M50 drivers (9534b29) and the
-suite returned to 454 clean. The number 50 stays retired to this attempt (see M50.md for
-the full finding). The teardown races remain open for a later attempt that makes teardown
+suite returned to 454 clean. The number 50 stays retired to this attempt. The teardown races remain open for a later attempt that makes teardown
 itself guaranteed and keeps openers self-healing.
 
 ## Milestone 51: Arc and quest visibility (7ae4641, 627987e, 7ee570b)
@@ -1080,7 +1068,7 @@ M37 built jobs and M47 turned them into a chain gated by earned campaign flags, 
 nothing showed a player what they were working on or what they had unlocked: the flags
 were invisible and the active contract appeared as a bare name. M51 surfaces that state,
 reading what already lives on the sheet and the giver objects, so it is content-light in
-code and adds no new mechanics. The full plan is `M51.md`; this is the summary. It shipped
+code and adds no new mechanics. It shipped
 in three slices, all driven on non-admin TestPlayer3 since these are own-sheet reads. The
 suite grew from 454 to 465 checks.
 
@@ -1107,8 +1095,7 @@ M37 built jobs, M47 chained them behind earned flags, and M51 surfaced a player'
 contract, clearances, and standing. What stayed invisible was the wider offering (a player
 saw only the contracts in the room they stood in) and where an accepted objective actually
 was. M52 surfaces both, walking the room graph the world already forms through exits rather
-than adding a district data structure, so it stays content-light in code. The full plan is
-`M52.md`; this is the summary. It shipped in three slices, driven on non-admin TestPlayer3
+than adding a district data structure, so it stays content-light in code. It shipped in three slices, driven on non-admin TestPlayer3
 for the player-facing reads. The suite grew from 465 to 477 checks.
 
 Slice a adds a `board` verb (routed through `verb_jobs.c`, object #479) that runs a bounded
@@ -1134,7 +1121,7 @@ The M33-M52 review found three defects in how combat conditions begin, end, and 
 M40 built the condition set and M42 and M45 added more, but nothing tore them down when a
 scene ended, Shaken was only half built, and a shared dice helper could hang on a
 malformed pool. M53 makes the condition set consistent from application to teardown,
-adding no new conditions or maneuvers. The full plan is `M53.md`; this is the summary. It
+adding no new conditions or maneuvers. It
 shipped in three slices, and grew the suite from 479 to 485 checks.
 
 Slice a adds `cs_clear_conditions(sheet)` and calls it per combatant in the `verb_combat.c`
@@ -1162,8 +1149,7 @@ belt and suspenders.
 
 The M33-M52 review found that M39c's standing decay only ran when a player opened their sheet
 or the contracts view, so every consequence of standing read a stale value until then. M54
-routes the decay to the consequences it was built to soften, adding no new standing mechanic.
-The full plan is `M54.md`; this is the summary. It shipped in three slices, and grew the suite
+routes the decay to the consequences it was built to soften, adding no new standing mechanic. It shipped in three slices, and grew the suite
 from 485 to 491 checks.
 
 Slice a makes the fix. Every consequence reads standing through one seam, `cs_disposition`,
@@ -1190,7 +1176,7 @@ The M33-M52 review found two defects around a character that is playable before 
 run: the sheet showed the inherited prototype defaults as though they were the player's own
 character, and running chargen afterward overwrote any progress earned first. M55 keeps early
 play legible and lossless, adding no new onboarding flow; the prototype-playable model stays by
-decision. The full plan is `M55.md`; this is the summary. It shipped in two slices, and grew the
+decision. It shipped in two slices, and grew the
 suite from 490 to 496 checks (with the M25a pre-chargen sheet check adapted).
 
 Slice a adds the made-marker guard to `verb_sheet.c`, matching the one `verb_status.c` gained in

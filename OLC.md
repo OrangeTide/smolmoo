@@ -13,7 +13,7 @@ folded into the milestone sections (the OLC-2, OLC-5, and holistic reviews) are
 resolved: boot-scan agent persistence, the `sys_notify` control path replacing
 the EV_USER catch-all, corpse reaping and clean reset spawns, platform-side
 `call`, and narrowing verb elevation to the privileged span all landed. The arc
-then continued as OLC-8 (Milestone 33, see `M33.md`), which shipped in-game
+then continued as OLC-8 (Milestone 33), which shipped in-game
 agent authoring (`@program ... agent`), the object ownership quota, and
 `@proto list`. What remains is genuinely optional and called out per section
 (idle chatter, mid-transit vehicle state) plus the cross-cutting notes at the
@@ -359,8 +359,7 @@ Locked design:
 - Build plumbing: the `agent_` source prefix tells the installer (and
   `program_compile`) to link `verbmain.o`. Repo convention: `verb_*.c` for
   one-shot verbs, `agent_*.c` for event-loop agents. In-game authoring of an
-  agent through `@program ... agent` shipped later in M33a (OLC-8, see
-  `M33.md`).
+  agent through `@program ... agent` shipped later in M33a (OLC-8).
 - Launch: `@wake #N` (wizard only) starts object `#N` as an agent under the
   reserved system session; `#N.brain` names the agent verb. `@wake` also marks
   `#N.awake=1` in the persistent world, and a boot-time scan re-wakes every
@@ -373,7 +372,7 @@ Locked design:
 Shipped: the event bus, the `@wake`/`@sleep` launcher with boot-scan
 persistence, and a demo agent (`__ticker`, `#452`) that ticks with no player
 present and announces a newcomer on `EV_ENTER`. The `@program ... agent` token
-for in-game agent authoring, once a follow-up, shipped in M33a (see `M33.md`).
+for in-game agent authoring, once a follow-up, shipped in M33a.
 
 `__combat` was not converted into a `verbmain` agent: it is a sequential,
 self-terminating, per-fight task (bound to the player's session for reaping),
@@ -478,10 +477,10 @@ stops), OLC-2 (a vehicle can be a reset-managed object).
   naturally with OLC but is not a prerequisite.
 - Ownership quotas (shipped, M33b): a per-account cap on object count prevents
   id exhaustion as `@create`/`@clone` open up. It landed as a host check tunable
-  through `#0.objquota` (see `M33.md`).
+  through `#0.objquota`.
 - Prototype discovery (shipped, M33c): `@proto list` lists the prototypes
   registered on `#0` so a builder can pick a parent for `@create` without
-  reading source. It landed as a host command (see `M33.md`).
+  reading source. It landed as a host command.
 - Per-agent VM cost: every woken agent (OLC-5/6/7) is a full task. It holds a
   128 KiB VM (`VM_MEMSZ` 0x20000), one of the `MAX_TASK` (1024) task slots, and
   its own dwell timer. The `tasks` array is one `calloc`, so idle pages are not
