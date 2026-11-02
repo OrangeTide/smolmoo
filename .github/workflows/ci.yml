@@ -1,0 +1,25 @@
+name: Build & Test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install cross-compiler
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+
+      - name: Cross-compile (aarch64)
+        run: make CC=aarch64-linux-gnu-gcc OBJCOPY=aarch64-linux-gnu-objcopy STRIP=aarch64-linux-gnu-strip
+
+      - name: Build native and test
+        run: |
+          make clean
+          make
+          make install
+          make test
