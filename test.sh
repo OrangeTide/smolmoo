@@ -3803,6 +3803,61 @@ curl -sf -X POST -d "$SID1 go deck" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'scrapper pays you 140 creds and 2 CP' "underdeck: the contract pays the dockers reward"
 
+# --- The Transit Spur (M61): a three-step job arc chained by campaign flags,
+# authored into the world.data seed. Walk the whole arc from the wizard
+# session: an opening bounty that grants a clearance flag, a courier run gated
+# on it that grants a second flag, and a final bounty gated on that one.
+curl -sf -X POST -d "$SID1 @go #120" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go spur" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '=== The Spur Platform ===' "spur: reachable from the concourse gate"
+curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'warden: Clear the pack' "spur: the warden offers the opening bounty"
+# the chained courier run is visible but locked until the first flag is granted
+curl -sf -X POST -d "$SID1 go shed" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'locked: requires spur_safe' "spur: the courier run is locked without the first clearance"
+# step 1: accept and clear the signal-house pack for the warden
+curl -sf -X POST -d "$SID1 go platform" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 accept warden" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'take the job from warden' "spur: the opening bounty is accepted"
+curl -sf -X POST -d "$SID1 go signal" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '=== The Signal House ===' "spur: the signal house is reachable"
+curl -sf -X POST -d "$SID1 @reset #924" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack cur" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+fight_over cur || true
+JD=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=job_done&sid=$SID1")
+[ "$JD" = "1" ] && pass "spur: downing the cur completes the opening bounty" \
+	|| fail "spur: downing the cur completes the opening bounty (job_done '$JD')"
+curl -sf -X POST -d "$SID1 go platform" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'warden pays you 120 creds and 2 CP' "spur: the opening bounty pays out"
+# step 2: the courier run, now unlocked by the spur_safe grant
+curl -sf -X POST -d "$SID1 go shed" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 accept signaler" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'take the job from signaler' "spur: the courier run unlocks once spur_safe is granted"
+curl -sf -X POST -d "$SID1 go junction" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '=== The Junction ===' "spur: the junction is reachable"
+JD2=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=job_done&sid=$SID1")
+[ "$JD2" = "1" ] && pass "spur: reaching the junction completes the delivery" \
+	|| fail "spur: reaching the junction completes the delivery (job_done '$JD2')"
+curl -sf -X POST -d "$SID1 go shed" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'signaler pays you 150 creds and 2 CP' "spur: the courier run pays out"
+# step 3: the final bounty, unlocked by the relay_live grant
+curl -sf -X POST -d "$SID1 go junction" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 accept inspector" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'take the job from inspector' "spur: the final bounty unlocks once relay_live is granted"
+curl -sf -X POST -d "$SID1 @reset #924" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack saboteur" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+fight_over saboteur || true
+JD3=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=job_done&sid=$SID1")
+[ "$JD3" = "1" ] && pass "spur: downing the saboteur completes the final bounty" \
+	|| fail "spur: downing the saboteur completes the final bounty (job_done '$JD3')"
+curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'inspector pays you 300 creds and 4 CP' "spur: the arc's final reward lands"
+
 # M48c: a foreign-signed head to plant into the isolated history instances below.
 # The @rewind, agent-persistence, and @gc tests each copy depot/, which can carry a
 # head signed by a different key (a stale depot, or a restored backup). Planting one

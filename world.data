@@ -810,3 +810,159 @@ room=#129
 proto=#229
 count=1
 area=#922
+
+#150 #100
+owner=#0
+name=The Spur Platform
+description=A disused rail platform off the concourse, its boarding gates welded shut. A warden keeps the gate. A signal house and a maintenance shed open off the platform.
+
+#151 #100
+owner=#0
+name=The Signal House
+description=A cramped signal house, cable looms torn from the walls. Something has been nesting in the dark among the gutted relays.
+
+#152 #100
+owner=#0
+name=The Maintenance Shed
+description=A low shed of lockers and spare parts. A signaler works a bench, a boxed relay core at their elbow.
+
+#153 #100
+owner=#0
+name=The Junction
+description=The spur's power junction, breakers banked floor to ceiling. With the relay live it hums and ticks.
+
+#154 #100
+owner=#0
+name=spur
+description=A welded boarding gate, cracked just wide enough to pass. The old spur line lies beyond.
+location=#120
+dest=150
+
+#155 #100
+owner=#0
+name=concourse
+description=Back through the gate to the concourse.
+location=#150
+dest=120
+
+#156 #100
+owner=#0
+name=signal
+description=A hatch into the signal house.
+location=#150
+dest=151
+
+#157 #100
+owner=#0
+name=platform
+description=Back out to the spur platform.
+location=#151
+dest=150
+
+#158 #100
+owner=#0
+name=shed
+description=The way to the maintenance shed.
+location=#150
+dest=152
+
+#159 #100
+owner=#0
+name=platform
+description=Back out to the spur platform.
+location=#152
+dest=150
+
+#160 #100
+owner=#0
+name=junction
+description=A service walk to the power junction.
+location=#152
+dest=153
+
+#161 #100
+owner=#0
+name=shed
+description=Back to the maintenance shed.
+location=#153
+dest=152
+
+#230 #200
+owner=#0
+name=warden
+description=The spur warden, a ring of keys at the belt and a stunstick to hand.
+location=#150
+job=1
+job_desc=Clear the pack nesting in the signal house.
+job_target=cur
+job_creds=120
+job_cp=2
+job_grant=spur_safe
+
+#231 #200
+owner=#0
+name=cur
+description=A feral cur gone wild in the dark, hackles up and spoiling for a fight.
+grade=tough
+mig=8
+
+#232 #200
+owner=#0
+name=signaler
+description=A spur signaler splicing cable, a boxed relay core at their elbow.
+location=#152
+job=1
+job_desc=Carry the relay core to the junction.
+job_dest=153
+job_need=spur_safe
+job_creds=150
+job_cp=2
+job_standing=dockers:1
+job_grant=relay_live
+
+#233 #200
+owner=#0
+name=inspector
+description=A line inspector at the junction panel, jaw tight, watching the breakers.
+location=#153
+job=1
+job_desc=Put down the saboteur drawn out at the junction.
+job_target=saboteur
+job_need=relay_live
+job_creds=300
+job_cp=4
+job_standing=dockers:2
+
+#234 #200
+owner=#0
+name=saboteur
+description=A wiry saboteur jacked into the junction panel, spoiling for a fight.
+grade=tough
+mig=9
+
+#327 #300
+owner=#0
+name=core
+description=A boxed relay core, heavier than it looks.
+location=#152
+weight=4
+
+#924 #900
+owner=#0
+name=The Transit Spur
+description=The disused rail spur off the waystation concourse.
+autoreset=300
+
+#925 #910
+owner=#0
+room=#151
+proto=#231
+count=1
+area=#924
+
+#926 #910
+owner=#0
+room=#153
+proto=#234
+count=1
+area=#924

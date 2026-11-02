@@ -1,25 +1,5 @@
 # Completed Milestones
 
-## Milestone 59: MooScript character-creation wizard
-
-`makechar` is a character-creation wizard written in MooScript (`verb_makechar.moo`), a front end to
-the ChromeSix sheet that exercises the language and the object model rather than the C verb path. It
-walks the two opening creation steps, attributes (four values, each 3 to 9, totalling 24) then the hook
-(street, cyber, or awakened), validates each, writes them to the player's sheet, and hands off to
-`chargen` for skills and the finalize (kit and derived stats). Creation state lives in the sheet's
-`cg_step` property, the same one `chargen` uses, so the two verbs share one flow and interoperate step
-for step. The parsing is pure MooScript: a `token` helper over `length`, `substr`, and `index`, with
-`toint`/`tostr` for the numbers and property read/write for the sheet.
-
-The feature needed one host-bridge addition and no skjegg change. MooScript has no int-to-object cast,
-and smolmoo stores a player's `charid` as a bare integer, so `host_vm.c` gained `obj_of(id)`, a six-line
-identity extern that hands the verb the sheet's object handle. The language itself proved sufficient:
-property writes, `toint`/`substr`/`index`, arithmetic, and `extern func ... -> obj` all compile and run.
-The remaining MooScript limits found during the work (verb calls are fire-and-forget with no return, prop
-writes are string-only, there is no suspend/interactive model) are in smolmoo's own bridge, not skjegg,
-and none blocked this wizard, which uses the re-entrant `cg_step` pattern instead of a suspend loop.
-`verbs.conf` registers `makechar` as #480; the suite grew from 496 to 503 checks, all green.
-
 ## Milestone 60: The Underdeck starter sub-area
 
 The Underdeck is a maintenance sub-level reached by a service stair off the waystation concourse (#120),
@@ -40,6 +20,29 @@ line beginning with `#` as an object header, so a `# note` line parses as object
 as zero) and overwrites the System Object, wiping its `verb=#400` pointer. That made every verb resolve as
 "Unknown command" while C builtins still worked. Provenance notes stay in the commit message and here, not
 in the seed.
+
+## Milestone 61: The Transit Spur job arc
+
+The Transit Spur is a new zone off the waystation concourse (#120) carrying a three-step job arc, the
+first multi-contract storyline in the starter world. The arc chains through the engine's existing flag
+machinery: each contract's `turnin` grants a campaign flag (`job_grant`) that the next contract requires
+(`job_need`), so later steps show as locked until the earlier one is cleared. It also exercises all three
+contract shapes in one line: an opening bounty, a courier run (`job_dest`, completed by reaching the
+room), and a final bounty.
+
+The warden on the platform offers the ungated opener, clearing a feral cur from the signal house for 120
+creds and the `spur_safe` flag. That unlocks the signaler's courier run in the maintenance shed, carrying
+a relay core to the junction for 150 creds, a dockers standing step, and the `relay_live` flag. Powering
+the relay draws out a saboteur at the junction, the final bounty the inspector pays 300 creds and 4 CP
+to put down. The zone is 21 seed objects: four rooms wired by eight exits, three job givers, two
+reset-spawned combat mobs, a flavor relay-core item, and the area with its two reset rules.
+
+The zone was authored directly in the `world.data` seed rather than through the OLC build-and-export
+roundtrip used for M60, since the seed is the maintained artifact, direct authoring keeps object ids
+organized by type, and OLC's zone-building completeness was already proven. The suite grew from 512 to
+526 checks, a fourteen-check block that walks the whole arc from the wizard session: reachability, the
+courier run showing locked before its clearance, and accept, objective, and reward for each of the three
+steps.
 
 ---
 
