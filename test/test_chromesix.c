@@ -151,6 +151,15 @@ sys_random(int max)
     return (face - 1) % max;
 }
 
+/* Fixed wall clock. The rest and cooldown helpers in chromesix_verb.h call
+ * sys_now(), so the stub must exist for this translation unit to compile, but
+ * no native test exercises their elapsed-time behaviour. */
+static int
+sys_now(void)
+{
+    return 0;
+}
+
 /* Some chromesix_verb.h helpers report to the player through puts(). The
  * native harness has no player, and puts() would inject stray lines into the
  * TAP stream on stdout, so silence it for this translation unit. */
