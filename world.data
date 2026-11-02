@@ -677,3 +677,136 @@ job_creds=400
 job_cp=5
 job_standing=dockers:2
 job_need=trusted
+
+#127 #100
+owner=#0
+name=The Underdeck
+description=A low maintenance deck beneath the concourse. Bare conduit runs overhead and the air smells of coolant and rust. A stair climbs back up; openings lead to a salvage market and a flooded sump.
+
+#128 #100
+owner=#0
+name=Salvage Market
+description=A huddle of stalls built from gutted freight crates. A hard-eyed dealer works the biggest one.
+vendor=227
+
+#129 #100
+owner=#0
+name=The Sump
+description=A flooded pump room, ankle-deep in cold runoff. Someone has been living down here, and does not want company.
+
+#144 #100
+owner=#0
+name=underdeck
+description=A service stair down to the underdeck.
+location=#120
+dest=127
+
+#145 #100
+owner=#0
+name=up
+description=The stair back up to the concourse.
+location=#127
+dest=120
+
+#146 #100
+owner=#0
+name=market
+description=The way into the salvage market.
+location=#127
+dest=128
+
+#147 #100
+owner=#0
+name=deck
+description=Back out to the underdeck.
+location=#128
+dest=127
+
+#148 #100
+owner=#0
+name=sump
+description=A hatch down into the sump.
+location=#127
+dest=129
+
+#149 #100
+owner=#0
+name=deck
+description=Back out to the underdeck.
+location=#129
+dest=127
+
+#227 #200
+owner=#0
+name=dealer
+description=A hard-eyed salvage dealer behind a crate-stall, everything priced to move.
+location=#128
+stim=90
+
+#228 #200
+owner=#0
+name=scrapper
+description=A dockers scrapper sorting salvage, always short someone to do the wet work.
+location=#127
+faction=dockers
+job=1
+job_desc=Clear the squatter nesting in the sump.
+job_target=squatter
+job_creds=140
+job_cp=2
+job_standing=dockers:1
+
+#229 #200
+owner=#0
+name=squatter
+description=A twitchy squatter who has claimed the sump, jittery and spoiling for a fight.
+grade=tough
+mig=8
+
+#323 #300
+owner=#0
+name=pipe
+description=A length of hardened pipe, good for one thing.
+location=#227
+dmg=8
+range=engaged
+skill=melee
+weight=2
+price=40
+
+#324 #300
+owner=#0
+name=plating
+description=A slab of scrap plating strapped on as a vest.
+location=#227
+soak=2
+part=torso
+weight=4
+price=60
+
+#325 #300
+owner=#0
+name=toolkit
+description=A scavenged toolkit, mostly picked clean.
+location=#127
+weight=3
+
+#326 #300
+owner=#0
+name=salvage
+description=A heap of water-logged salvage nobody has claimed.
+location=#129
+weight=5
+
+#922 #900
+owner=#0
+name=The Underdeck
+description=The maintenance deck beneath the waystation and its sump.
+autoreset=300
+
+#923 #910
+owner=#0
+room=#129
+proto=#229
+count=1
+area=#922

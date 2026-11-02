@@ -1,47 +1,5 @@
 # Completed Milestones
 
-## Milestone 58: Re-vendor skjegg v0.39.0
-
-The verb toolchain and RV32 core were re-vendored from skjegg v0.7.0 to v0.39.0. Upstream had grown far
-beyond the verb pipeline (x86-64 and AArch64 backends, a hardware-virtualization emulator, a JIT,
-DWARF/addr2line, a hosted libc, a capability filesystem sandbox, a cross driver, and the Kobold-Pascal AOT
-toolchain), and `vendor.sh` was rewritten around selection axes (`--arch`, `--frontend`, `--with`).
-smolmoo stays on its two verb languages, C and MooScript, over the RISC-V RV32 backend. `update-sdk.sh`
-was regenerated from the new `vendor.sh` with the local post-vendor steps folded back in: the restore of
-the smolmoo-authored verb runtime, the restore of smolmoo's `sdk/LICENSE`, the `moo/lower.c` typemask
-patch, and the copy of the embedded core.
-
-Three upstream ABI changes in the embedded core reached smolmoo. The ECALL handler contract gained
-`RV_ECALL_RETRY` (-1), which parks the hart and re-executes the ECALL; `vm_ecall` had returned -1 for an
-unknown syscall to fall through to the trap, which under the new core would loop that ECALL forever, so it
-now returns 1. The float register file widened to FLEN=64 (`uint64_t f[32]`) for the F and D extensions;
-smolmoo never serializes CPU state nor reads `f[]`, so this only enlarges the task struct. The new `dp`
-flag enables double precision, which the core computes in the host FPU and which upstream documents as not
-bit-reproducible across machines; smolmoo clears it after `rv_init` so a double instruction traps rather
-than threatening deterministic world replay. Verb math is integer-only.
-
-The build integration was simplified. smolmoo's Makefile now depends on the five tool binaries it drives
-(`skj-cc-rv`, `skj-mooc-rv`, `skj-as-rv`, `skj-ld-rv`, `skj-cpp`) rather than skjegg.mk's `skjegg`
-aggregate. That keeps the build off the targets the new vendor emits but smolmoo never uses, the `skjcc`
-cross driver and the GNU-cross-assembler runtime rules (`start_rv.o`, `va_rv.o`), so the generated
-`skjegg.mk` is used verbatim with no post-vendor edit and the old `SKJ_SKIP_M68K_RUNTIME` guard is retired.
-The assembler and linker now compile in `dwarf/dwarf.c`, and `skj-cc-rv` bakes in an include path for its
-own `<stdarg.h>`; both are carried by the vendor automatically.
-
-The `emu-rv` component was dropped. smolmoo embeds `rv32.c` as the verb engine and never builds `skj-run`,
-so vendoring the emulator pulled in an unused `emu/` and `fs/` tree, a gdb stub, and a 9p server.
-`COMPONENTS` is now `riscv moo cc as-rv ld-rv cpp`, and `update-sdk.sh` copies the two core files
-(`rv32.c`, `rv32.h`) straight from the fetched tree in its post-vendor step. The typemask patch still
-applies cleanly (a five-line offset). The suite stayed at 496 checks, all green, plus the rv32 and
-chromesix C unit tests.
-
-The hosted libc was evaluated and set aside. skjegg's `libc/` is a POSIX-style hosted library (malloc over
-`sbrk`, stdio over `fdio`, dirent, stat, coroutine threads) whose I/O routes through
-`open`/`read`/`write`/`lseek`/`sbrk` syscalls, built for `skj-run` or a Linux-like host. smolmoo's verbs
-run under the world hypercall ABI instead (`sys_broadcast`, `sys_getprop`, `sys_spawn`, and the rest), so
-adopting it would mean implementing a POSIX syscall backend the server deliberately does not carry,
-against the minimize-source-size constraint. The 200-line `mulibc.h` is correctly sized and stays.
-
 ## Milestone 59: MooScript character-creation wizard
 
 `makechar` is a character-creation wizard written in MooScript (`verb_makechar.moo`), a front end to
@@ -61,6 +19,27 @@ The remaining MooScript limits found during the work (verb calls are fire-and-fo
 writes are string-only, there is no suspend/interactive model) are in smolmoo's own bridge, not skjegg,
 and none blocked this wizard, which uses the re-entrant `cg_step` pattern instead of a suspend loop.
 `verbs.conf` registers `makechar` as #480; the suite grew from 496 to 503 checks, all green.
+
+## Milestone 60: The Underdeck starter sub-area
+
+The Underdeck is a maintenance sub-level reached by a service stair off the waystation concourse (#120),
+adding playable content to the starter district. It was authored entirely in-game through the OLC builder
+rather than hand-written into the seed: `build_underdeck.sh` drives a throwaway server with `@create`,
+`@set`, `@move`, and `@dig` to build the area, then `smolmoo export` captures the result in `world.data`
+seed format. This dogfoods the builder toolkit and proves OLC can construct a full zone with no gaps.
+
+The sub-area is 18 objects: three rooms (The Underdeck, a Salvage Market, and a flooded Sump) wired by six
+descriptive exits; a salvage dealer vendor stocking a melee pipe and scrap plating armor; a dockers
+scrapper offering an ungated clear-out contract (140 creds, 2 CP, and a +1 dockers standing reward); a
+tough squatter an area reset spawns into the sump; and a few ambient items. The test suite grew from 503
+to 512 checks, a nine-check block that walks the whole chain from the wizard session: reach each room,
+accept the contract, list the vendor stock, spawn and defeat the squatter, and turn in for the reward.
+
+Authoring surfaced a seed-format trap. `world.data` has no comment syntax: the migrate parser reads any
+line beginning with `#` as an object header, so a `# note` line parses as object `#0` (the id atoi-reads
+as zero) and overwrites the System Object, wiping its `verb=#400` pointer. That made every verb resolve as
+"Unknown command" while C builtins still worked. Provenance notes stay in the commit message and here, not
+in the seed.
 
 ---
 

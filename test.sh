@@ -3768,6 +3768,41 @@ grep -q "^#$B2 #$B" /tmp/smolmoo_m2.txt \
 grep -q "dest=#0" /tmp/smolmoo_m2.txt \
 	&& pass "merge external ref" || fail "merge external ref"
 
+# --- The Underdeck sub-area (M60) : rooms, a vendor, a contract, and a reset
+# encounter, all authored in-game through the OLC builder and captured into the
+# world.data seed (build_underdeck.sh). Walk it end to end from the wizard
+# session to prove the sub-area is wired, reachable, and playable.
+curl -sf -X POST -d "$SID1 @go #120" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go underdeck" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '=== The Underdeck ===' "underdeck: the service stair reaches the sub-area"
+# the dockers scrapper offers an ungated clear-out contract on the underdeck
+curl -sf -X POST -d "$SID1 jobs" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'scrapper: Clear the squatter' "underdeck: the scrapper offers the sump contract"
+curl -sf -X POST -d "$SID1 accept scrapper" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'take the job from scrapper' "underdeck: the sump contract is accepted"
+# the salvage dealer sells melee gear at full price (no faction set)
+curl -sf -X POST -d "$SID1 go market" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '=== Salvage Market ===' "underdeck: the salvage market is reachable"
+curl -sf -X POST -d "$SID1 list from dealer" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'pipe -- 40 creds' "underdeck: the dealer stocks a melee weapon"
+check_log /tmp/smolmoo_p1.log 'plating -- 60 creds' "underdeck: the dealer stocks worn armor"
+# down into the sump, spawn the squatter, and clear it for the contract
+curl -sf -X POST -d "$SID1 go deck" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go sump" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '=== The Sump ===' "underdeck: the sump is reachable"
+# force the reset so the squatter is present regardless of any autoreset timing
+curl -sf -X POST -d "$SID1 @reset #922" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack squatter" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+fight_over squatter || true
+JD=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=job_done&sid=$SID1")
+[ "$JD" = "1" ] && pass "underdeck: downing the squatter completes the contract" \
+	|| fail "underdeck: downing the squatter completes the contract (job_done '$JD')"
+# report back to the scrapper on the underdeck for the dockers payout
+curl -sf -X POST -d "$SID1 go deck" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'scrapper pays you 140 creds and 2 CP' "underdeck: the contract pays the dockers reward"
+
 # M48c: a foreign-signed head to plant into the isolated history instances below.
 # The @rewind, agent-persistence, and @gc tests each copy depot/, which can carry a
 # head signed by a different key (a stale depot, or a restored backup). Planting one
