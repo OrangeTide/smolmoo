@@ -134,5 +134,11 @@ main(void)
     }
 
     show_room(dest);
+
+    /* M69: opt-in automap. With the mover's `automap` flag set, draw the room
+     * map on arrival. The map verb runs as its own task (sys_call) and reads the
+     * room from the player's location, so it maps the destination just entered. */
+    if (cs_geti(self, "automap", 0))
+        sys_call(self, "map", "", 0, 0);
     _exit(0);
 }

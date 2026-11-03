@@ -4067,6 +4067,19 @@ check_log /tmp/smolmoo_p1.log 'Here:' "map: lists the characters in the room"
 check_log /tmp/smolmoo_p1.log '(you) at (' "map: places and marks the viewer"
 check_log /tmp/smolmoo_p1.log 'vermin at (' "map: places another character in the room"
 
+# --- Automap on entry (M69): `map on` sets a per-player flag; thereafter the go
+# verb draws the destination map on arrival. @go is an admin teleport that does
+# not run the go verb, so the move here uses a real `go` through an exit. The
+# Spur Platform (#150) leads to the Maintenance Shed (#152), a room not mapped
+# earlier, so its map header is fresh proof the automap fired.
+curl -sf -X POST -d "$SID1 @go #150" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 map on" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Automap on' "automap: the setting toggles on"
+curl -sf -X POST -d "$SID1 go shed" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '\[ The Maintenance Shed \]' "automap: entering a room draws its map"
+curl -sf -X POST -d "$SID1 map off" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Automap off' "automap: the setting toggles off"
+
 # M48c: a foreign-signed head to plant into the isolated history instances below.
 # The @rewind, agent-persistence, and @gc tests each copy depot/, which can carry a
 # head signed by a different key (a stale depot, or a restored backup). Planting one

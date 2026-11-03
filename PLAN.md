@@ -1,31 +1,5 @@
 # Completed Milestones
 
-## Milestone 67: Fixed-object overlay
-
-The map now draws a room's fixed features inside the box. A feature with an authored `mapx`/`mapy` sits
-at that cell (the new Warrens sump pump at 8,1); a feature without coordinates is first-fit into the
-first free interior cell in a stable scan order (the Med Bay autodoc lands at 0,0). Each placement marks
-its cell so two features never overlap, and a feature that finds no free cell is recorded unplaced and
-only named. A Features legend under the box lists each feature with its cell, or notes that it did not
-fit.
-
-Placement stays deterministic and pure-compute, so `verb_map.c` remains a read-only verb: the same room
-always draws the same feature layout without storing anything. This is the right model for fixed scenery,
-which never moves; the random, persisted placement comes with characters next, where the map will need to
-write.
-
-This step also fixes the exit rendering from the first cut. An exit used to blank its wall cell, which
-left a side exit's row starting with a gap (the edges no longer lined up) and made every exit read as
-empty space. An exit is now a labelled doorway: its direction letter sits in the wall (`n`/`s`/`e`/`w`,
-the diagonals a corner slash), so the border keeps a character in every position and each opening says
-which way it leads.
-
-Every exit in the world now carries a `dir` heading, not just the Warrens zone, so no room maps with a
-`?` opening. The headings were authored per area with reciprocal exits facing opposite ways (a north exit
-returns south), the concourse hub spreading its ten exits across all eight compass points plus up and
-down. The suite grew from 569 to 574 checks, drawing the authored pump position, the first-fit autodoc,
-an exit rendered as a door in the wall, and a fully-headed exit legend.
-
 ## Milestone 68: Character overlay
 
 The map now shows who is in the room. Each character is placed at a random free cell and drawn in the
@@ -42,6 +16,24 @@ does not have. Placement runs after the fixed features are drawn, so a character
 and two passes keep stored positions stable: the first honours a still-free stored cell, the second
 places whoever is left. The suite grew from 574 to 577 checks, repopulating the Gnaw with its vermin pack
 and reading the viewer and a vermin out of the Here legend.
+
+## Milestone 69: Automap on room entry
+
+The last step of the map series makes it opt-in automatic. `map on` and `map off` toggle a per-player
+`automap` flag, and when it is set the `go` verb draws the destination map on arrival, right after the
+room description. The flag lives on the player object and defaults off, so nothing changes for a player
+who does not ask for it.
+
+The `go` verb fires the map through `sys_call`, which runs the map verb as its own task. That task is
+handed the room the player just left, so the map verb was changed to read the room from the player's
+current location rather than its call context; it now always draws where the player actually is, which is
+correct for a typed `map` too. This is the one wrinkle the trigger needed. The suite grew from 577 to 580
+checks: the flag toggles on, a real `go` through an exit (not the `@go` teleport, which does not run the
+verb) draws the room just entered, and the flag toggles back off.
+
+With the map series complete, the deferred pieces remain: authored per-room ASCII art with a floor mask,
+and the global map that reflects room sizes. The `mapw`/`maph` and `dir` data authored here are the
+groundwork for that world map.
 
 ---
 

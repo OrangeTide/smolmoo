@@ -89,11 +89,9 @@ dir_cell(const char *d, int rows, int cols, int *r, int *c, int *vert)
 int
 main(void)
 {
-    int room = vm_args->room;
     int me = vm_args->player;
-    int w = cs_geti(room, "mapw", MAP_W_DEF);
-    int h = cs_geti(room, "maph", MAP_H_DEF);
-    int rows, cols, r, c, it, k;
+    char *arg = (char *)vm_args->dobjstr;
+    int room, w, h, rows, cols, r, c, it, k;
     char grid[MAP_H_MAX + 2][MAP_W_MAX + 2];
     char line[MAP_W_MAX + 3];
     char nm[48];
@@ -103,6 +101,24 @@ main(void)
 
     grant_accept();   /* lazily stores a map position on each character here */
 
+    /* `map on` / `map off` toggles the opt-in automap that draws on room entry */
+    while (arg && *arg == ' ') arg++;
+    if (arg && (cs_streq(arg, "on") || cs_streq(arg, "off"))) {
+        int on = cs_streq(arg, "on");
+
+        cs_seti(me, "automap", on);
+        puts(on ? "Automap on: the map is drawn when you enter a room."
+                : "Automap off.");
+        _exit(0);
+    }
+
+    /* Draw the room the mover is actually in. Reading it from the player's
+     * location (not vm_args->room) keeps the automap correct when `go` calls
+     * this through sys_call, where the passed room is the one just left. */
+    room = sys_getobj(me, "location");
+    if (room <= 0) room = vm_args->room;
+    w = cs_geti(room, "mapw", MAP_W_DEF);
+    h = cs_geti(room, "maph", MAP_H_DEF);
     if (w < 3) w = 3;
     if (w > MAP_W_MAX) w = MAP_W_MAX;
     if (h < 3) h = 3;
