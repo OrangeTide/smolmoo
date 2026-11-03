@@ -263,6 +263,7 @@ name=alley
 description=A side passage out to the alley.
 location=#101
 dest=102
+dir=w
 
 #111 #100
 owner=#0
@@ -270,6 +271,7 @@ name=lobby
 description=The door back into the lobby.
 location=#102
 dest=101
+dir=e
 
 #116 #100
 owner=#0
@@ -277,6 +279,7 @@ name=vault
 description=A blast door into the strongroom.
 location=#101
 dest=103
+dir=e
 
 #117 #100
 owner=#0
@@ -284,6 +287,7 @@ name=out
 description=The way back out to the lobby.
 location=#103
 dest=101
+dir=w
 
 #215 #200
 owner=#0
@@ -450,6 +454,7 @@ name=waystation
 description=A lift up to the waystation concourse.
 location=#101
 dest=120
+dir=n
 
 #131 #100
 owner=#0
@@ -457,6 +462,7 @@ name=lobby
 description=The lift back down to the lobby.
 location=#120
 dest=101
+dir=s
 
 #132 #100
 owner=#0
@@ -464,6 +470,7 @@ name=bar
 description=The door into the bar.
 location=#120
 dest=121
+dir=ne
 
 #133 #100
 owner=#0
@@ -471,6 +478,7 @@ name=concourse
 description=Back out to the concourse.
 location=#121
 dest=120
+dir=sw
 
 #134 #100
 owner=#0
@@ -478,6 +486,7 @@ name=medbay
 description=The med bay entrance.
 location=#120
 dest=122
+dir=nw
 
 #135 #100
 owner=#0
@@ -485,6 +494,7 @@ name=concourse
 description=Back out to the concourse.
 location=#122
 dest=120
+dir=se
 
 #136 #100
 owner=#0
@@ -492,6 +502,7 @@ name=supply
 description=The supply counter.
 location=#120
 dest=123
+dir=n
 
 #137 #100
 owner=#0
@@ -499,6 +510,7 @@ name=concourse
 description=Back out to the concourse.
 location=#123
 dest=120
+dir=s
 
 #138 #100
 owner=#0
@@ -506,6 +518,7 @@ name=bunks
 description=The way to the sleep pods.
 location=#120
 dest=124
+dir=se
 
 #139 #100
 owner=#0
@@ -513,6 +526,7 @@ name=concourse
 description=Back out to the concourse.
 location=#124
 dest=120
+dir=nw
 
 #220 #200
 owner=#0
@@ -562,6 +576,7 @@ name=cargobay
 description=A hatch into the cargo bay.
 location=#120
 dest=125
+dir=sw
 
 #141 #100
 owner=#0
@@ -569,6 +584,7 @@ name=concourse
 description=Back out to the concourse.
 location=#125
 dest=120
+dir=ne
 
 #222 #200
 owner=#0
@@ -615,6 +631,7 @@ name=office
 description=A door marked DOCKERS, crew only.
 location=#120
 dest=126
+dir=u
 
 #143 #100
 owner=#0
@@ -622,6 +639,7 @@ name=concourse
 description=Back out to the concourse.
 location=#126
 dest=120
+dir=d
 
 #223 #200
 owner=#0
@@ -701,6 +719,7 @@ name=underdeck
 description=A service stair down to the underdeck.
 location=#120
 dest=127
+dir=d
 
 #145 #100
 owner=#0
@@ -708,6 +727,7 @@ name=up
 description=The stair back up to the concourse.
 location=#127
 dest=120
+dir=u
 
 #146 #100
 owner=#0
@@ -715,6 +735,7 @@ name=market
 description=The way into the salvage market.
 location=#127
 dest=128
+dir=e
 
 #147 #100
 owner=#0
@@ -722,6 +743,7 @@ name=deck
 description=Back out to the underdeck.
 location=#128
 dest=127
+dir=w
 
 #148 #100
 owner=#0
@@ -729,6 +751,7 @@ name=sump
 description=A hatch down into the sump.
 location=#127
 dest=129
+dir=s
 
 #149 #100
 owner=#0
@@ -736,6 +759,7 @@ name=deck
 description=Back out to the underdeck.
 location=#129
 dest=127
+dir=n
 
 #227 #200
 owner=#0
@@ -838,6 +862,7 @@ name=spur
 description=A welded boarding gate, cracked just wide enough to pass. The old spur line lies beyond.
 location=#120
 dest=150
+dir=w
 
 #155 #100
 owner=#0
@@ -845,6 +870,7 @@ name=concourse
 description=Back through the gate to the concourse.
 location=#150
 dest=120
+dir=e
 
 #156 #100
 owner=#0
@@ -852,6 +878,7 @@ name=signal
 description=A hatch into the signal house.
 location=#150
 dest=151
+dir=n
 
 #157 #100
 owner=#0
@@ -859,6 +886,7 @@ name=platform
 description=Back out to the spur platform.
 location=#151
 dest=150
+dir=s
 
 #158 #100
 owner=#0
@@ -866,6 +894,7 @@ name=shed
 description=The way to the maintenance shed.
 location=#150
 dest=152
+dir=w
 
 #159 #100
 owner=#0
@@ -873,6 +902,7 @@ name=platform
 description=Back out to the spur platform.
 location=#152
 dest=150
+dir=e
 
 #160 #100
 owner=#0
@@ -880,6 +910,7 @@ name=junction
 description=A service walk to the power junction.
 location=#152
 dest=153
+dir=w
 
 #161 #100
 owner=#0
@@ -887,6 +918,7 @@ name=shed
 description=Back to the maintenance shed.
 location=#153
 dest=152
+dir=e
 
 #230 #200
 owner=#0
@@ -994,6 +1026,7 @@ name=greens
 description=A pressure hatch into the growers' dome, warm wet air spilling out.
 location=#120
 dest=162
+dir=e
 
 #167 #100
 owner=#0
@@ -1001,6 +1034,7 @@ name=concourse
 description=Back out of the dome to the concourse.
 location=#162
 dest=120
+dir=w
 
 #168 #100
 owner=#0
@@ -1008,6 +1042,7 @@ name=nursery
 description=A low door into the seedling nursery.
 location=#162
 dest=163
+dir=n
 
 #169 #100
 owner=#0
@@ -1015,6 +1050,7 @@ name=dome
 description=Back out to the grow dome.
 location=#163
 dest=162
+dir=s
 
 #170 #100
 owner=#0
@@ -1022,6 +1058,7 @@ name=press
 description=The way into the press house.
 location=#162
 dest=164
+dir=e
 
 #171 #100
 owner=#0
@@ -1029,6 +1066,7 @@ name=dome
 description=Back out to the grow dome.
 location=#164
 dest=162
+dir=w
 
 #172 #100
 owner=#0
@@ -1036,6 +1074,7 @@ name=cistern
 description=A service stair down to the water cistern.
 location=#164
 dest=165
+dir=s
 
 #173 #100
 owner=#0
@@ -1043,6 +1082,7 @@ name=press
 description=Back up to the press house.
 location=#165
 dest=164
+dir=n
 
 #235 #200
 owner=#0
@@ -1653,3 +1693,13 @@ name=cracked visor
 description=A cracked optical visor, past repair.
 location=#129
 weight=1
+
+#370 #300
+owner=#0
+name=pump
+description=A groaning sump pump bolted to the floor, pushing back the water.
+location=#174
+fixed=1
+mapx=8
+mapy=1
+weight=999

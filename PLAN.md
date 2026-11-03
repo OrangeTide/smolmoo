@@ -1,17 +1,5 @@
 # Completed Milestones
 
-## Milestone 65: Fixed objects
-
-The first step toward a per-room map: scenery that cannot be carried off. An item with a `fixed` prop is
-refused by the floor path of the `get` verb (verb_getput.c), so a room feature like the wall-mounted
-autodoc stays put instead of being pocketed. The change is one guard in the verb and one prop on the
-autodoc seed object; no core-server change. This also closes a small gap where a heavy fixture could be
-picked up despite its weight.
-
-Fixed objects are the groundwork for the room map that follows: the map draws the room's immovable
-features at their positions, so the world first needs a way to mark an object as a feature rather than
-loose loot. The suite grew by one check, confirming `get` refuses the fixed autodoc.
-
 ## Milestone 66: The room map verb
 
 The `map` command draws a small ASCII map of the current room. It is a read-only sandbox verb
@@ -27,6 +15,32 @@ a heading, authored here across the Warrens zone (the hub at #174 sized 11x5, wi
 exits) and reusable later for directional movement and a world map. The suite grew from 562 to 569
 checks, drawing the authored hub and a default-sized room and reading back the box width and the exit
 legend. Fixed-object and character overlays, plus an opt-in automap on room entry, build on this next.
+
+## Milestone 67: Fixed-object overlay
+
+The map now draws a room's fixed features inside the box. A feature with an authored `mapx`/`mapy` sits
+at that cell (the new Warrens sump pump at 8,1); a feature without coordinates is first-fit into the
+first free interior cell in a stable scan order (the Med Bay autodoc lands at 0,0). Each placement marks
+its cell so two features never overlap, and a feature that finds no free cell is recorded unplaced and
+only named. A Features legend under the box lists each feature with its cell, or notes that it did not
+fit.
+
+Placement stays deterministic and pure-compute, so `verb_map.c` remains a read-only verb: the same room
+always draws the same feature layout without storing anything. This is the right model for fixed scenery,
+which never moves; the random, persisted placement comes with characters next, where the map will need to
+write.
+
+This step also fixes the exit rendering from the first cut. An exit used to blank its wall cell, which
+left a side exit's row starting with a gap (the edges no longer lined up) and made every exit read as
+empty space. An exit is now a labelled doorway: its direction letter sits in the wall (`n`/`s`/`e`/`w`,
+the diagonals a corner slash), so the border keeps a character in every position and each opening says
+which way it leads.
+
+Every exit in the world now carries a `dir` heading, not just the Warrens zone, so no room maps with a
+`?` opening. The headings were authored per area with reciprocal exits facing opposite ways (a north exit
+returns south), the concourse hub spreading its ten exits across all eight compass points plus up and
+down. The suite grew from 569 to 574 checks, drawing the authored pump position, the first-fit autodoc,
+an exit rendered as a door in the wall, and a fully-headed exit legend.
 
 ---
 

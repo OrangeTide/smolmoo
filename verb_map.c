@@ -30,6 +30,21 @@ dir_word(const char *d)
     return 0;
 }
 
+/* The glyph that marks a cardinal exit on the wall: its direction letter, so
+ * the opening is labelled and the border keeps a character (the edges stay
+ * aligned). Diagonals use a corner slash; u/d are handled separately inside. */
+static char
+dir_glyph(const char *d)
+{
+    if (cs_streq(d, "n")) return 'n';
+    if (cs_streq(d, "s")) return 's';
+    if (cs_streq(d, "e")) return 'e';
+    if (cs_streq(d, "w")) return 'w';
+    if (cs_streq(d, "ne") || cs_streq(d, "sw")) return '/';
+    if (cs_streq(d, "nw") || cs_streq(d, "se")) return '\\';
+    return '+';
+}
+
 /* The grid cell a dir tag marks on a box of `rows` x `cols`. Returns 1 and sets
  * *r,*c (plus *vert for the u/d interior stair markers) for a known dir. */
 static int
@@ -62,6 +77,7 @@ main(void)
     char line[MAP_W_MAX + 3];
     char nm[48];
     struct cs_out o;
+    int fid[16], fx[16], fy[16], nf = 0;      /* fixed-feature overlay records */
 
     if (w < 3) w = 3;
     if (w > MAP_W_MAX) w = MAP_W_MAX;
@@ -93,7 +109,37 @@ main(void)
         cs_getstr(it, "dir", d, sizeof(d));
         if (!d[0]) continue;
         if (!dir_cell(d, rows, cols, &er, &ec, &vert)) continue;
-        grid[er][ec] = vert ? (cs_streq(d, "u") ? '<' : '>') : ' ';
+        grid[er][ec] = vert ? (cs_streq(d, "u") ? '<' : '>') : dir_glyph(d);
+    }
+
+    /* overlay fixed features: an authored mapx/mapy when it names a free cell,
+     * else first-fit over the interior in a stable order. Each placement marks
+     * its cell so the next feature cannot land on it; a feature that finds no
+     * free cell is recorded unplaced and only named in the legend. */
+    it = 0;
+    while ((it = sys_next(room, it)) != 0 && nf < 16) {
+        int mx, my, pr = -1, pc = -1;
+
+        if (!cs_geti(it, "fixed", 0)) continue;
+        mx = cs_geti(it, "mapx", -1);
+        my = cs_geti(it, "mapy", -1);
+        if (mx >= 0 && my >= 0 && mx < w && my < h && grid[my + 1][mx + 1] == ' ') {
+            pr = my + 1;
+            pc = mx + 1;
+        } else {
+            for (r = 1; r <= h && pr < 0; r++)
+                for (c = 1; c <= w && pr < 0; c++)
+                    if (grid[r][c] == ' ') { pr = r; pc = c; }
+        }
+        if (pr >= 0) {
+            grid[pr][pc] = '*';
+            fx[nf] = pc - 1;
+            fy[nf] = pr - 1;
+        } else {
+            fx[nf] = -1;
+            fy[nf] = -1;
+        }
+        fid[nf++] = it;
     }
 
     /* header, then the box row by row */
@@ -126,6 +172,30 @@ main(void)
         cs_s(&o, ": ");
         cs_s(&o, en);
         puts(cs_cstr(&o));
+    }
+
+    /* features legend: each fixed object and where it sits, or that it did not fit */
+    if (nf > 0) {
+        int k;
+        char fn[32];
+
+        puts("Features:");
+        for (k = 0; k < nf; k++) {
+            cs_getstr(fid[k], "name", fn, sizeof(fn));
+            o.len = 0;
+            cs_s(&o, "  ");
+            cs_s(&o, fn);
+            if (fx[k] >= 0) {
+                cs_s(&o, " at (");
+                cs_i(&o, fx[k]);
+                cs_s(&o, ",");
+                cs_i(&o, fy[k]);
+                cs_s(&o, ")");
+            } else {
+                cs_s(&o, " (no room)");
+            }
+            puts(cs_cstr(&o));
+        }
     }
     _exit(0);
 }

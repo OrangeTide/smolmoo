@@ -4033,6 +4033,7 @@ curl -sf -X POST -d "$SID1 @go #174" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 map" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log '\[ The Warrens \]' "map: headers the current room"
 check_log /tmp/smolmoo_p1.log '+-----------+' "map: draws the authored 11-wide box"
+check_log /tmp/smolmoo_p1.log '+-----s-----+' "map: marks an exit as a labelled door in the wall"
 check_log /tmp/smolmoo_p1.log 'west: gnaw' "map: legends a west exit by name"
 check_log /tmp/smolmoo_p1.log 'south: run' "map: legends a south exit by name"
 check_log /tmp/smolmoo_p1.log 'up: sump' "map: legends an up exit by name"
@@ -4040,6 +4041,19 @@ curl -sf -X POST -d "$SID1 @go #175" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 map" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log '+---------+' "map: a room without mapw draws the default box"
 check_log /tmp/smolmoo_p1.log 'east: warrens' "map: legends the default room's exit"
+
+# --- Fixed-object overlay (M67): the map draws fixed features. A feature with
+# authored mapx/mapy sits there (the Warrens pump at 8,1); one without is
+# first-fit into the top-left free cell (the Med Bay autodoc at 0,0). Each is
+# listed in a Features legend with its cell.
+curl -sf -X POST -d "$SID1 @go #174" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 map" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Features:' "map: lists a room's fixed features"
+check_log /tmp/smolmoo_p1.log 'pump at (8,1)' "map: places a feature at its authored coordinates"
+curl -sf -X POST -d "$SID1 @go #122" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 map" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'autodoc at (0,0)' "map: first-fits a feature with no authored coordinates"
+check_log /tmp/smolmoo_p1.log 'southeast: concourse' "map: every exit now carries a heading"
 
 # M48c: a foreign-signed head to plant into the isolated history instances below.
 # The @rewind, agent-persistence, and @gc tests each copy depot/, which can carry a
