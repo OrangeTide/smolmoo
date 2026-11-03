@@ -1122,3 +1122,129 @@ room=#165
 proto=#239
 count=1
 area=#927
+
+#174 #100
+owner=#0
+name=The Warrens
+description=A maintenance undergrid below the sump, pipes sweating in the dark and the floor slick with runoff. Things live down here. Crawlways lead off to a gnawed hollow and a flooded run.
+
+#175 #100
+owner=#0
+name=The Gnaw
+description=A hollow of stripped cable and bone, everything chewed to nubs. The scurrying never quite stops.
+
+#176 #100
+owner=#0
+name=The Flooded Run
+description=A drowned service run, waist-deep and cold, something heavy moving under the surface.
+
+#177 #100
+owner=#0
+name=The Brood Nest
+description=A fouled pump chamber packed with nesting mush and shed husks. Whatever breeds the warrens holds court here.
+
+#178 #100
+owner=#0
+name=warrens
+description=A rusted grate kicked out of the sump wall, a crawlway dropping into the dark below.
+location=#129
+dest=174
+
+#179 #100
+owner=#0
+name=sump
+description=Back up through the grate into the sump.
+location=#174
+dest=129
+
+#180 #100
+owner=#0
+name=gnaw
+description=A low crawlway into the gnawed hollow.
+location=#174
+dest=175
+
+#181 #100
+owner=#0
+name=warrens
+description=Back out to the warrens.
+location=#175
+dest=174
+
+#182 #100
+owner=#0
+name=run
+description=A flooded passage sloping down into black water.
+location=#174
+dest=176
+
+#183 #100
+owner=#0
+name=warrens
+description=Back out to the warrens.
+location=#176
+dest=174
+
+#184 #100
+owner=#0
+name=nest
+description=A clogged pipe-mouth into the brood nest.
+location=#176
+dest=177
+
+#185 #100
+owner=#0
+name=run
+description=Back out to the flooded run.
+location=#177
+dest=176
+
+#240 #200
+owner=#0
+name=vermin
+description=A sump-vermin the size of a boot, teeth bared, one of a scurrying pack.
+grade=mook
+mig=5
+
+#241 #200
+owner=#0
+name=lurker
+description=A pale run-lurker, coiled under the flood water, waiting to drag something down.
+grade=tough
+mig=8
+cp_award=2
+
+#242 #200
+owner=#0
+name=broodmother
+description=The warren brood-mother, bloated and fast, chittering mandibles wet in the dark.
+grade=tough
+mig=9
+cp_award=4
+
+#930 #900
+owner=#0
+name=The Warrens
+description=The maintenance undergrid below the waystation sump, a nest of vermin and worse.
+autoreset=300
+
+#931 #910
+owner=#0
+room=#175
+proto=#240
+count=3
+area=#930
+
+#932 #910
+owner=#0
+room=#176
+proto=#241
+count=1
+area=#930
+
+#933 #910
+owner=#0
+room=#177
+proto=#242
+count=1
+area=#930

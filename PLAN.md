@@ -1,28 +1,5 @@
 # Completed Milestones
 
-## Milestone 61: The Transit Spur job arc
-
-The Transit Spur is a new zone off the waystation concourse (#120) carrying a three-step job arc, the
-first multi-contract storyline in the starter world. The arc chains through the engine's existing flag
-machinery: each contract's `turnin` grants a campaign flag (`job_grant`) that the next contract requires
-(`job_need`), so later steps show as locked until the earlier one is cleared. It also exercises all three
-contract shapes in one line: an opening bounty, a courier run (`job_dest`, completed by reaching the
-room), and a final bounty.
-
-The warden on the platform offers the ungated opener, clearing a feral cur from the signal house for 120
-creds and the `spur_safe` flag. That unlocks the signaler's courier run in the maintenance shed, carrying
-a relay core to the junction for 150 creds, a dockers standing step, and the `relay_live` flag. Powering
-the relay draws out a saboteur at the junction, the final bounty the inspector pays 300 creds and 4 CP
-to put down. The zone is 21 seed objects: four rooms wired by eight exits, three job givers, two
-reset-spawned combat mobs, a flavor relay-core item, and the area with its two reset rules.
-
-The zone was authored directly in the `world.data` seed rather than through the OLC build-and-export
-roundtrip used for M60, since the seed is the maintained artifact, direct authoring keeps object ids
-organized by type, and OLC's zone-building completeness was already proven. The suite grew from 512 to
-526 checks, a fourteen-check block that walks the whole arc from the wizard session: reachability, the
-courier run showing locked before its clearance, and accept, objective, and reward for each of the three
-steps.
-
 ## Milestone 62: The Greens job arc
 
 The Greens is a hydroponics grow-dome off the waystation concourse (#120) carrying a second three-step job
@@ -42,6 +19,27 @@ giver's disposition, not a permission check, so the admin wizard does not mask i
 the standing. The suite grew from 526 to 540 checks, a fourteen-check block that walks the whole arc from
 the wizard session, including the standing-locked offer and the `accept` refusal below the gate before the
 opener is cleared.
+
+## Milestone 63: The Warrens combat area
+
+The Warrens is a combat area reached through a breach in the Underdeck sump (#129), the first zone built
+for free-fighting rather than contracts. There are no job givers; the draw is Character Points, which the
+combat engine already awards for any win (`award_cp`, each foe worth its `cp_award`, default one). The
+zone proves out multi-mob spawn points and a mob grade ladder as pure seed content on the existing reset
+and combat verbs, with no core-server change.
+
+Three spawn points populate the zone on the area's autoreset: the Gnaw keeps a pack of three `vermin`
+(mook grade, downed by any hit, one CP each), the Flooded Run a `lurker` (tough, two CP), and the Brood
+Nest the `broodmother` (tough, mig 9, four CP), the per-mob `cp_award` tuning the reward to the grade. A
+reset rule keeps up to `count` live clones of its proto in its room and skips any room with a fight in
+progress, so `count=3` is what makes the Gnaw a pack. The zone is 19 seed objects: four rooms wired by
+eight exits, three mob prototypes, the area, and its three reset rules.
+
+The suite grew from 540 to 546 checks. The block reaches the zone from the sump, fires the spawn points
+and confirms each room populated its mob by name through `@contents`, then clears the pack and the lurker
+and asserts the player's CP rose, proving kills pay out. This is also the first content added under the
+standing preference to build new behavior as a sandbox verb before the core server: it needed neither,
+being content over mechanics the engine already has.
 
 ---
 

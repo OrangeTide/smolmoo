@@ -3915,6 +3915,36 @@ JD3=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=job_done&sid=$SID1")
 curl -sf -X POST -d "$SID1 turnin" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'overseer pays you 280 creds and 4 CP' "greens: the arc's final reward lands"
 
+# --- The Warrens (M63): a combat area reached through a breach in the Underdeck
+# sump, a free-fight hunting ground (no jobs) authored into the seed. It proves
+# multi-mob spawn points across the grade ladder and that any kill pays CP.
+curl -sf -X POST -d "$SID1 @go #129" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go warrens" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '=== The Warrens ===' "warrens: reachable by the breach in the Underdeck sump"
+# fire the area's spawn points and confirm each room populates its mob
+curl -sf -X POST -d "$SID1 @reset #930" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @contents #175" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'vermin' "warrens: the gnaw spawn point populates a vermin pack"
+curl -sf -X POST -d "$SID1 @contents #176" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'lurker' "warrens: the flooded run spawn point populates a lurker"
+curl -sf -X POST -d "$SID1 @contents #177" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'broodmother' "warrens: the brood nest spawn point populates the brood-mother"
+# a kill pays Character Points: clear the mook pack and the lurker, cp must rise
+CPB=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=cp&sid=$SID1"); CPB=${CPB:-0}
+curl -sf -X POST -d "$SID1 go gnaw" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 attack vermin" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+fight_over vermin || true
+curl -sf -X POST -d "$SID1 go warrens" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go run" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '=== The Flooded Run ===' "warrens: the flooded run is reachable"
+curl -sf -X POST -d "$SID1 attack lurker" http://localhost:$PORT/cmd >/dev/null
+waitgrep /tmp/smolmoo_p1.log 'combat begins' || true
+fight_over lurker || true
+CPA=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=cp&sid=$SID1"); CPA=${CPA:-0}
+[ "${CPA:-0}" -gt "${CPB:-0}" ] && pass "warrens: defeating the warren mobs awards Character Points" \
+	|| fail "warrens: defeating the warren mobs awards Character Points (cp $CPB -> $CPA)"
+
 # M48c: a foreign-signed head to plant into the isolated history instances below.
 # The @rewind, agent-persistence, and @gc tests each copy depot/, which can carry a
 # head signed by a different key (a stale depot, or a restored backup). Planting one
