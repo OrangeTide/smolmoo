@@ -3945,6 +3945,78 @@ CPA=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=cp&sid=$SID1"); CPA=$
 [ "${CPA:-0}" -gt "${CPB:-0}" ] && pass "warrens: defeating the warren mobs awards Character Points" \
 	|| fail "warrens: defeating the warren mobs awards Character Points (cp $CPB -> $CPA)"
 
+# --- Item catalogue (M64): the seed carries a wide spread of weapons, armour,
+# containers, buffs, and craft junk on the existing gear/get/put/buy verbs. The
+# one new mechanic is consumable buff items, a sandbox-verb path in verb_use.c
+# that spends an item to apply a sheet effect the engine already reads (grit,
+# bp, and the timed shield/mesh self-buffs). This block exercises each category
+# from the lobby quartermaster (#213) and the supply clerk (#220).
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.money=9999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 list" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'machete' "items: a new weapon is stocked at the vendor"
+# a bought weapon wields into a hand slot (sheet wielded points at the item).
+# Earlier blocks leave leftover weapons slotted in both hands, so free them
+# first; the removes are harmless no-ops for a hand that is already empty.
+curl -sf -X POST -d "$SID1 buy machete" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'You buy the machete' "items: buy moves a weapon to the player"
+curl -sf -X POST -d "$SID1 remove carbine" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 remove holdout" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 remove knife" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 remove pistol" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 wield machete" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'ready the machete' "items: a bought weapon wields"
+WLD=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=wielded&sid=$SID1")
+[ "${WLD:-0}" = "329" ] && pass "items: wielding sets the sheet weapon" \
+	|| fail "items: wielding sets the sheet weapon (wielded=$WLD)"
+# a bought vest wears into the torso slot and sets the sheet soak
+curl -sf -X POST -d "$SID1 buy riot vest" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 wear riot vest" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'put on the riot vest' "items: a bought vest wears"
+ARM=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=armor&sid=$SID1")
+[ "${ARM:-0}" = "3" ] && pass "items: worn armour sets the sheet soak" \
+	|| fail "items: worn armour sets the sheet soak (armor=$ARM)"
+# a container accepts a stowed item (cap > 0); the ammo case holds the focus tab
+curl -sf -X POST -d "$SID1 buy ammo case" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 buy focus tab" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 put focus tab in ammo case" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'stow the focus tab' "items: a container stows a loose item"
+# a buff item spends itself to apply a timed self-buff (reactive gel -> shield)
+curl -sf -X POST -d "$SID1 @set #$P1SH.shield=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 buy reactive gel" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 use reactive gel" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'ward flares up' "items: a buff item applies its effect"
+SHD=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=shield&sid=$SID1")
+[ "${SHD:-0}" = "2" ] && pass "items: a shield buff item sets the timed ward" \
+	|| fail "items: a shield buff item sets the timed ward (shield=$SHD)"
+# the buff item was consumed: a second use finds nothing and leaves shield unset
+curl -sf -X POST -d "$SID1 @set #$P1SH.shield=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 use reactive gel" http://localhost:$PORT/cmd >/dev/null
+SHD2=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=shield&sid=$SID1")
+[ "${SHD2:-0}" = "0" ] && pass "items: a used buff item is consumed" \
+	|| fail "items: a used buff item is consumed (shield=$SHD2)"
+# a heal buff item restores body points (bought from the supply clerk in #123)
+curl -sf -X POST -d "$SID1 @go #123" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 buy medkit" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 use medkit" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'wounds knit' "items: a medkit reports its heal"
+BP=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=bp&sid=$SID1")
+[ "${BP:-0}" -gt 1 ] && pass "items: a heal buff item restores body points" \
+	|| fail "items: a heal buff item restores body points (bp=$BP)"
+# a mesh buff item sets the timed Soak self-buff
+curl -sf -X POST -d "$SID1 @set #$P1SH.mesh=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 buy dermal spray" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 use dermal spray" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'skin hardens over' "items: a mesh buff item applies its effect"
+MSH=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=mesh&sid=$SID1")
+[ "${MSH:-0}" = "3" ] && pass "items: a mesh buff item sets the timed Soak buff" \
+	|| fail "items: a mesh buff item sets the timed Soak buff (mesh=$MSH)"
+# craft/junk loot picks up off the floor (scrap wire in the Underdeck, #127)
+curl -sf -X POST -d "$SID1 @go #127" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 get scrap wire" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'pick up the scrap wire' "items: craft loot picks up off the floor"
+
 # M48c: a foreign-signed head to plant into the isolated history instances below.
 # The @rewind, agent-persistence, and @gc tests each copy depot/, which can carry a
 # head signed by a different key (a stale depot, or a restored backup). Planting one

@@ -1,25 +1,5 @@
 # Completed Milestones
 
-## Milestone 62: The Greens job arc
-
-The Greens is a hydroponics grow-dome off the waystation concourse (#120) carrying a second three-step job
-arc. Where the Transit Spur chained purely on campaign flags, this arc is gated by faction standing it
-earns itself, introducing a `growers` co-op faction and demonstrating the full gating spectrum in one
-line: an ungated opener, a standing-gated middle step, and a flag-gated finale.
-
-The co-op steward offers the ungated opener, clearing a blight-rat from the nursery for 110 creds and a
-`growers` standing step. That standing opens the foreperson's courier run, a standing-gated (`job_min`
-growers:1) haul to the cistern that pays more standing and grants the `greens_trusted` flag. The flag in
-turn opens the overseer's finale, putting down a reaver in the cistern for 280 creds and 4 CP. The zone is
-21 seed objects: four rooms wired by eight exits, three job givers, two reset-spawned combat mobs, a
-flavor seed-crate, and the area with its two reset rules.
-
-The standing gate confirms a mechanic the flag arc did not: it is a game-mechanic check read through the
-giver's disposition, not a permission check, so the admin wizard does not mask it and must actually earn
-the standing. The suite grew from 526 to 540 checks, a fourteen-check block that walks the whole arc from
-the wizard session, including the standing-locked offer and the `accept` refusal below the gate before the
-opener is cleared.
-
 ## Milestone 63: The Warrens combat area
 
 The Warrens is a combat area reached through a breach in the Underdeck sump (#129), the first zone built
@@ -40,6 +20,30 @@ and confirms each room populated its mob by name through `@contents`, then clear
 and asserts the player's CP rose, proving kills pay out. This is also the first content added under the
 standing preference to build new behavior as a sandbox verb before the core server: it needed neither,
 being content over mechanics the engine already has.
+
+## Milestone 64: Item catalogue and consumable buffs
+
+This fills out the item world with a wide spread of gear on the verbs the engine already carries, plus one
+new consumable mechanic. The seed grows by 41 objects (ids #329-#369): weapons across every combat skill
+and range band (brawl knuckles, melee blades and a reach spear, firearms from a taser to a long rifle, a
+heavy autocannon, a spellcasting focus), torso and head armour spanning soak 1 to 4, worn and floor
+containers of varied capacity, a set of craft materials and pure junk for loot and encumbrance, and six
+buff consumables. Weapons, armour, containers, and junk are pure content on the existing wield, wear,
+get, put, and buy verbs, so they needed no code.
+
+The one gap was a consumable that applies an effect, which the core had only as the counter-based stim and
+learned maneuvers. That went into `verb_use.c`, a sandbox C verb, not the core server, honoring the
+verb-over-core preference. A buff item carries a `buff` tag and an `amount`; using it spends the item with
+`sys_recycle` and applies an effect that reuses sheet fields the engine already reads: `grit` restore,
+`bp` heal, and the timed `shield` and `mesh` self-buffs. The tag and amount are item data, so a new
+consumable is a seed object, not a new branch. In a fight the use costs the turn like a stim; out of
+combat it is free.
+
+The suite grew from 546 to 561 checks. The block buys a weapon and wields it, wears a vest and reads the
+soak onto the sheet, stows an item in a container, and drives each buff item: a shield gel and a dermal
+spray set their timed sheet buffs, a medkit restores body points from one, and a second use of a spent
+item confirms it was consumed. Armour soak stays single-valued on the sheet (the last-worn piece wins), a
+known engine limit left untouched here.
 
 ---
 

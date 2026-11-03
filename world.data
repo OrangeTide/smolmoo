@@ -1248,3 +1248,397 @@ room=#177
 proto=#242
 count=1
 area=#930
+
+#329 #300
+owner=#0
+name=machete
+description=A heavy chopping blade, pitted but keen.
+location=#213
+dmg=11
+range=engaged
+skill=melee
+weight=2
+price=90
+
+#330 #300
+owner=#0
+name=baton
+description=A telescoping steel baton.
+location=#227
+dmg=8
+range=engaged
+skill=melee
+weight=1
+price=35
+
+#331 #300
+owner=#0
+name=spear
+description=A lashed-up spear with surprising reach.
+location=#213
+dmg=11
+range=short
+skill=melee
+weight=3
+price=70
+
+#332 #300
+owner=#0
+name=hatchet
+description=A short camp hatchet left in the shed.
+location=#152
+dmg=10
+range=engaged
+skill=melee
+weight=2
+
+#333 #300
+owner=#0
+name=knuckles
+description=A set of weighted brass knuckles.
+location=#227
+dmg=8
+range=engaged
+skill=brawl
+weight=1
+price=25
+
+#334 #300
+owner=#0
+name=revolver
+description=A heavy six-shot revolver.
+location=#213
+dmg=12
+range=short
+skill=firearms
+clip=6
+ammo=6
+weight=2
+price=140
+
+#335 #300
+owner=#0
+name=smg
+description=A compact submachine gun with a long magazine.
+location=#213
+dmg=12
+range=short
+skill=firearms
+clip=20
+ammo=20
+weight=3
+price=260
+
+#336 #300
+owner=#0
+name=rifle
+description=A scoped hunting rifle that reaches across a room.
+location=#213
+dmg=15
+range=long
+skill=firearms
+clip=5
+ammo=5
+weight=4
+price=300
+
+#337 #300
+owner=#0
+name=shotgun
+description=A short pump shotgun, brutal up close.
+location=#220
+dmg=18
+range=short
+skill=firearms
+clip=6
+ammo=6
+weight=4
+price=280
+
+#338 #300
+owner=#0
+name=taser
+description=A two-shot contact taser.
+location=#220
+dmg=6
+range=short
+skill=firearms
+clip=2
+ammo=2
+weight=1
+price=55
+
+#339 #300
+owner=#0
+name=crossbow
+description=A cocked crossbow with a single bolt loaded.
+location=#125
+dmg=12
+range=long
+skill=firearms
+clip=1
+ammo=1
+weight=2
+
+#340 #300
+owner=#0
+name=autocannon
+description=A crew-served autocannon, far too heavy to carry far.
+location=#126
+dmg=21
+range=long
+skill=heavy
+clip=30
+ammo=0
+weight=12
+
+#341 #300
+owner=#0
+name=focus crystal
+description=A faceted casting focus, warm to the touch.
+location=#213
+dmg=12
+range=short
+skill=spellcasting
+weight=1
+price=120
+
+#342 #300
+owner=#0
+name=leather jacket
+description=A scuffed leather jacket, light protection.
+location=#220
+soak=1
+part=torso
+weight=2
+price=45
+
+#343 #300
+owner=#0
+name=flak vest
+description=A surplus flak vest with ceramic inserts.
+location=#220
+soak=2
+part=torso
+weight=4
+price=110
+
+#344 #300
+owner=#0
+name=riot vest
+description=A layered riot vest, heavy but trusted.
+location=#213
+soak=3
+part=torso
+weight=6
+price=220
+
+#345 #300
+owner=#0
+name=hardplate
+description=A full hardplate carapace abandoned in the shed.
+location=#152
+soak=4
+part=torso
+weight=9
+
+#346 #300
+owner=#0
+name=helmet
+description=A dented ballistic helmet.
+location=#220
+soak=1
+part=head
+weight=1
+price=40
+
+#347 #300
+owner=#0
+name=backpack
+description=A roomy field backpack.
+location=#220
+cap=8
+part=back
+weight=2
+price=60
+
+#348 #300
+owner=#0
+name=duffel
+description=A big canvas duffel left on the dock.
+location=#121
+cap=12
+part=back
+weight=3
+
+#349 #300
+owner=#0
+name=toolbelt
+description=A webbing toolbelt with a few loops.
+location=#227
+cap=3
+part=waist
+weight=1
+price=35
+
+#350 #300
+owner=#0
+name=lockbox
+description=A dented steel lockbox, lid sprung open.
+location=#126
+cap=4
+weight=3
+
+#351 #300
+owner=#0
+name=ammo case
+description=A padded case sized for spare magazines.
+location=#213
+cap=6
+weight=2
+price=40
+
+#352 #300
+owner=#0
+name=medkit
+description=A field medkit, enough to close a bad wound.
+location=#220
+buff=heal
+amount=6
+weight=1
+price=70
+
+#353 #300
+owner=#0
+name=trauma patch
+description=A single adhesive trauma patch.
+location=#227
+buff=heal
+amount=3
+weight=1
+price=35
+
+#354 #300
+owner=#0
+name=focus tab
+description=A bitter focus tab that clears the head.
+location=#213
+buff=grit
+amount=3
+weight=1
+price=50
+
+#355 #300
+owner=#0
+name=reactive gel
+description=A packet of reactive gel that hardens to a ward.
+location=#213
+buff=shield
+amount=2
+weight=1
+price=90
+
+#356 #300
+owner=#0
+name=dermal spray
+description=An aerosol that stiffens the skin for a time.
+location=#220
+buff=mesh
+amount=3
+weight=1
+price=80
+
+#357 #300
+owner=#0
+name=adrenal shot
+description=A pre-loaded adrenal shot from the med bay.
+location=#122
+buff=grit
+amount=4
+weight=1
+
+#358 #300
+owner=#0
+name=painkiller
+description=A blister of strong painkillers.
+location=#124
+buff=heal
+amount=4
+weight=1
+
+#359 #300
+owner=#0
+name=scrap wire
+description=A coil of salvaged copper wire.
+location=#127
+weight=1
+
+#360 #300
+owner=#0
+name=circuit board
+description=A cracked circuit board with usable parts.
+location=#152
+weight=1
+
+#361 #300
+owner=#0
+name=power cell
+description=A half-charged power cell.
+location=#152
+weight=1
+
+#362 #300
+owner=#0
+name=alloy ingot
+description=A dull ingot of mixed alloy.
+location=#125
+weight=3
+
+#363 #300
+owner=#0
+name=optic fiber
+description=A spool of fine optic fiber.
+location=#151
+weight=1
+
+#364 #300
+owner=#0
+name=coolant flask
+description=A sealed flask of machine coolant.
+location=#152
+weight=2
+
+#365 #300
+owner=#0
+name=ceramic plate
+description=A broken ceramic plate, still hard.
+location=#129
+weight=2
+
+#366 #300
+owner=#0
+name=broken drone
+description=A gutted courier drone, good only for parts.
+location=#125
+weight=4
+
+#367 #300
+owner=#0
+name=data shard
+description=A scratched data shard of unknown contents.
+location=#126
+weight=1
+
+#368 #300
+owner=#0
+name=ration tin
+description=A battered tin of field rations.
+location=#124
+weight=1
+
+#369 #300
+owner=#0
+name=cracked visor
+description=A cracked optical visor, past repair.
+location=#129
+weight=1

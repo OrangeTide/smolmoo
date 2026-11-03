@@ -15,6 +15,42 @@
 #define SHOCK_FOCUS   314       /* the Static Shock spell's damage profile (world seed) */
 #define INJECT_TN     10        /* biomedical injector: Moderate Wit+Medicine check */
 
+/* case-insensitive equality, the way item names match in the parser */
+static int
+ci_eq(const char *a, const char *b)
+{
+    while (*a && *b) {
+        int ca = *a, cb = *b;
+
+        if (ca >= 'A' && ca <= 'Z') ca += 32;
+        if (cb >= 'A' && cb <= 'Z') cb += 32;
+        if (ca != cb) return 0;
+        a++; b++;
+    }
+    return *a == *b;
+}
+
+/* First loose consumable in the actor's inventory named `name` that carries a
+ * `buff` tag, or 0. Worn or wielded gear (a `slot` is set) is skipped so "use
+ * vest" never burns armor, and a container's contents are not reached: the
+ * item must be carried directly. */
+static int
+buff_item_named(int who, const char *name)
+{
+    int it = 0;
+    char tag[16], slot[16], nm[32];
+
+    while ((it = sys_next(who, it)) != 0) {
+        cs_getstr(it, "buff", tag, sizeof(tag));
+        if (!tag[0]) continue;
+        cs_getstr(it, "slot", slot, sizeof(slot));
+        if (slot[0]) continue;
+        cs_getstr(it, "name", nm, sizeof(nm));
+        if (ci_eq(nm, name)) return it;
+    }
+    return 0;
+}
+
 /* is `foe` on the room's combat roster? */
 static int
 on_roster(int room, int foe)
@@ -89,6 +125,68 @@ main(void)
             cs_flush(&o);
         }
         _exit(0);
+    }
+
+    /* A buff item is a loose consumable carried in hand: `use <item>` applies
+     * its effect and spends the item. The effect tag and magnitude are item
+     * data (buff/amount), so a new consumable is a seed object, not a branch
+     * here; the effects reuse sheet fields the engine already reads (grit, bp,
+     * and the timed shield/mesh self-buffs). In a fight it costs the turn like
+     * a stim; out of combat it is free. */
+    {
+        int it = buff_item_named(self, arg);
+
+        if (it > 0) {
+            struct cs_derived d;
+            char tag[16];
+            int amt, consumed = 1;
+
+            infight = (cs_geti(room, "cb_active", 0) == 1);
+            if (infight && !turn_ok(room, self, &infight)) _exit(0);
+
+            cs_getstr(it, "buff", tag, sizeof(tag));
+            amt = cs_geti(it, "amount", 1);
+            cs_getstr(it, "name", nm, sizeof(nm));
+            cs_recalc(sh, &d);
+            cs_s(&o, "You use the ");
+            cs_s(&o, nm);
+            if (cs_streq(tag, "grit")) {
+                int g = cs_geti(sh, "grit", 0) + amt;
+
+                if (g > d.maxgrit) g = d.maxgrit;
+                cs_seti(sh, "grit", g);
+                cs_s(&o, " -- Grit surges back.");
+            } else if (cs_streq(tag, "heal")) {
+                int bp = cs_geti(sh, "bp", d.maxbp) + amt;
+
+                if (bp > d.maxbp) bp = d.maxbp;
+                cs_seti(sh, "bp", bp);
+                cs_s(&o, " -- wounds knit (+");
+                cs_i(&o, amt);
+                cs_s(&o, " BP).");
+            } else if (cs_streq(tag, "shield")) {
+                cs_seti(sh, "shield", amt);
+                cs_s(&o, " -- a shimmering ward flares up.");
+            } else if (cs_streq(tag, "mesh")) {
+                cs_seti(sh, "mesh", amt);
+                cs_s(&o, " -- your skin hardens over.");
+            } else {
+                o.len = 0;
+                cs_s(&o, "The ");
+                cs_s(&o, nm);
+                cs_s(&o, " does nothing.");
+                consumed = 0;
+            }
+            if (consumed) sys_recycle(it);
+            if (infight && consumed) {
+                sys_broadcast(room, cs_cstr(&o));
+                cs_end_turn(room);
+            } else {
+                cs_s(&o, "\n");
+                cs_flush(&o);
+            }
+            _exit(0);
+        }
     }
 
     /* Any other word is an active unlock, dispatched through the catalog (M36b):
