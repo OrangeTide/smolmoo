@@ -15,35 +15,31 @@ in Section 13 so lethality and pace can be adjusted in one place.
 
 ## Introduction
 
-These rules meet the Liminal Frontiers setting from the ground, at the level
-of the people who work the galaxy and do not own it.
+ChromeSix runs a tabletop-style RPG inside a MUD, where the server resolves
+most of the dice with no referee at the table. That one constraint shapes
+every rule below. An attack rolls against a static Passive Defense and its
+damage against a static Soak, so a turn takes one roll and no back-and-forth;
+range, cover, and initiative all reduce to values the engine reads and
+applies. Play feels like OpenD6 and settles fast enough to automate.
 
-Picture the crew you play as a unit like Omega Team: blacklisted operators
-running retrieval and protection jobs out of a welded-together junkyard on a
-crowded station. Ex-corporate, ex-military, good at the work, and broke. The
-lights are on and the shuttle is fueled because somebody paid, and nobody
-pays out of kindness. You earn a living and you help where you can.
+A character is a short list of integers. The four attributes (Agility, Might,
+Wit, Charm) and the skills are each a single point total bought from a
+creation budget (Section 4), and dice and pips derive from the number, so a
+new player cannot build a dead-end character. Everything resolves by rolling a
+pool against a target number (Section 5).
 
-What you know is the shape of the world you live in. Two centuries ago the
-megacorporations reached the stars first, and they still own the air inside
-every dome. Most people carry cyberware, the good hardware goes to whoever
-can pay, and privacy is a memory. You take contracts in the margins because
-the legitimate doors are closed to you.
+On that base sits a full action game. Combat tracks range in bands, cover,
+wounds, and a dying track (Sections 6 and 7). A Grit economy gates the
+strongest moves so no advantage is free (Section 8). Characters grow sideways,
+learning maneuvers and installing cyberware or spells rather than inflating
+their pools (Sections 9 and 11), each anchored by a Hook that sets its niche
+(Section 10). Social conflict runs on the same turn engine as a fight
+(Section 16), and factions carry a standing that prices goods and gates
+services (Section 14).
 
-What you do not know is why some jobs feel wrong. The corps keep pulling
-things out of deep space and locking them away behind security no artifact
-should warrant. Survey crews come back with gaps in their reports and fewer
-names on the roster. People you trained with go near certain projects and
-come back hollow. The crew calls this "the weird." It is not a system, it is
-scuttlebutt and instinct: don't take the job on that station, don't touch
-anything that isn't on the manifest, walk away from cargo that is cold in a
-way cold should not be. The veterans who last are the ones who heed that
-instinct without being able to explain it.
-
-That gap is deliberate. The full truth of Liminal Frontiers, why the weird
-exists and what waits behind it, is the Game Master's to reveal in play.
-These rules are written from the operator's chair. Your characters learn what
-they learn, when they learn it, and not before.
+The Liminal Frontiers setting it was written for lives outside this document,
+along with the parts a Game Master reveals in play. The rules here depend on
+none of it and carry another setting unchanged.
 
 ## Design Philosophy
 
