@@ -466,6 +466,52 @@ programming must ship the SDK (`_build/sdk`, from `make install`) and
 `vm_rv.ld` alongside the binary and depot. A serve-only deployment
 that never uses `@program` does not need them.
 
+### Choosing MooScript or C
+
+Both languages compile to the same sandboxed RISC-V verb, so either one
+satisfies the rule that behavior lives in a verb rather than the core
+server. The choice is about fit, not privilege.
+
+Write a verb in **MooScript** by default when it is a player-facing
+command built from property reads, branching, and string output. The
+read-only ChromeSix verbs (`look`, `status`, `sheet`, `check`) and the
+small gameplay verbs (`roll`, `inscribe`, `heft`) are MooScript. It reads
+close to the LambdaMOO style and stays short. A MooScript verb reaches
+the host only through two bridges: the syscall bridge in
+`sdk/runtime/host_vm.c` (property access, object moves, create and
+recycle, verb calls, and the exposed syscalls: `broadcast`, `random`,
+`getobj`, `rollup`, `now`, `setpriv`), and the ChromeSix gameplay library
+through `cs_moo.c`. If the syscall or `cs_*` helper you need is not
+exposed yet, you add a thin wrapper (see `sdk/moo/DESIGN.md` and the
+bridge sources) or write the verb in C.
+
+Write a verb in **C** when it needs something MooScript cannot express:
+
+- The event-loop model: `sys_suspend`, `sys_getmsg`, `sys_listen`,
+  `sys_spawn`. MooScript verbs are void and fire-and-forget, with no
+  suspend or resume, so the combat turn-loop (`__combat`) and the agents
+  (`__ticker`, `__rover`, `__transit`) stay in C.
+- Patterns the language lacks: multiple return values (out-parameters),
+  mutable lists, or raw struct and buffer work. A single value can be
+  returned through a stashed accessor, as `check` does for the wild die,
+  but anything heavier is clearer in C.
+- A syscall or `cs_*` helper that is not bridged, where adding the bridge
+  is not worth it for one verb.
+
+Setuid applies to either language. A MooScript verb that writes shared
+state binds `setpriv` and is installed `04755`, exactly as a C verb calls
+`grant_accept()`.
+
+Two size notes. The verb compiler does no dead-code elimination, so a C
+verb compiles only the `cs_*` helpers it references (unused ones are
+dropped and each C verb stays lean), while a MooScript verb that binds
+any `cs_moo` symbol links the whole ChromeSix library, about 56 KB. The
+installer links `cs_moo.o` only into the MooScript verbs that use it, so
+verbs that do not touch the library keep their small baseline. And
+porting a working C verb to MooScript adds a bridge layer rather than
+removing code: do it for readability and language consistency, not to
+shrink the source.
+
 ## Wiki
 
 `#0.wiki` points to a dedicated wiki object. Properties on that
