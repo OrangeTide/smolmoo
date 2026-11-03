@@ -32,6 +32,7 @@
     .globl sys_rollup
     .globl sys_getobj
     .globl sys_now
+    .globl sys_post
 
 _exit:                                  /* a0=status */
     li      a7, 0
@@ -131,5 +132,10 @@ sys_getobj:                             /* a0=obj, a1=name -> a0=objref or -1 */
 
 sys_now:                                /* -> a0=wall-clock seconds */
     li      a7, 27
+    ecall
+    ret
+
+sys_post:                               /* a0=task -> a0=result; wake a task */
+    li      a7, 24
     ecall
     ret

@@ -53,7 +53,7 @@ $(B)/smolvfs/cas-sign-monocypher.o : smolvfs/cas-sign-monocypher.c smolvfs/cas-s
 # stack convention was retired, so the C parts build with skj-cc-rv (now the
 # ILP32 psABI) and the stubs use the register convention, same as the C verbs.
 MOO_RT_OBJS := $(BUILD)/moo_rt.o $(BUILD)/host_vm.o $(BUILD)/str.o \
-	$(BUILD)/list.o $(BUILD)/moo_syscall_rv.o
+	$(BUILD)/list.o $(BUILD)/moo_syscall_rv.o $(BUILD)/cs_moo.o
 sdk: $(SKJ_TOOLS) $(BUILD)/verb_rt_rv.o $(BUILD)/verbmain.o $(MOO_RT_OBJS) $(BUILD)/mulibc.h
 
 # The C-verb header travels with the SDK so `@program` can compile a C verb
@@ -76,6 +76,13 @@ $(BUILD)/moo_syscall_rv.o: sdk/runtime/moo_syscall_rv.S | $(SKJ_TOOLS) $(BUILD)
 $(BUILD)/moo_rt.o $(BUILD)/host_vm.o $(BUILD)/str.o $(BUILD)/list.o: \
 $(BUILD)/%.o: sdk/runtime/%.c | $(SKJ_TOOLS) $(BUILD)
 	$(BUILD)/skj-cc-rv -o $(BUILD)/$*.s $< && $(BUILD)/skj-as-rv -o $@ $(BUILD)/$*.s
+
+# The ChromeSix gameplay-library bridge for MooScript verbs. It lives in the
+# repo root beside chromesix_verb.h (gameplay, not generic runtime), so it
+# compiles with -I. to find that header.
+$(BUILD)/cs_moo.o: cs_moo.c chromesix_verb.h mulibc.h | $(SKJ_TOOLS) $(BUILD)
+	$(BUILD)/skj-cc-rv -I. -I sdk/runtime -o $(BUILD)/cs_moo.s $< && \
+		$(BUILD)/skj-as-rv -o $@ $(BUILD)/cs_moo.s
 
 install: $(B)/smolmoo sdk
 	$(B)/smolmoo install verbs.conf

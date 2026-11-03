@@ -1,24 +1,5 @@
 # Completed Milestones
 
-## Milestone 70: MooScript host bridges, step one
-
-The first step toward MooScript as a first-class verb language, alongside C. A MooScript verb reaches the
-host only through the bridge in `sdk/runtime/host_vm.c`, which exposed property access, object moves, and
-verb calls but none of the gameplay syscalls. Two of the most-used are added here: `broadcast` (room
-output) and `random` (dice). `random` binds straight to the `sys_random` stub the runtime already
-carries; `broadcast` needs a small wrapper (`host_broadcast`) because MooScript hands strings as a
-length-prefixed value and `sys_broadcast` wants a C string. A verb binds them with the alias form, for
-example `extern host_broadcast as func broadcast(room: obj, msg: str) -> int`.
-
-The proof is a real verb: `roll`, written in MooScript (`verb_roll.moo`), rolls a die and announces it to
-the room. `roll` alone is a d6, `roll <sides>` a d<sides>, clamped to a sane range, the result broadcast
-to everyone in the room including the roller. It is the first MooScript verb that is a gameplay command
-rather than a wizard flow, and it needs no C. The suite grew from 580 to 582 checks, rolling a d20 and a
-default d6 and reading the announcement out of the roller's own stream.
-
-This sets the pattern for the rest: a syscall becomes available to MooScript by binding its stub (or a
-small converting wrapper) in the bridge.
-
 ## Milestone 71: MooScript host bridges, step two
 
 The next four syscalls cross the bridge, which lets a MooScript verb do more than read and talk: it can
@@ -36,9 +17,32 @@ with `setpriv(1)`/`setpriv(0)`, and stamps the time with `now()`. The read-back 
 is the proof the elevated write landed, since a player does not own the room. This is the first MooScript
 verb that writes shared state. The suite grew from 582 to 587 checks.
 
-Still to come is a decision on the ChromeSix `cs_*` helper library, which gameplay verbs lean on and
-which is still C-only. The agents and the combat turn-loop, built on the suspend and mailbox model, stay
-in C until the runtime grows a way to express them.
+## Milestone 72: the ChromeSix library reaches MooScript
+
+The gameplay verbs lean on the 77-function ChromeSix helper library in `chromesix_verb.h`, which was
+C-only: it is static C inlined into each C verb, and a MooScript verb cannot include a C header. The
+chosen path is a bridge, not a port. A new `cs_moo.c` compiles the library once into the MooScript
+runtime and exposes thin, non-static wrappers a verb binds with `extern`: `geti` (a property read with a
+fallback), `pd`/`soak`/`maxbp`/`maxgrit` (the four derived stats, one accessor each, since MooScript has
+no C struct for `cs_recalc`'s result), and `rest` (short-rest BP payout). Each wrapper converts the
+MooScript ABI to the plain C the helpers want. Output helpers (`cs_out`) are not bridged; a MooScript
+verb builds its lines with native strings.
+
+`skj-cc` does no dead-code elimination, so `cs_moo.o` is all-or-nothing: it drags the whole library
+(~56 KB) into any verb it links. Linking it into every MooScript verb tripled their size, so the
+installer and the `@program` path now link it only when the source binds a `cs_moo` symbol
+(`moo_src_uses_cs`). Verbs that do not use the library stay at their ~23 KB baseline; only a ChromeSix
+verb pays the weight. One syscall the library references but the MooScript runtime lacked, `sys_post`
+(24), was stubbed so the whole-header compile links.
+
+The proof is a real port: `status` (and its `st` alias) now runs in MooScript (`verb_status.moo`),
+replacing `verb_status.c`. It is the first MooScript verb to use the gameplay library. The existing M43a,
+M43c, and short-rest tests already exercise it and still pass, so the port is faithful; the suite grew
+from 587 to 588 checks, adding a Held-condition readout the earlier tests never produced.
+
+Still deferred: the agents and the combat turn-loop, built on the suspend and mailbox model, stay in C
+until the runtime grows a way to express them. A broader port of gameplay verbs (sheet, check) can now
+follow the `status` pattern, each adding only the `cs_moo` wrappers it needs.
 
 ---
 

@@ -4105,6 +4105,19 @@ curl -sf -X POST -d "$SID1 inscribe" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'Inscribed here: "Kilroy was here"' "moo: the inscription persisted on the room object"
 check_log /tmp/smolmoo_p1.log 'Carved [0-9]* seconds ago' "moo: now bridge stamps and diffs the time"
 
+# --- status ported to MooScript (M72): the status verb now runs on the
+# ChromeSix gameplay library through the cs_moo.c bridge (geti, maxbp/maxgrit,
+# rest). The M43a and short-rest tests above already exercise the ported verb;
+# this adds a fresh assertion the log does not already carry: mark the sheet
+# with a condition those tests never set (Held) and confirm the readout names
+# it, proving the bridge read and the native condition builder. P1 is made and
+# at #101 from the tests above; keep the room calm so no rest payout intrudes.
+curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.held=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 status" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '(held)' "moo: ported status reads a sheet condition via the cs_moo bridge"
+curl -sf -X POST -d "$SID1 @set #$P1SH.held=0" http://localhost:$PORT/cmd >/dev/null
+
 # M48c: a foreign-signed head to plant into the isolated history instances below.
 # The @rewind, agent-persistence, and @gc tests each copy depot/, which can carry a
 # head signed by a different key (a stale depot, or a restored backup). Planting one

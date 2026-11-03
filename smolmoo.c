@@ -3971,6 +3971,32 @@ cmd_page(int sid, const char *args)
              "That person is not connected.");
 }
 
+/* Whether a MooScript source binds the ChromeSix gameplay-library bridge, by a
+ * plain scan for the `cs_moo` extern symbols. skj-cc has no dead-code
+ * elimination, so cs_moo.o is all-or-nothing (~56 KB); linking it only into the
+ * verbs that use it keeps every other MooScript verb small. A false positive
+ * (the text in a comment) only links an unused object, never breaks a verb. */
+static int
+moo_src_uses_cs(const char *path)
+{
+    char buf[4096];
+    FILE *f = fopen(path, "rb");
+    size_t n;
+    int found = 0;
+
+    if (!f)
+        return 0;
+    while ((n = fread(buf, 1, sizeof(buf) - 1, f)) > 0) {
+        buf[n] = 0;
+        if (strstr(buf, "cs_moo")) {   /* a bridge symbol may straddle reads, */
+            found = 1;                  /* but each is short and the reads are */
+            break;                      /* large, so a split is implausible */
+        }
+    }
+    fclose(f);
+    return found;
+}
+
 /* @program support: compile MooScript source into a verb ELF and store it in
  * the CAS. The SDK toolchain (next to the server binary) and vm_rv.ld (in the
  * working directory) must be present at runtime. On success returns OK with
@@ -3981,7 +4007,7 @@ static int
 program_compile(int sid, const char *src, char *hash_out, int is_c,
                 int is_agent)
 {
-    char sdk[512], path[640], cmd[8192], aobj[560];
+    char sdk[512], path[640], cmd[8192], aobj[560], csobj[560];
     ssize_t n;
     FILE *f;
     char *sl;
@@ -4019,6 +4045,14 @@ program_compile(int sid, const char *src, char *hash_out, int is_c,
     else
         aobj[0] = '\0';
 
+    /* Link the ChromeSix bridge only when a MooScript program binds it, so
+     * programs that do not use the gameplay library stay small (cs_moo.o is
+     * all-or-nothing; see moo_src_uses_cs). */
+    if (!is_c && strstr(src, "cs_moo"))
+        snprintf(csobj, sizeof(csobj), " %s/cs_moo.o", sdk);
+    else
+        csobj[0] = '\0';
+
     if (is_c)
         /* C verbs: skj-cc-rv (register psABI) + verb_rt_rv stubs. The
          * header comes from the SDK dir (bundled mulibc.h) or the repo (-I.).*/
@@ -4036,12 +4070,12 @@ program_compile(int sid, const char *src, char *hash_out, int is_c,
             "%s/skj-mooc-rv -o %s/_prog.s %s/_prog.moo 2>%s/_prog.err && "
             "%s/skj-as-rv -o %s/_prog.o %s/_prog.s 2>>%s/_prog.err && "
             "%s/skj-ld-rv -T vm_rv.ld -o %s/_prog.elf %s/_prog.o "
-            "%s/moo_rt.o %s/host_vm.o %s/str.o %s/list.o %s/moo_syscall_rv.o "
-            "2>>%s/_prog.err",
+            "%s/moo_rt.o %s/host_vm.o %s/str.o %s/list.o %s/moo_syscall_rv.o"
+            "%s 2>>%s/_prog.err",
             sdk, depot_dir, depot_dir, depot_dir,
             sdk, depot_dir, depot_dir, depot_dir,
             sdk, depot_dir, depot_dir,
-            sdk, sdk, sdk, sdk, sdk, depot_dir);
+            sdk, sdk, sdk, sdk, sdk, csobj, depot_dir);
 
     if (system(cmd) != 0) {
         char err[1024];
@@ -7377,17 +7411,26 @@ cmd_install(const char *conf_path, const char *sdk)
                  * register-convention syscall stubs), all built into the SDK by
                  * `make sdk`. The compiled verb exports `main`, which moo_rt's
                  * _start calls with the vm_args context. */
+                char csobj[560];
+
+                /* Link the ChromeSix bridge only when the verb binds it (see
+                 * moo_src_uses_cs); most MooScript verbs do not, and cs_moo.o
+                 * is all-or-nothing. */
+                if (moo_src_uses_cs(elf_src))
+                    snprintf(csobj, sizeof(csobj), " %s/cs_moo.o", sdk);
+                else
+                    csobj[0] = '\0';
                 snprintf(cmd, sizeof(cmd),
                     "%s/skj-mooc-rv -o %s/_verb.s %s && "
                     "%s/skj-as-rv -o %s/_verb.o %s/_verb.s && "
                     "%s/skj-ld-rv -T vm_rv.ld -o %s %s/_verb.o "
                     "%s/moo_rt.o %s/host_vm.o %s/str.o %s/list.o "
-                    "%s/moo_syscall_rv.o",
+                    "%s/moo_syscall_rv.o%s",
                     sdk, sdk, elf_src,
                     sdk, sdk, sdk,
                     sdk, elf_path, sdk,
                     sdk, sdk, sdk, sdk,
-                    sdk);
+                    sdk, csobj);
                 fprintf(stderr, "[build:moo] %s\n", elf_src);
                 ok = (system(cmd) == 0);
             } else if (ext && strcmp(ext, ".c") == 0 && sdk) {
