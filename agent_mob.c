@@ -1,4 +1,4 @@
-/* agent_mob.c : proactive NPC behavior (OLC-6). A mob becomes proactive by
+/* agent_mob.c : proactive NPC behavior. A mob becomes proactive by
  * being woken as an agent (@wake #N with #N.brain naming this verb). It runs
  * under the system session, so it acts with no player present:
  *   wander  -- on each tick, step through a random exit of its current room
@@ -7,7 +7,7 @@
  * Both are driven by the same comma-separated `behavior` prop as the reactive
  * verbs; patrol takes precedence over wander when both are set. On EV_ENTER the
  * agent still greets/aggros through mob_react, so waking a mob does not cost it
- * the OLC-4 reactivity that the host would otherwise route to on_enter.
+ * the reactivity that the host would otherwise route to on_enter.
  * The tick period is the `dwell` prop in ms (default 5000). Setuid: moving the
  * mob and opening a fight both need the owner's authority. */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */

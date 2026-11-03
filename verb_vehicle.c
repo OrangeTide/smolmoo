@@ -1,4 +1,4 @@
-/* verb_vehicle.c : board and disembark a vehicle (OLC-7). A vehicle is a room
+/* verb_vehicle.c : board and disembark a vehicle. A vehicle is a room
  * object marked with `vehicle`=1 whose own `location` is its current stop and
  * whose riders have `location` = the vehicle, so moving the vehicle carries
  * them. board puts the player aboard a vehicle that is present at their stop;
@@ -81,7 +81,7 @@ main(void)
             puts("Usage: floor <number>");
             _exit(0);
         }
-        if (cs_geti(veh, "moving", 0)) {        /* M34: doors shut in transit */
+        if (cs_geti(veh, "moving", 0)) {        /* Doors shut in transit */
             puts("The doors are closed; wait until it stops.");
             _exit(0);
         }
@@ -110,7 +110,7 @@ main(void)
             _exit(0);
         }
         cs_getstr(veh, "name", vn, sizeof(vn));
-        if (cs_geti(veh, "moving", 0)) {        /* M34: already under way */
+        if (cs_geti(veh, "moving", 0)) {        /* Already under way */
             o.len = 0;
             cs_s(&o, "The ");
             cs_s(&o, vn);
@@ -139,7 +139,7 @@ main(void)
             puts("You aren't aboard anything.");
             _exit(0);
         }
-        if (cs_geti(veh, "moving", 0)) {        /* M34: doors shut in transit */
+        if (cs_geti(veh, "moving", 0)) {        /* Doors shut in transit */
             puts("The doors are closed; wait until it stops.");
             _exit(0);
         }
@@ -185,7 +185,7 @@ main(void)
             puts("It isn't here.");
             _exit(0);
         }
-        if (cs_geti(veh, "moving", 0)) {        /* M34: closed, under way */
+        if (cs_geti(veh, "moving", 0)) {        /* Closed, under way */
             puts("Its doors are closed.");
             _exit(0);
         }

@@ -170,11 +170,8 @@ rv_trap(rv_cpu *cpu, uint32_t cause, uint32_t tval)
     cpu->waiting = 0;
 
     /* Vectored mode spreads the *interrupts* over base + 4*cause and
-     * still sends every exception to base itself. This used to vector
-     * both, which sent an exception to whatever entry its cause number
-     * happened to land on. Nothing caught it: no compliance test, no
-     * fuzzed instruction and no lockstep run this project has ever done
-     * sets mtvec to vectored mode. */
+     * still sends every exception to base itself (per the spec: only
+     * interrupts are vectored). */
     base = cpu->mtvec & ~3u;
     if ((cpu->mtvec & 3) == 1 && is_irq)
         base += (cause & ~RV_CAUSE_INTERRUPT) * 4;

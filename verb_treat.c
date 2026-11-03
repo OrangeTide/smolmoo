@@ -1,5 +1,5 @@
-/* verb_treat.c : mend a wound at a clinic (M39b). Wounds do not clear on a short
- * rest (M39a); a living character needs care, and the death clinic's `recover`
+/* verb_treat.c : mend a wound at a clinic. Wounds do not clear on a short
+ * rest; a living character needs care, and the death clinic's `recover`
  * only serves the dead. A clinic is a builder object in the room marked
  * `clinic`=1, carrying an optional `treat_fee` (default TREAT_FEE). `treat` spends
  * the fee, then rolls the better of the patient's Medicine or Cybertech against a

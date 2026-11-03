@@ -1,13 +1,13 @@
 /* verb_menace.c : three combat maneuvers that impose a condition on a foe. `stun
- * <foe>` (M40b) spends a Grit on a stunning blow, an opposed Might-plus-Brawl
+ * <foe>` spends a Grit on a stunning blow, an opposed Might-plus-Brawl
  * roll against an engaged foe that, on a win, leaves it Stunned (it loses its
- * next action). `menace <foe>` (M40b) is an intimidation, Charm-plus-Command
+ * next action). `menace <foe>` is an intimidation, Charm-plus-Command
  * against the foe's Wit that, on a win, leaves it Shaken (-1D until it rallies).
- * `rend <foe>` (M40c) spends a Grit on a savage melee tear, opposed
+ * `rend <foe>` spends a Grit on a savage melee tear, opposed
  * Might-plus-Brawl, that on a win sets it Bleeding for REND_BLEED direct damage
- * each of its turns until it is staunched. `grapple <foe>` (M45c) spends a Grit
+ * each of its turns until it is staunched. `grapple <foe>` spends a Grit
  * on a melee Might-plus-Brawl hold that on a win leaves it Held (it cannot move
- * until it breaks free). `flash <foe>` (M45c) spends a Grit on an Agility-plus-
+ * until it breaks free). `flash <foe>` spends a Grit on an Agility-plus-
  * Firearms flash against the foe's best physical, at any range, that on a win
  * leaves it Blinded (-3D on its attacks) for FLASH_BLIND rounds. All spend your
  * action for the turn. Setuid: they write the room and the foe's sheet. */
@@ -16,7 +16,7 @@
 #include "chromesix_verb.h"
 
 #define REND_BLEED 4            /* Ongoing damage a rend inflicts per turn */
-#define FLASH_BLIND 2           /* rounds a flash leaves the target Blinded (M45c) */
+#define FLASH_BLIND 2           /* rounds a flash leaves the target Blinded */
 
 /* is `foe` on the room's combat roster? */
 static int
@@ -141,7 +141,7 @@ main(void)
             cs_s(&o, "; it is blinded.");
         } else {
             cs_seti(defsh, "shaken", 1);
-            cs_seti(defsh, "fear_source", atk);   /* M53b: source of the fear */
+            cs_seti(defsh, "fear_source", atk);   /* Source of the fear */
             cs_s(&o, " menaces ");
             cs_s(&o, dn);
             cs_s(&o, "; it is shaken.");

@@ -1,4 +1,4 @@
-/* mob_behavior.h : shared reactive NPC behavior (OLC-4/OLC-6). A player walking
+/* mob_behavior.h : shared reactive NPC behavior. A player walking
  * into a room triggers greet/aggro, driven by the mob's comma-separated
  * `behavior` prop. The one-shot on_enter verb (verb_mob.c) and the event-loop
  * mob agent (agent_mob.c) both call mob_react, so the two never drift. Callers
@@ -55,7 +55,7 @@ roster_add(int room, int id)
 /* React to `foe` entering `room` where `mob` lives: greet and/or aggro per the
  * mob's `behavior` list. A mob with a `faction` also aggros on a newcomer whose
  * standing with that faction is Hostile (-2) or worse, even without the aggro
- * token (M38b). A downed or dead mob (or foe) does not react. */
+ * token. A downed or dead mob (or foe) does not react. */
 static void
 mob_react(int mob, int foe, int room)
 {
@@ -96,7 +96,7 @@ mob_react(int mob, int foe, int room)
         int i = 0, j;
 
         /* aggro on the behavior token, or when the newcomer's standing with the
-         * mob's faction is Hostile (-2) or worse (M38b, rules Section 14) */
+         * mob's faction is Hostile (-2) or worse (rules Section 14) */
         cs_getstr(mob, "faction", fac, sizeof(fac));
         if (!has_token(beh, "aggro")
                 && !(fac[0] && cs_disposition(mob, fsh, fac) <= -2))

@@ -1,8 +1,8 @@
-/* verb_learn.c : spend Character Points to acquire an unlock (M35c). Every
+/* verb_learn.c : spend Character Points to acquire an unlock. Every
  * maneuver, cyberware mod, and spell is one id in the sheet's `maneuvers` list.
  * `learn` adds one from the catalog (chromesix_verb.h) after checking its CP
  * cost, the hook it requires, and, for cyberware, the graft-slot cap. With no id
- * it lists the catalog instead, each entry's cost, hook, and availability (M36a).
+ * it lists the catalog instead, each entry's cost, hook, and availability.
  * The effect of each unlock lives with its use, not here. The player owns the
  * sheet, so this runs at caller authority like chargen, not setuid. */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
@@ -20,7 +20,7 @@ pad(struct cs_out *o, const char *s, int w)
     while (i++ < w) cs_s(o, " ");
 }
 
-/* M36a: with no id, list the catalog so a player can see what is learnable,
+/* With no id, list the catalog so a player can see what is learnable,
  * each entry's cost, the hook it needs, and why it is or is not available. */
 static void
 list_catalog(int ch)

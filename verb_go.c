@@ -36,7 +36,7 @@ main(void)
 
     grant_accept();   /* clears combat state on the room when fleeing */
 
-    cs_rest(sh, room);   /* bank any short-rest BP before leaving the room (M39a) */
+    cs_rest(sh, room);   /* bank any short-rest BP before leaving the room */
 
     if (exit <= 0) { puts("Go where?"); _exit(0); }
     cs_getstr(exit, "dest", dbuf, sizeof(dbuf));
@@ -63,7 +63,7 @@ main(void)
             puts("You have already acted this turn.");
             _exit(0);
         }
-        /* M45c: a Held combatant cannot flee the room until it breaks free. */
+        /* A Held combatant cannot flee the room until it breaks free. */
         if (cs_geti(sh, "held", 0)) {
             puts("You are held fast; break free first.");
             _exit(0);
@@ -105,7 +105,7 @@ main(void)
         sys_move(self, dest);
     }
 
-    /* Drag along a body we are carrying (M25i ally slice): it travels with us
+    /* Drag along a body we are carrying: it travels with us
      * room to room until we release or revive it. */
     {
         int body = cs_geti(self, "carrying", 0);
@@ -119,7 +119,7 @@ main(void)
         }
     }
 
-    /* M37c: arriving at a courier job's destination completes it. The giver
+    /* Arriving at a courier job's destination completes it. The giver
      * names the destination room in `job_dest`; grant_accept above lets us set
      * the flag on the mover's own sheet. */
     {
@@ -135,7 +135,7 @@ main(void)
 
     show_room(dest);
 
-    /* M69: opt-in automap. With the mover's `automap` flag set, draw the room
+    /* Opt-in automap. With the mover's `automap` flag set, draw the room
      * map on arrival. The map verb runs as its own task (sys_call) and reads the
      * room from the player's location, so it maps the destination just entered. */
     if (cs_geti(self, "automap", 0))

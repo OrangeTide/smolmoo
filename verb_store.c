@@ -4,7 +4,7 @@
  * [from <store>]` sells one instance, moving the object to the buyer and
  * drawing its price off their creds. With no `from`, the store is the room's
  * `vendor` NPC. Standing with the store's faction, plus the store's own `disp`
- * offset (M38c), shifts the price ten percent per step and gates the sale at
+ * offset, shifts the price ten percent per step and gates the sale at
  * Hostile or worse (rules Section 14). A store
  * that sets a `stim` base price sells the counter-based stim dose, the Grit
  * money sink (rules Section 8), through the fallback path when no priced item

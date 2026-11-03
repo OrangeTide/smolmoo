@@ -120,7 +120,7 @@ cs_dice(struct cs_out *o, int pts)
 {
     int pips, dice;
 
-    if (pts < 0) pts = 0;   /* M53c: match cs_roll's clamp, so a negative pool
+    if (pts < 0) pts = 0;   /* Match cs_roll's clamp, so a negative pool
                              * shows as 0D rather than a huge unsigned count */
     dice = cs_divmod(pts, 3, &pips);
     cs_i(o, dice);
@@ -160,7 +160,7 @@ cs_roll(int points, int *wild)
 {
     int pips, dice, n, total;
 
-    /* M53c: clamp a negative pool. cs_divmod casts to unsigned, so a negative
+    /* Clamp a negative pool. cs_divmod casts to unsigned, so a negative
      * numerator would become a huge dice count and spin the loop below; the
      * dice > 0 guard cannot catch it. Zero yields the minimum one die. */
     if (points < 0) points = 0;
@@ -220,7 +220,7 @@ cs_skill_idx(const char *name)
  * human, where the base formulas stand. */
 struct cs_derived { int pd; int soak; int maxbp; int maxgrit; };
 
-/* defined below; cs_recalc reads it for the passive cyberware unlocks (M35c) */
+/* defined below; cs_recalc reads it for the passive cyberware unlocks */
 static int cs_has_unlock(int sheet, const char *name);
 
 static void
@@ -235,19 +235,19 @@ cs_recalc(int ch, struct cs_derived *d)
     int armor = cs_geti(ch, "armor", 0);
 
     d->pd = (ad << 1) + ap + cs_hook_bonus(ch) - size * 2;
-    if (cs_has_unlock(ch, "reflex")) d->pd += 2;    /* M36c reflex booster */
-    if (cs_has_unlock(ch, "kinetic")) d->pd += 1;   /* M42c kinetic absorbers */
-    if (cs_geti(ch, "shield", 0) > 0) d->pd += 3;   /* M41a mana shield, timed */
+    if (cs_has_unlock(ch, "reflex")) d->pd += 2;    /* reflex booster */
+    if (cs_has_unlock(ch, "kinetic")) d->pd += 1;   /* kinetic absorbers */
+    if (cs_geti(ch, "shield", 0) > 0) d->pd += 3;   /* mana shield, timed */
     if (d->pd > 20) d->pd = 20;
     if (d->pd < 0) d->pd = 0;
     d->soak = (md << 1) + mp + armor + (size > 0 ? size : 0);
-    if (cs_has_unlock(ch, "dermal")) d->soak += 2;  /* M35c dermal plating */
-    if (cs_geti(ch, "mesh", 0) > 0) d->soak += wd;  /* M41a dermal wire mesh, timed */
+    if (cs_has_unlock(ch, "dermal")) d->soak += 2;  /* dermal plating */
+    if (cs_geti(ch, "mesh", 0) > 0) d->soak += wd;  /* dermal wire mesh, timed */
     d->maxbp = 12 + md * 3 + size * 6;
     if (d->maxbp < 1) d->maxbp = 1;
     d->maxgrit = 3 + wd + cd;
-    if (cs_has_unlock(ch, "vigor")) d->maxgrit += 3;  /* M36c vigor */
-    if (cs_has_unlock(ch, "kinetic")) d->maxgrit -= 1; /* M42c neural load */
+    if (cs_has_unlock(ch, "vigor")) d->maxgrit += 3;  /* vigor */
+    if (cs_has_unlock(ch, "kinetic")) d->maxgrit -= 1; /* neural load */
     if (d->maxgrit < 1) d->maxgrit = 1;
 }
 
@@ -331,7 +331,7 @@ cs_standing(int sheet, const char *faction)
     return 0;
 }
 
-/* Add `delta` to the sheet's standing with `faction` (M37c), the verb-side
+/* Add `delta` to the sheet's standing with `faction`, the verb-side
  * writer mirroring the host @standing merge. Rebuilds the comma-separated
  * `id:step` list, adjusting the matching pair or appending a new one, clamped to
  * the [-3, +3] band. The player owns the sheet, so the caller writes it. */
@@ -412,12 +412,12 @@ cs_getstr(int obj, const char *name, char *dst, int sz)
     dst[n] = '\0';
 }
 
-/* M54: fade idle standing before any consequence reads it. cs_decay is defined
+/* Fade idle standing before any consequence reads it. cs_decay is defined
  * further down; cs_disposition is the one seam every consequence (store, job
  * gate, board, aggro) shares, so calling it here reaches them all. */
 static void cs_decay(int sheet);
 
-/* An NPC's effective standing toward a player against `faction` (M38c): the
+/* An NPC's effective standing toward a player against `faction`: the
  * player's `cs_standing` plus the NPC's optional `disp` offset, clamped to the
  * [-3, +3] band. With no `disp` it reads exactly as the faction standing, so a
  * specific NPC can be warmer or colder than its faction (rules Section 14): a
@@ -429,7 +429,7 @@ cs_disposition(int npc, int sheet, const char *faction)
     char db[12];
     int off = 0, sign = 1, k = 0, v;
 
-    cs_decay(sheet);   /* M54: standing fades in play, not only on a sheet view */
+    cs_decay(sheet);   /* Standing fades in play, not only on a sheet view */
     /* `disp` may be negative (a grudge), which cs_geti/cs_atoi cannot read, so
      * parse the sign here. */
     cs_getstr(npc, "disp", db, sizeof(db));
@@ -441,7 +441,7 @@ cs_disposition(int npc, int sheet, const char *faction)
     return v;
 }
 
-/* --- M39a: short rest, the between-fights BP recovery (Section 8) ---
+/* --- short rest, the between-fights BP recovery (Section 8) ---
  *
  * BP climbs back toward maxbp while a character sits in a `safe` room and out of
  * a fight, with no rest command. It is computed lazily: `rest_since` stamps when
@@ -479,7 +479,7 @@ cs_rest(int sheet, int room)
     gained = elapsed * d.maxbp / period;
     if (gained <= 0) return;               /* remainder kept: rest_since unchanged */
     bp += gained;
-    if (bp >= d.maxbp) {           /* M40c: a rest that fills BP clears Crash */
+    if (bp >= d.maxbp) {           /* A rest that fills BP clears Crash */
         bp = d.maxbp;
         cs_seti(sheet, "crash", 0);
     }
@@ -488,7 +488,7 @@ cs_rest(int sheet, int room)
     cs_seti(sheet, "rest_since", since + consumed);
 }
 
-/* --- M39c: standing decay, a reputation fading toward Neutral (Section 14) ---
+/* --- standing decay, a reputation fading toward Neutral (Section 14) ---
  *
  * Standing drifts one step toward Neutral for each idle DECAY_SECS (tunable via
  * `#0.decay_secs`) that passes, so a reputation earned or lost fades if it is not
@@ -542,7 +542,7 @@ cs_decay(int sheet)
     cs_seti(sheet, "decay_tick", tick + steps * period);
 }
 
-/* M52c: copy the prose label for a campaign flag into `dst`, read from
+/* Copy the prose label for a campaign flag into `dst`, read from
  * `flaglabel_<token>` on the system object #0. Fall back to the raw token when no
  * label is set, so an unlabelled flag still reads. */
 static void
@@ -573,9 +573,9 @@ cs_flag_label(const char *token, char *dst, int len)
     dst[j] = '\0';
 }
 
-/* M51a: append the sheet's earned campaign flags as a "Clearances:" line, or
+/* Append the sheet's earned campaign flags as a "Clearances:" line, or
  * nothing when none are held. Shared by the sheet and the contracts view. Each
- * token renders through its prose label (M52c), the raw token as fallback. */
+ * token renders through its prose label, the raw token as fallback. */
 static void
 cs_clearances_line(int ch, struct cs_out *o)
 {
@@ -659,7 +659,7 @@ cs_sheet(int obj)
     return c >= 0 ? c : obj;
 }
 
-/* --- M25g: body slots and inventory (chromesix-smolmoo.md Section 9) ---
+/* --- body slots and inventory (chromesix-smolmoo.md Section 9) ---
  *
  * A creature's anatomy is a comma-separated list of slot tags on the creature
  * object, each a part name plus an index (hand0, torso0, tentacle3). Items in
@@ -766,7 +766,7 @@ cs_find_free_slot(int creature, char need, const char *pref, char *out, int sz)
     return 0;
 }
 
-/* --- M25g slice 2: ammunition (rules Section 6, MUD-mode) ---
+/* --- ammunition (rules Section 6, MUD-mode) ---
  *
  * A ranged weapon carries a magazine directly: `clip` is its capacity and
  * `ammo` the rounds left. A weapon with no `clip` (a blade, bare hands) never
@@ -810,7 +810,7 @@ cs_reload_weapon(int weapon)
     return clip;
 }
 
-/* --- M25g slice 2: weight and encumbrance (rules Section 6) --- */
+/* --- weight and encumbrance (rules Section 6) --- */
 
 /* Carry rating: (Might dice x 2) + Might pips, in load units. The weight a
  * creature bears before it slows down. */
@@ -900,7 +900,7 @@ cs_condition(int cur, int maxbp, int wounds, struct cs_out *o)
     else if (wounds >= 3) cs_s(o, ", crippled");
 }
 
-/* Append the active combat conditions on `sheet` to o, comma separated (M40). A
+/* Append the active combat conditions on `sheet` to o, comma separated. A
  * condition is a sheet prop, in the idiom of downed and wounds; this names the
  * ones set, for the sheet's status view. Leaves o untouched when none are set. */
 static void
@@ -919,9 +919,9 @@ cs_cond_list(int sheet, struct cs_out *o)
     if (cs_geti(sheet, "held", 0)) cs_s(o, n++ ? ", held" : "held");
 }
 
-/* Apply the start-of-turn ticks. Ongoing damage (`bleed`, M40c) deals its set
+/* Apply the start-of-turn ticks. Ongoing damage (`bleed`) deals its set
  * amount as direct, un-soaked damage and downs the victim at 0 BP, running until
- * an action or save ends it. Timed self-buffs (M41a) count down one round and
+ * an action or save ends it. Timed self-buffs count down one round and
  * lapse at zero. */
 static void
 cs_cond_tick(int sheet, int room)
@@ -930,11 +930,11 @@ cs_cond_tick(int sheet, int room)
     char nm[32];
     int bleed, bp, v;
 
-    /* M41a: timed self-buffs count down one round at the start of the holder's
+    /* Timed self-buffs count down one round at the start of the holder's
      * turn and lapse at zero. Their effect is read live in cs_recalc. */
     if ((v = cs_geti(sheet, "shield", 0)) > 0) cs_seti(sheet, "shield", v - 1);
     if ((v = cs_geti(sheet, "mesh", 0)) > 0)   cs_seti(sheet, "mesh", v - 1);
-    /* M45c: Blinded counts down like a timed buff, so a flash lasts one turn. */
+    /* Blinded counts down like a timed buff, so a flash lasts one turn. */
     if ((v = cs_geti(sheet, "blind", 0)) > 0)  cs_seti(sheet, "blind", v - 1);
 
     bleed = cs_geti(sheet, "bleed", 0);
@@ -959,7 +959,7 @@ cs_cond_tick(int sheet, int room)
 /* Clear the combat conditions a scene leaves on a combatant, so a reused sheet
  * (a respawning NPC, or the player's next fight) starts clean. The timed
  * self-buffs (shield, mesh) are left to their own cs_cond_tick countdown, not
- * cut short here. Called from the verb_combat teardown (M53a). */
+ * cut short here. Called from the verb_combat teardown. */
 static void
 cs_clear_conditions(int sheet)
 {
@@ -975,7 +975,7 @@ cs_clear_conditions(int sheet)
 }
 
 /* A shaken combatant tries to rally at the end of its turn: a Wit roll against
- * Moderate (10) shakes off the fear (rules Section 8, M40b). */
+ * Moderate (10) shakes off the fear (rules Section 8). */
 static void
 cs_rally(int sheet, int room)
 {
@@ -986,7 +986,7 @@ cs_rally(int sheet, int room)
     if (!cs_geti(sheet, "shaken", 0)) return;
     if (cs_roll(cs_geti(sheet, "wit", 0), &wild) < 10) return;
     cs_seti(sheet, "shaken", 0);
-    cs_seti(sheet, "fear_source", 0);   /* M53b: fear clears with the condition */
+    cs_seti(sheet, "fear_source", 0);   /* Fear clears with the condition */
     cs_getstr(sheet, "name", nm, sizeof(nm));
     o.len = 0;
     cs_s(&o, nm);
@@ -1056,7 +1056,7 @@ cs_band_word(int band)
 }
 
 /* Room span: the deepest range band a fight can open to inside one room
- * (M25h). An explicit `span` prop wins; otherwise an outdoor room reaches Long
+ *. An explicit `span` prop wins; otherwise an outdoor room reaches Long
  * (2) and an indoor room only Short (1). Clamped to 0..2. A span 0 closet
  * pins everyone at Engaged. This bounds how far `retreat` can back off without
  * leaving the room; crossing to an adjacent zone is `go`, not a band. */
@@ -1216,14 +1216,14 @@ cs_has_unlock(int sheet, const char *name)
     return cs_list_has(sheet, "maneuvers", name);
 }
 
-/* Is campaign flag `flag` present in the sheet's `flags` list (M47a)? */
+/* Is campaign flag `flag` present in the sheet's `flags` list? */
 static int
 cs_has_flag(int sheet, const char *flag)
 {
     return cs_list_has(sheet, "flags", flag);
 }
 
-/* Add campaign flag `flag` to the sheet's `flags` list once (M47b), the granting
+/* Add campaign flag `flag` to the sheet's `flags` list once, the granting
  * mirror of cs_standing_add. A flag already present is left as is, so a repeated
  * turnin never doubles it. The player owns the sheet, so the caller writes it. */
 static void
@@ -1244,23 +1244,23 @@ cs_flag_add(int sheet, const char *flag)
     sys_setprop(sheet, "flags", cs_cstr(&o));
 }
 
-/* An unlock's active effect (M36b), the tag `verb_use` switches on to apply it.
+/* An unlock's active effect, the tag `verb_use` switches on to apply it.
  * UEF_PASSIVE means it is not activated as an action; its effect is read where
  * its stat applies (dermal in cs_recalc), so `use` refuses it. */
 #define UEF_PASSIVE 0
 #define UEF_AIM     1       /* smartlink: next attack ignores cover, -2 PD */
-#define UEF_SHIELD  2       /* mana shield: +3 Passive Defense while active (M41a) */
-#define UEF_MESH    3       /* dermal wire mesh: +Wit dice Soak while active (M41a) */
-#define UEF_SHOCK   4       /* static shock: a Wit+Spellcasting attack (M41b) */
-#define UEF_SUPPRESS 5      /* suppressive fire: Suppress the roster foes (M41b) */
-#define UEF_INJECT  6       /* biomedical injector: restore BP to self or ally (M41c) */
-#define UEF_EXPOSE  7       /* tactical co-processor: mark a target Exposed (M45b) */
-#define UEF_MARK    8       /* threat-assessment optics: mark a target for +1D (M45b) */
+#define UEF_SHIELD  2       /* mana shield: +3 Passive Defense while active */
+#define UEF_MESH    3       /* dermal wire mesh: +Wit dice Soak while active */
+#define UEF_SHOCK   4       /* static shock: a Wit+Spellcasting attack */
+#define UEF_SUPPRESS 5      /* suppressive fire: Suppress the roster foes */
+#define UEF_INJECT  6       /* biomedical injector: restore BP to self or ally */
+#define UEF_EXPOSE  7       /* tactical co-processor: mark a target Exposed */
+#define UEF_MARK    8       /* threat-assessment optics: mark a target for +1D */
 
-/* The 5 CP unlock catalog (M35c): each acquirable maneuver, cyberware mod, or
+/* The 5 CP unlock catalog: each acquirable maneuver, cyberware mod, or
  * spell as one id, with its CP cost, the hook it requires ("" for any), whether
  * it occupies a cyberware graft slot, and, for an active unlock, the Grit its
- * use costs and its effect tag (M36b). `learn` reads the cost and gates; `use`
+ * use costs and its effect tag. `learn` reads the cost and gates; `use`
  * reads the Grit cost and tag. The effect of each unlock lives with its use. */
 struct cs_unlock {
     const char *id; int cp; const char *hook; int graft; int grit; int effect;
@@ -1270,19 +1270,19 @@ static const struct cs_unlock cs_unlocks[] = {
     { "dermal",    5, "cyber",    1, 0, UEF_PASSIVE }, /* +2 Soak, one graft */
     { "reflex",    5, "cyber",    1, 0, UEF_PASSIVE }, /* +2 Defense, one graft */
     { "vigor",     5, "awakened", 0, 0, UEF_PASSIVE }, /* +3 Max Grit */
-    { "shield",    5, "awakened", 0, 1, UEF_SHIELD },  /* +3 PD, timed (M41a) */
-    { "mesh",      5, "cyber",    1, 1, UEF_MESH },     /* +Wit Soak, timed (M41a) */
-    { "shock",     5, "awakened", 0, 1, UEF_SHOCK },    /* 4D spell attack (M41b) */
-    { "suppress",  5, "",         0, 1, UEF_SUPPRESS }, /* suppress the foes (M41b) */
-    { "inject",    5, "cyber",    1, 1, UEF_INJECT },   /* restore BP, self/ally (M41c) */
-    { "governor",  5, "cyber",    1, 0, UEF_PASSIVE },  /* reaction: cut a hit (M42a) */
-    { "riposte",   5, "",         0, 0, UEF_PASSIVE },  /* reaction: strike a big miss (M42b) */
-    { "defib",     5, "cyber",    1, 0, UEF_PASSIVE },  /* reaction: cheat death once (M42b) */
-    { "aegis",     5, "awakened", 0, 0, UEF_PASSIVE },  /* reaction: shield an ally (M42c) */
-    { "kinetic",   5, "cyber",    1, 0, UEF_PASSIVE },  /* +1 PD, -1 Max Grit (M42c) */
-    { "wired",     5, "cyber",    1, 0, UEF_PASSIVE },  /* +initiative bonus (M45a) */
-    { "coproc",    5, "cyber",    1, 1, UEF_EXPOSE },   /* Expose a target (M45b) */
-    { "optics",    5, "cyber",    1, 1, UEF_MARK },     /* mark a target, +1D (M45b) */
+    { "shield",    5, "awakened", 0, 1, UEF_SHIELD },  /* +3 PD, timed */
+    { "mesh",      5, "cyber",    1, 1, UEF_MESH },     /* +Wit Soak, timed */
+    { "shock",     5, "awakened", 0, 1, UEF_SHOCK },    /* 4D spell attack */
+    { "suppress",  5, "",         0, 1, UEF_SUPPRESS }, /* suppress the foes */
+    { "inject",    5, "cyber",    1, 1, UEF_INJECT },   /* restore BP, self/ally */
+    { "governor",  5, "cyber",    1, 0, UEF_PASSIVE },  /* reaction: cut a hit */
+    { "riposte",   5, "",         0, 0, UEF_PASSIVE },  /* reaction: strike a big miss */
+    { "defib",     5, "cyber",    1, 0, UEF_PASSIVE },  /* reaction: cheat death once */
+    { "aegis",     5, "awakened", 0, 0, UEF_PASSIVE },  /* reaction: shield an ally */
+    { "kinetic",   5, "cyber",    1, 0, UEF_PASSIVE },  /* +1 PD, -1 Max Grit */
+    { "wired",     5, "cyber",    1, 0, UEF_PASSIVE },  /* +initiative bonus */
+    { "coproc",    5, "cyber",    1, 1, UEF_EXPOSE },   /* Expose a target */
+    { "optics",    5, "cyber",    1, 1, UEF_MARK },     /* mark a target, +1D */
 };
 #define CS_NUNLOCKS ((int)(sizeof(cs_unlocks) / sizeof(cs_unlocks[0])))
 #define CS_GRAFT_CAP 2      /* cyberware graft slots (Cyber-Augmented hook) */
@@ -1369,7 +1369,7 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
 
     *out_down = 0;
     if (out_edge) *out_edge = 0;
-    supp = cs_geti(atk, "suppress", 0);   /* M41b: read before it is spent */
+    supp = cs_geti(atk, "suppress", 0);   /* Read before it is spent */
     cs_getstr(atk, "name", an, sizeof(an));
     cs_getstr(def, "name", dn, sizeof(dn));
     cs_getstr(weapon, "name", wn, sizeof(wn));
@@ -1380,20 +1380,20 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
     cs_skname(skprop, cs_skills[sidx].name);
     apool = cs_geti(atk, cs_skills[sidx].attr, 0) + cs_geti(atk, skprop, 0)
             + pool_mod;
-    /* M40a: Prone shifts the odds. A prone attacker is at -1D; a prone defender
+    /* Prone shifts the odds. A prone attacker is at -1D; a prone defender
      * is +1D to melee but -1D to ranged fire (rules Section 8). */
     {
         int ranged = cs_streq(skill, "firearms") || cs_streq(skill, "heavy");
 
         if (cs_geti(atk, "prone", 0)) apool -= 3;
         if (cs_geti(def, "prone", 0)) apool += ranged ? -3 : 3;
-        if (cs_geti(atk, "shaken", 0)) apool -= 3;   /* M40b: Shaken is -1D */
-        /* M41b: Suppressed is -1D on the attacker's next attack, then spent. */
+        if (cs_geti(atk, "shaken", 0)) apool -= 3;   /* Shaken is -1D */
+        /* Suppressed is -1D on the attacker's next attack, then spent. */
         if (supp) { apool -= 3; cs_seti(atk, "suppress", 0); }
-        /* M45b: Threat-Assessment Optics -- the marker gains +1D against a target
+        /* Threat-Assessment Optics -- the marker gains +1D against a target
          * it has marked (the mark is stored on the target as the marker's sheet). */
         if (cs_geti(def, "marked_by", 0) == atk) apool += 3;
-        /* M45c: a Blinded attacker is at -3D, a Held one at -1D (Section 8). */
+        /* A Blinded attacker is at -3D, a Held one at -1D (Section 8). */
         if (cs_geti(atk, "blind", 0) > 0) apool -= 9;
         if (cs_geti(atk, "held", 0)) apool -= 3;
     }
@@ -1402,7 +1402,7 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
 
     cs_recalc(def, &dd);
     pd = dd.pd + cs_cover(def) + pd_bonus;
-    /* M45b: Exposed is a tracked -2 Passive Defense on the target (Tactical
+    /* Exposed is a tracked -2 Passive Defense on the target (Tactical
      * Co-Processor sets it; the transient ambush strike still uses pd_bonus). */
     if (cs_geti(def, "exposed", 0)) pd -= 2;
 
@@ -1437,7 +1437,7 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
         cs_s(o, " and misses.");
         if (awild < 0) cs_s(o, " [GLITCH]");
         else if (awild > 0) cs_s(o, " [EDGE]");
-        /* M42b: Riposte -- a miss by 4 or more lets the defender spend a reaction
+        /* Riposte -- a miss by 4 or more lets the defender spend a reaction
          * and 1 Grit for an immediate free strike at base weapon damage. The
          * strike disallows reactions so it cannot recurse. */
         if (allow_react && (pd - aroll) >= 4 && cs_has_unlock(def, "riposte")
@@ -1450,12 +1450,12 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
         }
         return 0;
     }
-    if (out_edge && awild > 0) *out_edge = 1;   /* M41b: a Tactical Edge on a hit */
+    if (out_edge && awild > 0) *out_edge = 1;   /* A Tactical Edge on a hit */
 
     dmgpts = cs_geti(weapon, "dmg", 6);
     droll = cs_roll(dmgpts, &dwild);
     {
-        /* M42c: Empathic Aegis. A bystanding ally in the room may spend a
+        /* Empathic Aegis. A bystanding ally in the room may spend a
          * reaction and 1 Grit to add its Charm dice to this hit's Soak. It reads
          * only when reactions are allowed, so a reaction's own strike is exempt. */
         int soak = dd.soak;
@@ -1480,7 +1480,7 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
     }
     if (net < 0) net = 0;
 
-    /* M42a: Reflex Governor reaction. On a hit, the defender may spend a reaction
+    /* Reflex Governor reaction. On a hit, the defender may spend a reaction
      * and 2 Grit to roll Wit+Cybertech against the attack total, cutting this
      * hit's Net Damage by its Wit dice on a success. Fires only when reactions
      * are allowed, so a reaction's own strike cannot trigger it. */
@@ -1528,7 +1528,7 @@ cs_attack_resolve(int atk, int def, int weapon, int pool_mod, int pd_bonus,
     cs_s(o, " for ");
     cs_i(o, net);
     if (bp <= 0 && cs_has_unlock(def, "defib") && !cs_geti(def, "defib_used", 0)) {
-        /* M42b: Emergency Defibrillator -- a hit that would drop the defender to 0
+        /* Emergency Defibrillator -- a hit that would drop the defender to 0
          * BP leaves them at 1 instead, once, until a downtime repair clears the
          * burnout. The burnout flag is the limiter, so it always saves once. */
         cs_seti(def, "defib_used", 1);

@@ -1,10 +1,10 @@
 /* verb_use.c : ChromeSix consumables and maneuvers. Covers stims (restore
  * Grit, stack Crash past the safe limit) and the CP-unlock maneuvers a
  * character has learned, each spending its Grit cost as the turn's action. An
- * active unlock dispatches through the cs_unlocks catalog (M36b): its Grit cost
+ * active unlock dispatches through the cs_unlocks catalog: its Grit cost
  * and effect tag are table data, so a new maneuver is a row, not a new branch.
- * Timed self-buffs (M41a: shield, mesh), an offensive spell (M41b: shock), an
- * area debuff (M41b: suppress), and an aid action (M41c: inject) all dispatch
+ * Timed self-buffs (shield, mesh), an offensive spell (shock), an
+ * area debuff (suppress), and an aid action (inject) all dispatch
  * the same way. */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
@@ -189,7 +189,7 @@ main(void)
         }
     }
 
-    /* Any other word is an active unlock, dispatched through the catalog (M36b):
+    /* Any other word is an active unlock, dispatched through the catalog:
      * spend its Grit and, once it is your turn, apply its effect by tag. A
      * passive unlock (its effect read elsewhere) is not something you activate. */
     {
@@ -278,7 +278,7 @@ main(void)
         }
         case UEF_EXPOSE: {
             /* tactical co-processor: leave the target Exposed, a tracked -2
-             * Passive Defense read in cs_attack_resolve (M45b). */
+             * Passive Defense read in cs_attack_resolve. */
             char tn[32];
 
             cs_seti(cs_sheet(foe), "exposed", 1);

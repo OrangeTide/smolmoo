@@ -50,7 +50,7 @@ main(void)
 
     o.len = 0;
     if (ch < 0) { puts("You have no character sheet."); _exit(0); }
-    /* M55b: a character is set up once. Refuse chargen after the made marker is
+    /* A character is set up once. Refuse chargen after the made marker is
      * set, so the starting kit cannot be granted twice (cg_step resets to 0 at
      * finalize, which would otherwise let a made character re-enter and merge
      * the kit again). */
@@ -180,7 +180,7 @@ main(void)
             _exit(0);
         }
 
-        /* M55b: merge the starting kit into any progress earned before chargen,
+        /* Merge the starting kit into any progress earned before chargen,
          * rather than overwriting it. A fresh character has nothing earned (the
          * prototype leaves skills, funds, CP, and maneuvers unset, so each reads
          * 0 or empty), so it still ends with the standard kit; a character that
@@ -211,7 +211,7 @@ main(void)
         cs_itoa(buf, d.maxbp); sys_setprop(ch, "bp", buf);
         cs_itoa(buf, d.maxgrit); sys_setprop(ch, "grit", buf);
         sys_setprop(ch, "cg_step", "0");
-        sys_setprop(ch, "made", "1");   /* M43c: chargen-complete marker */
+        sys_setprop(ch, "made", "1");   /* Chargen-complete marker */
 
         puts("Character complete. 300 creds, 3 stims, 10 CP; BP and Grit at maximum.");
         puts("Type 'sheet' to view it, or spend CP now with 'train' and 'learn'.");

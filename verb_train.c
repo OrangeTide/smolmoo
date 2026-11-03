@@ -1,4 +1,4 @@
-/* verb_train.c : spend Character Points to raise a skill (M35b). A skill is
+/* verb_train.c : spend Character Points to raise a skill. A skill is
  * stored as sk_<name> points on the sheet, and its rating is the governing
  * attribute plus those points. Raising it one pip costs CP equal to the skill's
  * current rating in dice (at least one), the OpenD6 advancement rule, and is

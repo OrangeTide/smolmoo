@@ -31,7 +31,7 @@ main(void)
         puts("You have already acted this turn.");
         _exit(0);
     }
-    /* M45c: a Held combatant cannot change bands until it breaks free. */
+    /* A Held combatant cannot change bands until it breaks free. */
     if (cs_geti(sh, "held", 0)) {
         puts("You are held fast; break free first.");
         _exit(0);
@@ -107,7 +107,7 @@ main(void)
             for (i = 0; i < k; i++)
                 if (!cs_geti(cs_sheet(foes[i]), "downed", 0)) { foe = foes[i]; break; }
         if (foe <= 0) { puts("There is no one to close on."); _exit(0); }
-        /* M53b: a Shaken combatant cannot advance on the source of its fear;
+        /* A Shaken combatant cannot advance on the source of its fear;
          * it may still close on any other foe, retreat, or disengage. */
         if (cs_geti(sh, "shaken", 0)
                 && cs_geti(sh, "fear_source", 0) == cs_sheet(foe)) {

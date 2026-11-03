@@ -1,22 +1,22 @@
-/* verb_jobs.c : accept and track a job contract (M37a). A job giver is a builder
+/* verb_jobs.c : accept and track a job contract. A job giver is a builder
  * object marked `job`=1 that carries a contract in props: a `job_desc` line, a
- * goal (a `job_target` creature for a bounty, or a `job_dest` room for a courier,
- * M37c), and the reward (`job_cp`, `job_creds`, and an optional `job_standing`
+ * goal (a `job_target` creature for a bounty, or a `job_dest` room for a courier)
+ * and the reward (`job_cp`, `job_creds`, and an optional `job_standing`
  * "faction:step"). An optional `job_min` "faction:step" gates the contract behind
  * a minimum standing, read through the giver's disposition so its `disp` offset
- * can vouch for you (M38a, M38c). An optional `job_cd` cooldown in seconds keeps
- * a contract from being farmed back to back (M39c). An optional `job_need`
+ * can vouch for you. An optional `job_cd` cooldown in seconds keeps
+ * a contract from being farmed back to back. An optional `job_need`
  * names a campaign flag the character must carry on the sheet's `flags` list
  * before the contract is offered or accepted, so one contract can gate behind an
- * earlier one (M47a). An optional `job_grant` names a flag that `turnin` adds to
- * the sheet's `flags` list, the token that opens a later `job_need` contract
- * (M47b). A player holds one
+ * earlier one. An optional `job_grant` names a flag that `turnin` adds to
+ * the sheet's `flags` list, the token that opens a later `job_need` contract.
+ * A player holds one
  * job at a time, stored on the sheet as `job_giver` (the giver's id, 0 for none)
- * and `job_done` (the completion flag, set in M37b). `jobs` lists what is offered
+ * and `job_done` (the completion flag, set). `jobs` lists what is offered
  * here and your active contract, marking a gated one locked; `accept` takes one
  * you rank for; `abandon` drops it; `turnin`
  * (at the giver, once `job_done` is set) pays the reward into the sheet's `cp` and
- * `money` (M37b). The player owns the sheet, so this runs at caller authority,
+ * `money`. The player owns the sheet, so this runs at caller authority,
  * not setuid. */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
@@ -67,7 +67,7 @@ show_offer(struct cs_out *o, int giver, int ch)
         cs_s(o, cs_standing_word(need));
         cs_s(o, ")");
     }
-    /* M47a: a chain contract is locked until an earlier one grants its flag */
+    /* A chain contract is locked until an earlier one grants its flag */
     {
         char pre[32], lab[64];
 
@@ -83,7 +83,7 @@ show_offer(struct cs_out *o, int giver, int ch)
 }
 
 /* the per-giver cooldown prop on the sheet: "cd<giver id>" holds the time this
- * giver's contract can be taken again (M39c). */
+ * giver's contract can be taken again. */
 static void
 cd_name(char *dst, int giver)
 {
@@ -92,7 +92,7 @@ cd_name(char *dst, int giver)
     cs_itoa(dst + 2, giver);
 }
 
-/* M52b: breadth-first from `from` toward `goal`, following exit dest props, and
+/* Breadth-first from `from` toward `goal`, following exit dest props, and
  * copy the direction name of the first exit on a shortest path into `dir`.
  * Returns 1 when a path is found (dir set), 0 when the goal is unreachable within
  * the cap. The caller handles from == goal (already there) before calling. */
@@ -137,9 +137,9 @@ path_step(int from, int goal, char *dir, int dirlen)
     return 0;
 }
 
-/* M51b: print the active contract's briefing under a "Your job:" line -- its
+/* Print the active contract's briefing under a "Your job:" line -- its
  * objective (a bounty target, or a courier destination resolved from the
- * job_dest room id), a live objective status (M52b: the direction toward a
+ * job_dest room id), a live objective status (the direction toward a
  * courier destination, or a bounty target's standing), its reward (creds, CP,
  * an optional standing step, and any job_grant clearance), and where to report.
  * Reads the giver the sheet points to and the room graph from `room`. Returns 1
@@ -248,7 +248,7 @@ main(void)
             cs_flush(&o);
             _exit(0);
         }
-        /* M47a: refuse a chain contract until an earlier one grants its flag */
+        /* Refuse a chain contract until an earlier one grants its flag */
         {
             char pre[32];
 
@@ -295,7 +295,7 @@ main(void)
         cs_s(&o, " creds and ");
         cs_i(&o, cp);
         cs_s(&o, " CP.");
-        /* an optional standing reward, "faction:step" on the giver (M37c) */
+        /* an optional standing reward, "faction:step" on the giver */
         {
             char st[64], fac[32];
             int step;
@@ -309,7 +309,7 @@ main(void)
             }
         }
         /* an optional campaign-flag grant, the chain token this contract hands
-         * on (M47b); a later contract's job_need gates on it */
+         * on; a later contract's job_need gates on it */
         {
             char grant[32];
 
@@ -323,7 +323,7 @@ main(void)
         }
         cs_s(&o, "\n");
         /* arm this giver's cooldown, so the same contract cannot be farmed back
-         * to back (M39c); zero or absent job_cd leaves it repeatable at once. */
+         * to back; zero or absent job_cd leaves it repeatable at once. */
         {
             int cdsecs = cs_geti(giver, "job_cd", 0);
             char cd[16];
@@ -350,7 +350,7 @@ main(void)
         _exit(0);
     }
 
-    /* M52a: board -- every open contract in the district, not just this room. Walk
+    /* Board -- every open contract in the district, not just this room. Walk
      * the room graph breadth-first from here, following each room's exit `dest`
      * props and visiting each room once up to a fixed cap, and list the givers each
      * room holds through show_offer under a room header. Flush per room so a large
@@ -393,7 +393,7 @@ main(void)
         _exit(0);
     }
 
-    /* M51c: contracts -- a consolidated "what am I working on" view a player can
+    /* Contracts -- a consolidated "what am I working on" view a player can
      * call from anywhere: the active briefing, the earned clearances, and a
      * one-line standing summary, reading only the caller's own sheet. */
     if (cs_streq(verb, "contracts")) {

@@ -1,4 +1,4 @@
-/* agent_ticker.c : OLC-5 demo agent. Proves the event loop runs with no player
+/* agent_ticker.c : event-loop demo agent. Proves the event loop runs with no player
  * present: on each dwell it increments a `ticks` counter on its own object, and
  * it announces a newcomer on EV_ENTER. Launched with `@wake #N`, where #N.brain
  * names this verb; it runs under the system session, so the counter climbs even

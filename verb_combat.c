@@ -1,4 +1,4 @@
-/* verb_combat.c : spawned turn-based combat task (ChromeSix M25c).
+/* verb_combat.c : spawned turn-based combat task (ChromeSix).
  * Not typed by players; verb_attack.c spawns it by ELF hash. It owns the
  * round loop: initiative, the turn prompt, the action timeout, and NPC
  * turns. Shared state lives in cb_* props on the room object; each foe's
@@ -11,7 +11,7 @@
 #define TIMEOUT_MS  30000
 #define NPC_PACE_MS 400
 #define CP_AWARD_BASE 1     /* CP a defeated foe is worth without a cp_award */
-#define WIRED_INIT  6       /* flat initiative bonus from Wired Reflexes (M45a) */
+#define WIRED_INIT  6       /* flat initiative bonus from Wired Reflexes */
 
 /* parse the "id,id,..." roster into ids[], returning the count */
 static int
@@ -69,7 +69,7 @@ foes_up(int *ids, int n, int player)
     return c;
 }
 
-/* M35a: on a won scene, grant the player Character Points summed over the
+/* On a won scene, grant the player Character Points summed over the
  * defeated foes. Each foe is worth its `cp_award`, or a base default when it
  * names none. Called once at the resolver's win point, so a settled scene grants
  * nothing more. The player sheet is written under the task's grant. */
@@ -93,7 +93,7 @@ award_cp(int player, int *ids, int n)
     puts(cs_cstr(&o));
 }
 
-/* M37b: if the player holds a bounty and a defeated foe matches its target, mark
+/* If the player holds a bounty and a defeated foe matches its target, mark
  * the job done so it can be turned in. The target is a creature name named on the
  * job giver's `job_target`; the giver's id is on the player sheet's `job_giver`.
  * Called once at the win point, where the roster is already in hand. */
@@ -351,7 +351,7 @@ main(void)
 
     /* initiative: a Wit pool per combatant, sorted descending, and written
      * back so the roster order is the turn order for every round. Wired Reflexes
-     * (M45a) adds a flat bonus to the roll, so its holder tends to act earlier. */
+     * adds a flat bonus to the roll, so its holder tends to act earlier. */
     for (i = 0; i < n; i++) {
         int w, s = cs_sheet(ids[i]);
         init[i] = cs_roll(cs_geti(s, "wit", 0), &w);
@@ -394,7 +394,7 @@ main(void)
             int sh = cs_sheet(me);
 
             if (cs_geti(sh, "downed", 0)) continue;
-            /* Ongoing damage (M40c): bleed ticks at the start of the turn and
+            /* Ongoing damage: bleed ticks at the start of the turn and
              * can drop the combatant, who then loses the turn. */
             cs_cond_tick(sh, room);
             if (cs_geti(sh, "downed", 0)) { sys_suspend(NPC_PACE_MS); continue; }
@@ -413,7 +413,7 @@ main(void)
                 sys_suspend(NPC_PACE_MS);
                 continue;
             }
-            /* Stunned (M40b): lose this turn's action, though a reaction is still
+            /* Stunned: lose this turn's action, though a reaction is still
              * allowed. Clears here, so it costs exactly one turn. */
             if (cs_geti(sh, "stunned", 0)) {
                 struct cs_out o;
@@ -469,7 +469,7 @@ main(void)
                 sys_suspend(NPC_PACE_MS);
             }
 
-            cs_rally(sh, room);   /* M40b: a shaken combatant may shake it off */
+            cs_rally(sh, room);   /* A shaken combatant may shake it off */
 
             {
                 int social = cs_scene_social(room);
@@ -490,8 +490,8 @@ main(void)
                     o.len = 0;
                     cs_s(&o, social ? "The matter is settled." : "The fight is over.");
                     sys_broadcast(room, cs_cstr(&o));
-                    award_cp(player, ids, n);   /* M35a: CP for the win */
-                    mark_job_done(player, ids, n);  /* M37b: bounty complete */
+                    award_cp(player, ids, n);   /* CP for the win */
+                    mark_job_done(player, ids, n);  /* Bounty complete */
                     goto done;
                 }
                 /* social: the player conceding ends the scene, no penalty.
@@ -529,7 +529,7 @@ done:
          * fight early */
         sys_setprop(sh, "yielded", "0");
         sys_setprop(sh, "yield_done", "0");
-        /* M53a: end the M40/M42/M45 conditions with the scene, so a reused sheet
+        /* End the lingering conditions with the scene, so a reused sheet
          * does not carry Prone, Stun, bleed, Exposed, or Marked into its next
          * fight. Timed buffs keep their own countdown. */
         cs_clear_conditions(sh);

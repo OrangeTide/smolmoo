@@ -1,5 +1,5 @@
 /* verb_mob.c : reactive NPC behavior, run as the `on_enter` verb when a player
- * walks into the NPC's room (OLC-4). The host wakes every resident object that
+ * walks into the NPC's room. The host wakes every resident object that
  * carries a `behavior` property; this one-shot verb hands off to mob_react,
  * which reads that comma-separated list and acts on it (greet, aggro). The same
  * logic drives a woken mob agent's EV_ENTER (agent_mob.c), so the two paths

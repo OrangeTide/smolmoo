@@ -1,4 +1,4 @@
-/* verb_trip.c : trip an engaged foe Prone (M40a). A melee maneuver inside an
+/* verb_trip.c : trip an engaged foe Prone. A melee maneuver inside an
  * active fight: on your turn, an opposed roll (your Might plus Brawl against the
  * foe's better of Might or Agility) and, on a win, the foe is knocked Prone
  * (rules Section 8). It ends your turn. It writes the room and the foe's sheet,

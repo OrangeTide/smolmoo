@@ -1,4 +1,4 @@
-/* verb_yield_test.c : test fixture for the M25e on_yield hook. An NPC's
+/* verb_yield_test.c : test fixture for the on_yield hook. An NPC's
  * `on_yield` prop names this verb; verb_combat.c spawns it by ELF hash when
  * the NPC concedes, passing the NPC's object id as the argument string. It
  * reads that id back, looks up the NPC name, and broadcasts a concrete

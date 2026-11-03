@@ -1,4 +1,4 @@
-/* verb_persuade.c : ChromeSix social conflict (M25e). One program behind the
+/* verb_persuade.c : ChromeSix social conflict. One program behind the
  * four Charm approaches -- command, negotiate, con, perform -- dispatched on
  * the verb name. Opens a social scene, draws a new target into an active one,
  * or resolves a push against a target already in the scene. Runs on the same

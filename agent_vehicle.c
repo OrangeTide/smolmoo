@@ -1,4 +1,4 @@
-/* agent_vehicle.c : a vehicle that advances along a route (OLC-7). A vehicle is
+/* agent_vehicle.c : a vehicle that advances along a route. A vehicle is
  * a room object (marked `vehicle`=1) whose own `location` is its current stop
  * and whose riders have `location` = the vehicle. Woken as an agent (@wake with
  * brain = this verb), it moves itself between stops, carrying its riders:
@@ -11,14 +11,14 @@
  *                       `route`) through sys_notify.
  * `route` is a comma-separated list of stop room ids; `stop_idx` tracks the
  * current stop. Each move announces to the riders and to both platforms.
- * A vehicle may also carry a `path` (M34 slice 2): a comma-separated list of
+ * A vehicle may also carry a `path`: a comma-separated list of
  * every room it traverses in order, the stops among them plus the pass-through
  * rooms between (tunnels, track). With a `path` it walks one room per tick and
  * really occupies each, so its riders and anyone standing in a pass-through room
  * see one another go by; `path_idx` tracks its place along it. A train loops its
  * path; an elevator walks it toward the requested stop `dest` (slice 2c) and
  * blocks there. A pass-through room may also carry an `observe` list of rooms
- * visible from it (M34 slice 2b), so a rider glimpses a platform the vehicle
+ * visible from it, so a rider glimpses a platform the vehicle
  * skips and its people see it pass in the distance.
  * Setuid: moving the vehicle needs the owner's authority. */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
@@ -49,7 +49,7 @@ parse_ids(const char *s, int *out, int max)
     return n;
 }
 
-/* The tick period. While `moving` (between stops, M34) it is `transit`, the
+/* The tick period. While `moving` (between stops) it is `transit`, the
    travel time, so the loop wakes on arrival. At a stop it is `dwell`: > 0 for a
    self-paced train, <= 0 (default) for an on-command elevator that only moves on
    an EV_USER request. verbmain re-reads this each cycle, so it may change with
@@ -150,9 +150,9 @@ say(int self, const char *tail)
     sys_broadcast(self, cs_cstr(&o));
 }
 
-/* the window (M34 slice 2): show a room the vehicle can see, both ways. `room` is
+/* the window: show a room the vehicle can see, both ways. `room` is
    the vehicle's own position when `distant` is 0, or a room it only sees into
-   (M34 slice 2b, named in the position's `observe` list) when `distant` is 1.
+   (named in the position's `observe` list) when `distant` is 1.
    The room sees the vehicle go by; the riders see the room and glimpse anyone in
    it. A player avatar carries a `charid`, which tells it apart from the vehicle
    itself and from loose items. */
@@ -192,7 +192,7 @@ glimpse(int self, int room, int distant)
 
 /* the window on a pass-through room: the room the vehicle occupies, plus any
    rooms that position can see into. A pass-through room names those in an
-   `observe` list (M34 slice 2b), so a rider glimpses a platform the train skips
+   `observe` list, so a rider glimpses a platform the train skips
    and the people on it, and they see it pass in the distance. */
 static void
 window(int self, int room)
@@ -221,7 +221,7 @@ path_here(int self, int *path, int plen)
     return cs_geti(self, "path_idx", 0);
 }
 
-/* move one room along `path` from `cur` to `next` (M34 slice 2): leave the
+/* move one room along `path` from `cur` to `next`: leave the
    current station, then either open the doors at `next` (when `arrive`) or window
    past it. A pass-through room shuts the doors and shows what is outside; a stop
    opens them. The vehicle really occupies each room, so its position is a fact
@@ -266,7 +266,7 @@ advance_path(int self, int *path, int plen, int *stops, int nstops)
     step_to(self, path, stops, nstops, cur, next, arrive);
 }
 
-/* an elevator's tick (M34 slice 2c): walk one room toward the target stop `dest`
+/* an elevator's tick: walk one room toward the target stop `dest`
    (a path index), passing any intermediate stop and opening only when it lands
    on the target. Clears `dest` on arrival so the loop blocks until the next
    request. */
@@ -297,7 +297,7 @@ on_event(const struct verb_event *m)
     if (n == 0)
         return;
 
-    /* A `path` (M34 slice 2) makes the vehicle walk every room in turn, so it
+    /* A `path` makes the vehicle walk every room in turn, so it
        has a real position and its riders and the rooms it passes see each other.
        A self-paced train loops its path; an on-command elevator walks it toward
        the requested stop (slice 2c) instead of hopping. */

@@ -49,7 +49,7 @@
 enum { CONN_FREE, CONN_PENDING, CONN_SSE, CONN_STALLED, CONN_SYS };
 
 /* The reserved system session (slot 0): a connection the task loop never reaps
-   and the accept path never hands out, so autonomous agents (OLC-5) keep
+   and the accept path never hands out, so autonomous agents keep
    running with no player present. */
 #define SYS_SID 0
 
@@ -81,7 +81,7 @@ static char root_file[256] = "depot/root";
 static char head_file[256] = "depot/head";
 static char key_file[256] = "depot.key";
 
-/* Signed world history (M29). The signing key is loaded at serve start;
+/* Signed world history. The signing key is loaded at serve start;
  * head_addr/head_seq track the newest version record and are owned by the
  * save writer thread once serving begins. */
 static unsigned char server_sk[CAS_SIGN_SECKEY_LEN];
@@ -531,7 +531,7 @@ bp_max(struct obj *o)
     return m < 1 ? 1 : m;
 }
 
-/* Reset the combat block on a freshly spawned instance (OLC-2). A reset clone
+/* Reset the combat block on a freshly spawned instance. A reset clone
  * inherits its proto's properties through the parent chain, so a proto that has
  * itself been in combat would yield an instance that starts downed, wounded, or
  * dead. Restore full BP and clear every transient combat/death flag so the spawn
@@ -678,7 +678,7 @@ obj_owner_match(struct obj *o, int sid)
     return acct_owner_match(o, player_acct(sid));
 }
 
-/* M33b: per-account object quota. A non-wizard account is capped at a number of
+/* Per-account object quota. A non-wizard account is capped at a number of
  * owned persistent objects, so open building (@create/@clone/sys_create) cannot
  * march the id space toward OBJ_EPH_BASE. The cap is #0.objquota when set to a
  * positive integer, else the default, so an operator can tune it without a
@@ -1502,7 +1502,7 @@ world_save_async(void)
    server cannot build on: an instance extends only history in its own topic,
    so a head that will not open (a partial or damaged depot), one that will
    not decode, or one signed by a different key re-bases to a fresh chain at
-   the current world root (M48a, M48b). The world data is untouched; only the
+   the current world root. The world data is untouched; only the
    history chain resets. The server key must be loaded first. */
 static void
 history_load_head(void)
@@ -1947,7 +1947,7 @@ world_bootstrap(void)
  * shortfall, and marks each clone `reset_spawn` so the corpse sweep may reclaim it.
  * Idempotent: it spawns nothing once a room is full. Returns the number spawned and,
  * when `rules_out` is non-NULL, the number of rules processed. This is the shared
- * core of the @reset command, the boot reconcile, and the per-area auto-reset (M46). */
+ * core of the @reset command, the boot reconcile, and the per-area auto-reset. */
 static int
 world_reset(int filter, int *rules_out)
 {
@@ -1970,7 +1970,7 @@ world_reset(int filter, int *rules_out)
         if (rroom == OBJ_NONE || rproto == OBJ_NONE || rcount <= 0)
             continue;
         rules++;
-        /* M46c: never pop a foe into a room with a fight in progress; the rule is
+        /* Never pop a foe into a room with a fight in progress; the rule is
            counted but left for the next pass, once the scene has cleared. */
         {
             struct obj *ro = obj_find(rroom);
@@ -2442,7 +2442,7 @@ vm_authority(struct vm *vm, int *sys)
 }
 
 /* The connected player whose object is `objid`, or -1. Used to spot a player
-   walking into a room, which wakes the room's reactive NPCs (OLC-4). */
+   walking into a room, which wakes the room's reactive NPCs. */
 static int
 sid_of_player_obj(int objid)
 {
@@ -2454,7 +2454,7 @@ sid_of_player_obj(int objid)
     return -1;
 }
 
-/* Enqueue an event on task ti's mailbox (OLC-5) and wake it if it is waiting.
+/* Enqueue an event on task ti's mailbox and wake it if it is waiting.
    A full mailbox drops the oldest and counts it, so a slow agent degrades
    rather than blocking a producer. */
 static void
@@ -2494,7 +2494,7 @@ handler_task_of(int obj)
     return ti;
 }
 
-/* OLC-4 reactive mob behavior: when a player enters `room`, run each resident
+/* Reactive mob behavior: when a player enters `room`, run each resident
    NPC's `on_enter` verb as its own fire-and-forget task, bound with this = the
    NPC and player/dobj = the entering player. Only objects that carry a
    `behavior` property (their own or inherited from a prototype) are woken, so
@@ -2519,8 +2519,8 @@ mob_enter(int intruder, int room, int sid)
             continue;
         if (sid_of_player_obj(mob) >= 0)   /* a player is not a mob */
             continue;
-        /* a live agent listening on this mob gets an EV_ENTER event (OLC-5);
-           otherwise fall back to spawning its on_enter verb (OLC-4). */
+        /* a live agent listening on this mob gets an EV_ENTER event;
+           otherwise fall back to spawning its on_enter verb. */
         ti = handler_task_of(mob);
         if (ti >= 0) {
             struct host_event e;
@@ -2751,7 +2751,7 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
             return 0;
         }
         prop_set(o, make_atom("location"), val_obj(dest));
-        /* a player walking into a room wakes its reactive NPCs (OLC-4) */
+        /* a player walking into a room wakes its reactive NPCs */
         {
             int esid = sid_of_player_obj(objid);
 
@@ -2799,7 +2799,7 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
             RET(-E_INVARG);
             return 0;
         }
-        if (acct_over_quota(player_acct(vm->sid))) {   /* M33b */
+        if (acct_over_quota(player_acct(vm->sid))) {
             RET(-E_QUOTA);
             return 0;
         }
@@ -2911,7 +2911,7 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
     }
     case 21: { /* sys_getmsg(buf, len) → event type, or WAIT_TIMEOUT if the
                 * mailbox is empty. Non-blocking: an agent blocks with
-                * sys_suspend and pops here on wake (OLC-5). Event strings are
+                * sys_suspend and pops here on wake. Event strings are
                 * marshalled into the VM string area (VM_STR_ADDR), the same
                 * region as the boot args, so an agent must not rely on
                 * vm_args string pointers after its first getmsg. */
@@ -2952,7 +2952,7 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
         RET(he->type);
         return 0;
     }
-    case 22: { /* sys_listen(objid): route objid's events to this task (OLC-5) */
+    case 22: { /* sys_listen(objid): route objid's events to this task */
         int objid = (int)ARG(0);
         struct obj *o = obj_find(objid);
         int ti = task_current;
@@ -3022,7 +3022,7 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
     }
     case 27: { /* sys_now(): the current wall-clock time in seconds. A verb diffs
                 * a stored stamp against this to measure elapsed rest, a cooldown,
-                * or a decay interval (M39). Wall-clock, not monotonic, so a stamp
+                * or a decay interval. Wall-clock, not monotonic, so a stamp
                 * survives a restart. */
         RET((int)time(NULL));
         return 0;
@@ -3105,7 +3105,7 @@ task_free(int ti)
 {
     int id = tasks[ti].id;
 
-    /* clear an agent's sys_listen registration (OLC-5) */
+    /* clear an agent's sys_listen registration */
     if (tasks[ti].handler_obj) {
         struct obj *o = obj_find(tasks[ti].handler_obj);
         if (o && o->task_id == id)
@@ -4137,7 +4137,7 @@ history_head_addr(char *addr)
     return addr[0] ? 1 : 0;
 }
 
-/* ---- depot garbage collection (M30) --------------------------------
+/* ---- depot garbage collection --------------------------------
  *
  * The signed history keeps every save's root, and every changed object or
  * directory page leaves its old CAS version behind, so the depot grows
@@ -4800,7 +4800,7 @@ cmd_feedback(int sid, const char *args)
         return;
     }
 
-    /* Signed world history (M29): list the chain, or rewind to a version. */
+    /* Signed world history: list the chain, or rewind to a version. */
     if (strcmp(tag, "history") == 0) {
         cmd_history(sid);
         return;
@@ -5441,7 +5441,7 @@ cmd_feedback(int sid, const char *args)
             return;
         }
 
-        if (acct_over_quota(player_acct(sid))) {   /* M33b */
+        if (acct_over_quota(player_acct(sid))) {
             session_write(sid,
                 "You have reached your object quota; recycle something first.");
             return;
@@ -5517,7 +5517,7 @@ cmd_feedback(int sid, const char *args)
             session_write(sid, "Usage: @clone #N");
             return;
         }
-        if (acct_over_quota(player_acct(sid))) {   /* M33b */
+        if (acct_over_quota(player_acct(sid))) {
             session_write(sid,
                 "You have reached your object quota; recycle something first.");
             return;
@@ -5610,7 +5610,7 @@ cmd_feedback(int sid, const char *args)
         return;
     }
 
-    /* @wake #N : start object #N as an autonomous agent (OLC-5). #N.brain names
+    /* @wake #N : start object #N as an autonomous agent. #N.brain names
        the agent verb (a compiled program that links -lverbmain); the agent runs
        under the system session with this = #N, so it keeps ticking with no
        player present. */
@@ -5793,7 +5793,7 @@ cmd_feedback(int sid, const char *args)
             session_write(sid, "Usage: @dig <exit> to <room name | #N>");
             return;
         }
-        if (acct_over_quota(player_acct(sid))) {   /* M33b */
+        if (acct_over_quota(player_acct(sid))) {
             session_write(sid,
                 "You have reached your object quota; recycle something first.");
             return;
@@ -6172,7 +6172,7 @@ cmd_feedback(int sid, const char *args)
     session_write(sid, "Thank you, your feedback has been noted.");
 }
 
-/* M43c: greet with orientation when the account's character has not been made
+/* Greet with orientation when the account's character has not been made
  * yet (chargen sets a `made` marker on completion; the prototype defaults do not,
  * so its absence marks an untouched sheet), otherwise the returning-player
  * welcome. */
@@ -6361,7 +6361,7 @@ cmd_create_acct(int sid, const char *args)
     login_welcome(sid, acct, name);
 }
 
-/* --- M25i: death and recovery (Section 11) -------------------------------- */
+/* --- death and recovery (Section 11) -------------------------------- */
 
 #define DEATH_SWEEP_MS   2000            /* how often the death clock ticks */
 #define RECOVER_ROOM     101             /* the default recovery point */
@@ -6438,7 +6438,7 @@ death_sweep_cb(void *arg)
 #define CORPSE_SWEEP_MS  2000             /* how often fallen bodies are checked */
 static int corpse_decay_ms = 180000;      /* a fallen body's lootable span, tunable */
 
-/* Reap fallen reset-managed NPC bodies (OLC-2). A defeated NPC is left `downed`
+/* Reap fallen reset-managed NPC bodies. A defeated NPC is left `downed`
  * in its room; the reset reconcile counts it as not-live and spawns a
  * replacement, so without this the bodies pile up and the world grows without
  * bound. Each sweep arms a fresh body's decay clock, counts it down (leaving a
@@ -6499,7 +6499,7 @@ corpse_sweep_cb(void *arg)
 
 #define RESET_SWEEP_MS 2000               /* how often auto-reset areas are checked */
 
-/* Periodic auto-reset (M46b). An area (child of AREA_PARENT) that carries an
+/* Periodic auto-reset. An area (child of AREA_PARENT) that carries an
  * `autoreset` interval in seconds repopulates its rooms on its own, so a cleared
  * district comes back with no wizard @reset. Each area counts its interval down in
  * `reset_tick` (ms) and, when it elapses, reconciles just that area through
@@ -6573,7 +6573,7 @@ cmd_recover(int sid, const char *args)
     session_write(sid, b);
 }
 
-/* --- M25i ally slice: carry a body between rooms and revive it in place ---
+/* --- carry a body between rooms and revive it in place ---
  *
  * The body stays on the room floor with a `carrier` link to its bearer, and the
  * bearer keeps a `carrying` link to it; `go` drags the linked body along
@@ -6867,7 +6867,7 @@ dispatch(int sid, char *line)
 }
 
 /****************************************************************
- * Web editor (M23)
+ * Web editor
  ****************************************************************/
 
 static int
@@ -7633,7 +7633,7 @@ main(int argc, char *argv[])
     timer_init();
     /* reserve the system session (slot 0): agent tasks run under it, so the
        task loop never reaps them and the accept path never hands the slot to a
-       client (OLC-5). */
+       client. */
     cc[SYS_SID].state = CONN_SYS;
     cc[SYS_SID].obj = OBJ_NONE;
     history_init();
@@ -7649,11 +7649,11 @@ main(int argc, char *argv[])
 
     /* Re-wake agents the persistent world marks awake, so the living world
        (wandering mobs, running vehicles) resumes without a wizard re-running
-       @wake after every restart (OLC-5 boot-scan). */
+       @wake after every restart (boot-scan). */
     agent_boot_scan();
 
     /* Reconcile the seeded reset rules so the world starts populated without a
-       wizard running @reset (M46a). */
+       wizard running @reset. */
     world_reset(OBJ_NONE, NULL);
 
     /* bootstrap admin invite on first boot or --bootstrap */

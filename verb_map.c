@@ -1,9 +1,10 @@
 /* verb_map.c : draw a small ASCII map of the current room. The box is sized by
  * the room's mapw/maph (a default when unset), with an opening in the wall at
  * each exit's `dir` tag (n/s/e/w and the diagonals as wall gaps, u/d as the
- * roguelike < and > inside). A legend under the box ties each direction to its
- * exit name. This is the read-only first cut; fixed-object and character
- * overlays follow in later steps. (ChromeSix.) */
+ * roguelike < and > inside). Fixed features overlay as `*`, the viewer as `@`,
+ * and other characters as `&`. Legends under the box tie each direction to its
+ * exit name and list the features and characters. `map on`/`map off` toggles a
+ * per-player automap that redraws on room entry. (ChromeSix.) */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
 #include "chromesix_verb.h"

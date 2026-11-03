@@ -1,6 +1,6 @@
-/* verb_stand.c : recover from a condition on yourself. `stand` (M40a) clears the
- * `prone` condition (you stand with a Move). `staunch` (M40c) ends Ongoing
- * damage, clearing the `bleed` condition. `break` (M45c) frees you from a grapple,
+/* verb_stand.c : recover from a condition on yourself. `stand` clears the
+ * `prone` condition (you stand with a Move). `staunch` ends Ongoing
+ * damage, clearing the `bleed` condition. `break` frees you from a grapple,
  * clearing the `held` condition. In a fight any of them is your action for the
  * turn and ends it; out of a fight it just gets you sorted. It writes the
  * room turn state when in combat, so it is setuid and elevates through
