@@ -67,9 +67,6 @@ note, not an engineering task.
   the stim's counter model into a reusable "consumable that credits a sheet
   counter" item type. Neither is needed for builder-run stores.
 
-- **Mob idle chatter.** A `behavior` token for a timer that only broadcasts
-  a line, a trivial addition when a world wants ambient mob speech.
-
 - **Vehicle mid-transit state.** Vehicles hop stop to stop with no in-between
   state. A mid-transit position is not needed for working trains and lifts.
 

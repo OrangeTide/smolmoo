@@ -2194,6 +2194,22 @@ check_log /tmp/smolmoo_p1.log 'sentry leaves' \
 	"a woken mob patrols a route with no player (EV_TIMER)"
 curl -sf -X POST -d "$SID1 @set #$SENTRY.behavior=idle" http://localhost:$PORT/cmd >/dev/null
 
+# chatter: an idle mob says a line from its `chatter` prop (pipe-separated) to
+# its room on each tick. A single line makes the assertion deterministic. SID1
+# is still in Rove West (#$RA), so it hears the hawker.
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+HAWK=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$HAWK.name=hawker" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$HAWK.location=#$RA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$HAWK.behavior=chatter" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$HAWK.chatter=Fresh scrip, best rates." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$HAWK.dwell=200" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$HAWK.brain=#453" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @wake #$HAWK" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Fresh scrip, best rates' \
+	"a woken mob chatters on its own (EV_TIMER broadcasts a line)"
+curl -sf -X POST -d "$SID1 @set #$HAWK.behavior=idle" http://localhost:$PORT/cmd >/dev/null
+
 # reactive still works for a woken mob: EV_ENTER routes to the agent, which
 # greets. Give it a huge dwell so it does not wander during the check.
 curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null

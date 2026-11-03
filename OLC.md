@@ -149,6 +149,9 @@ prop on each `EV_TIMER` tick:
 - `patrol`: advance along the `route` prop (a list of room ids), wrapping at
   the end; `patrol` takes precedence over `wander`. `patrol_idx` tracks the
   stop.
+- `chatter`: say a random line from the `chatter` prop (lines separated by
+  `|`) to the current room. It composes with `wander` or `patrol`, so a
+  moving mob can also mutter.
 - The tick period is `dwell` ms (default 5000). A downed, dead, or fighting
   mob holds position.
 

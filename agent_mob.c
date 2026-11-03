@@ -4,8 +4,11 @@
  *   wander  -- on each tick, step through a random exit of its current room
  *   patrol  -- on each tick, advance along a fixed route (the `route` prop, a
  *              comma-separated list of room ids)
- * Both are driven by the same comma-separated `behavior` prop as the reactive
- * verbs; patrol takes precedence over wander when both are set. On EV_ENTER the
+ *   chatter -- on each tick, say a random line from the `chatter` prop (a
+ *              pipe-separated list of lines) to the current room
+ * All are driven by the same comma-separated `behavior` prop as the reactive
+ * verbs; patrol takes precedence over wander when both are set, and chatter
+ * composes with either. On EV_ENTER the
  * agent still greets/aggros through mob_react, so waking a mob does not cost it
  * the reactivity that the host would otherwise route to on_enter.
  * The tick period is the `dwell` prop in ms (default 5000). Setuid: moving the
@@ -98,6 +101,28 @@ do_patrol(int self, int room)
     mob_move(self, room, stops[idx]);
 }
 
+/* say one random line from the `chatter` prop (lines separated by `|`, since a
+ * line may contain commas) to the room. A single line with no `|` is said as
+ * is. Ambient only, so it is not setuid: it just broadcasts. */
+static void
+do_chatter(int self, int room)
+{
+    char lines[192];
+    int starts[16], n = 0, i;
+
+    cs_getstr(self, "chatter", lines, sizeof(lines));
+    if (!lines[0])
+        return;
+    starts[n++] = 0;
+    for (i = 0; lines[i] && n < 16; i++) {
+        if (lines[i] == '|') {
+            lines[i] = '\0';
+            starts[n++] = i + 1;
+        }
+    }
+    sys_broadcast(room, lines + starts[sys_random(n)]);
+}
+
 void
 on_event(const struct verb_event *m)
 {
@@ -120,6 +145,8 @@ on_event(const struct verb_event *m)
         if (cs_geti(room, "cb_active", 0) == 1)     /* hold position in a fight */
             return;
         cs_getstr(self, "behavior", beh, sizeof(beh));
+        if (has_token(beh, "chatter"))
+            do_chatter(self, room);
         if (has_token(beh, "patrol"))
             do_patrol(self, room);
         else if (has_token(beh, "wander"))
