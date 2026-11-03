@@ -1,23 +1,5 @@
 # Completed Milestones
 
-## Milestone 69: Automap on room entry
-
-The last step of the map series makes it opt-in automatic. `map on` and `map off` toggle a per-player
-`automap` flag, and when it is set the `go` verb draws the destination map on arrival, right after the
-room description. The flag lives on the player object and defaults off, so nothing changes for a player
-who does not ask for it.
-
-The `go` verb fires the map through `sys_call`, which runs the map verb as its own task. That task is
-handed the room the player just left, so the map verb was changed to read the room from the player's
-current location rather than its call context; it now always draws where the player actually is, which is
-correct for a typed `map` too. This is the one wrinkle the trigger needed. The suite grew from 577 to 580
-checks: the flag toggles on, a real `go` through an exit (not the `@go` teleport, which does not run the
-verb) draws the room just entered, and the flag toggles back off.
-
-With the map series complete, the deferred pieces remain: authored per-room ASCII art with a floor mask,
-and the global map that reflects room sizes. The `mapw`/`maph` and `dir` data authored here are the
-groundwork for that world map.
-
 ## Milestone 70: MooScript host bridges, step one
 
 The first step toward MooScript as a first-class verb language, alongside C. A MooScript verb reaches the
@@ -35,10 +17,28 @@ rather than a wizard flow, and it needs no C. The suite grew from 580 to 582 che
 default d6 and reading the announcement out of the roller's own stream.
 
 This sets the pattern for the rest: a syscall becomes available to MooScript by binding its stub (or a
-small converting wrapper) in the bridge. Still to come are `setpriv` for setuid writes, the `rollup`,
-`now`, and `getobj` reads, and a decision on the ChromeSix `cs_*` helper library, which gameplay verbs
-lean on and which is still C-only. The agents and the combat turn-loop, built on the suspend and mailbox
-model, stay in C until the runtime grows a way to express them.
+small converting wrapper) in the bridge.
+
+## Milestone 71: MooScript host bridges, step two
+
+The next four syscalls cross the bridge, which lets a MooScript verb do more than read and talk: it can
+now write shared state under its own authority. `setpriv` (grant and release of the setuid elevation),
+`now` (wall-clock seconds), `getobj` (an object-valued property read), and `rollup` (a cached sum of one
+numeric field over a containment subtree) are added. `setpriv` and `now` take only ints or nothing, so a
+verb binds their stubs directly; `getobj` and `rollup` take a string, so each gets a small wrapper that
+converts the length-prefixed MooScript string to the C string the syscall wants, with `getobj` handing
+back an object handle rather than a bare id.
+
+Two verbs prove them. `heft` (id 484) reports carried weight through `rollup(player, "weight")`, a pure
+read. `inscribe` (id 483) is setuid: it carves a timestamped, authored message into the current room and
+reads it back. It resolves the room by objref (`getobj`), brackets the write to the shared room object
+with `setpriv(1)`/`setpriv(0)`, and stamps the time with `now()`. The read-back showing the stored text
+is the proof the elevated write landed, since a player does not own the room. This is the first MooScript
+verb that writes shared state. The suite grew from 582 to 587 checks.
+
+Still to come is a decision on the ChromeSix `cs_*` helper library, which gameplay verbs lean on and
+which is still C-only. The agents and the combat turn-loop, built on the suspend and mailbox model, stay
+in C until the runtime grows a way to express them.
 
 ---
 

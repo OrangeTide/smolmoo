@@ -4089,6 +4089,22 @@ check_log /tmp/smolmoo_p1.log 'rolls a d20 and gets ' "moo: a MooScript verb bro
 curl -sf -X POST -d "$SID1 roll" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'rolls a d6 and gets ' "moo: roll defaults to a six-sided die"
 
+# --- MooScript bridges, step two (M71): heft proves the rollup bridge; inscribe
+# proves setpriv, getobj, and now. heft reports the cached weight rollup over
+# the player's subtree. inscribe resolves the room by objref (getobj), elevates
+# to write the shared room object (setpriv), and stamps the time (now): the
+# read-back showing the stored text is proof the elevated write landed, since a
+# player does not own the room. P1 is at #101 from the roll test above.
+curl -sf -X POST -d "$SID1 heft" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'You are carrying [0-9]* weight' "moo: rollup bridge reports carried weight"
+curl -sf -X POST -d "$SID1 inscribe" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Nothing is inscribed here' "moo: inscribe reads an empty room (getobj resolves the room)"
+curl -sf -X POST -d "$SID1 inscribe Kilroy was here" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'inscribes "Kilroy was here"' "moo: inscribe writes the room (setpriv elevation)"
+curl -sf -X POST -d "$SID1 inscribe" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Inscribed here: "Kilroy was here"' "moo: the inscription persisted on the room object"
+check_log /tmp/smolmoo_p1.log 'Carved [0-9]* seconds ago' "moo: now bridge stamps and diffs the time"
+
 # M48c: a foreign-signed head to plant into the isolated history instances below.
 # The @rewind, agent-persistence, and @gc tests each copy depot/, which can carry a
 # head signed by a different key (a stale depot, or a restored backup). Planting one

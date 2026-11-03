@@ -39,6 +39,8 @@ extern int sys_call(int target, const char *verb, const char *argstr,
                     int dobj, int iobj);
 extern int sys_hasverb(int target, const char *verb);
 extern int sys_broadcast(int room, const char *msg);
+extern int sys_rollup(int obj, const char *field);
+extern int sys_getobj(int obj, const char *name);
 extern int write(int fd, const void *buf, int len);
 
 static int
@@ -192,6 +194,45 @@ host_broadcast(const char *room, struct moo_str *msg)
     str_to_cstr(msg, buf, sizeof(buf));
     return sys_broadcast((int)room, buf);
 }
+
+/* Object-valued property read. sys_getobj returns the objref value of a
+ * property (such as `location`), or -1 when the property is unset or not an
+ * objref. A verb binds this as
+ *     extern host_getobj as func getobj(obj: obj, name: str) -> obj;
+ * so it hands back an object handle usable as a MooScript obj; a missing or
+ * non-objref value becomes the nil handle. This is the objref counterpart of
+ * reading obj.prop, which only yields plain values. */
+const char *
+host_getobj(const char *obj, struct moo_str *name)
+{
+    char buf[64];
+    int id;
+
+    str_to_cstr(name, buf, sizeof(buf));
+    id = sys_getobj((int)obj, buf);
+    return id > 0 ? (const char *)id : 0;
+}
+
+/* Cached subtree rollup. sys_rollup sums one numeric field over the object's
+ * whole containment subtree (the host caches and lazily recomputes it), so
+ * `rollup(sheet, "weight")` is the total carried weight. An empty field name
+ * sums object count. A verb binds this as
+ *     extern host_rollup as func rollup(obj: obj, field: str) -> int; */
+int
+host_rollup(const char *obj, struct moo_str *field)
+{
+    char buf[64];
+
+    str_to_cstr(field, buf, sizeof(buf));
+    return sys_rollup((int)obj, buf);
+}
+
+/* setpriv (grant/release, syscall 20) and now (wall-clock seconds, syscall 27)
+ * take only ints or nothing, so a verb binds their stubs directly:
+ *     extern sys_setpriv as func setpriv(on: int) -> int;
+ *     extern sys_now as func now() -> int;
+ * setpriv(1) elevates a setuid verb to its owner's authority for a shared-state
+ * write, setpriv(0) drops back (see grant_accept in mulibc.h). */
 
 void
 __moo_obj_move(const char *obj, const char *dest)

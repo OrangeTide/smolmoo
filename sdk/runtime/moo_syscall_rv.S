@@ -29,6 +29,9 @@
     .globl sys_call
     .globl sys_hasverb
     .globl sys_setpriv
+    .globl sys_rollup
+    .globl sys_getobj
+    .globl sys_now
 
 _exit:                                  /* a0=status */
     li      a7, 0
@@ -113,5 +116,20 @@ sys_hasverb:                            /* a0=target, a1=verb -> a0=0/1 */
 
 sys_setpriv:                            /* a0=on -> a0=0 ok, negative denied */
     li      a7, 20
+    ecall
+    ret
+
+sys_rollup:                             /* a0=obj, a1=field -> a0=subtree sum */
+    li      a7, 15
+    ecall
+    ret
+
+sys_getobj:                             /* a0=obj, a1=name -> a0=objref or -1 */
+    li      a7, 23
+    ecall
+    ret
+
+sys_now:                                /* -> a0=wall-clock seconds */
+    li      a7, 27
     ecall
     ret
