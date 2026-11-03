@@ -21,6 +21,11 @@ ci_eq(const char *a, const char *b)
     return *a == *b;
 }
 
+/* Containers may nest, bounded so a hand edit or a cycle cannot send a walk
+ * runaway. MAX_NEST is the deepest a contained item may sit below the holder
+ * that owns it. (ChromeSix, Section 9.) */
+#define MAX_NEST 5
+
 /* is `item` a direct child of `parent`? */
 static int
 holds(int parent, int item)
@@ -32,18 +37,81 @@ holds(int parent, int item)
     return 0;
 }
 
-/* first child of `parent` whose name matches `name`, or 0 */
+/* is `a` an ancestor of `d`, walking up `d`'s location chain? Putting a
+ * container into its own contents would make a cycle, this catches it. */
 static int
-child_named(int parent, const char *name)
+is_ancestor(int a, int d)
 {
-    int it = 0;
+    int guard = 0;
+
+    d = sys_getobj(d, "location");
+    while (d > 0 && guard++ < 64) {
+        if (d == a) return 1;
+        d = sys_getobj(d, "location");
+    }
+    return 0;
+}
+
+/* how many containers deep `x` sits: the run of container ancestors ending at
+ * `x` itself, stopping at the first non-container (a hand, a room). */
+static int
+nest_depth(int x)
+{
+    int d = 0;
+
+    while (x > 0 && cs_geti(x, "cap", 0) > 0 && d < 64) {
+        d++;
+        x = sys_getobj(x, "location");
+    }
+    return d;
+}
+
+/* the deepest container nesting within `c` (itself counted): 1 for a container
+ * holding no container, 2 for one holding a container, and so on. */
+static int
+nest_height(int c, int guard)
+{
+    int it = 0, best = 1, h;
+
+    if (guard >= MAX_NEST) return 1;
+    while ((it = sys_next(c, it)) != 0) {
+        if (cs_geti(it, "cap", 0) > 0) {
+            h = 1 + nest_height(it, guard + 1);
+            if (h > best) best = h;
+        }
+    }
+    return best;
+}
+
+/* first item at or below `parent` whose name matches, searching nested
+ * containers to a bounded depth, or 0 */
+static int
+child_named_depth(int parent, const char *name, int depth)
+{
+    int it;
     char nm[32];
 
+    if (depth <= 0) return 0;
+    it = 0;
     while ((it = sys_next(parent, it)) != 0) {
         cs_getstr(it, "name", nm, sizeof(nm));
         if (ci_eq(nm, name)) return it;
     }
+    it = 0;
+    while ((it = sys_next(parent, it)) != 0) {
+        if (cs_geti(it, "cap", 0) > 0) {
+            int r = child_named_depth(it, name, depth - 1);
+
+            if (r > 0) return r;
+        }
+    }
     return 0;
+}
+
+static int
+child_named(int parent, const char *name)
+{
+    return child_named_depth(parent, name, MAX_NEST);
 }
 
 /* an item bound to a body slot is worn or wielded; get/drop/put leave it be. */
@@ -138,8 +206,13 @@ main(void)
             puts("You can't put things in that.");
             _exit(0);
         }
-        if (item == dst || cs_geti(item, "cap", 0) > 0) {
-            puts("That won't nest inside another container.");
+        if (item == dst || is_ancestor(item, dst)) {
+            puts("You can't put a container inside itself.");
+            _exit(0);
+        }
+        if (cs_geti(item, "cap", 0) > 0
+            && nest_depth(dst) + nest_height(item, 0) > MAX_NEST) {
+            puts("That would nest too deep.");
             _exit(0);
         }
         if (cs_count(dst) >= cs_geti(dst, "cap", 0)) {

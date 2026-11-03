@@ -831,13 +831,17 @@ cs_load(int creature)
     return sys_rollup(creature, "weight");
 }
 
-/* Number of items a container holds, the count its `cap` limits. The host
- * caches it (see sys_rollup); it is the whole containment subtree, which equals
- * the direct contents while containers do not nest (Section 9). */
+/* Number of items a container holds directly, the count its `cap` limits.
+ * This counts only direct contents, not a nested container's own contents,
+ * so a container inside a container costs one slot (Section 9). */
 static int
 cs_count(int container)
 {
-    return sys_rollup(container, "");
+    int it = 0, n = 0;
+
+    while ((it = sys_next(container, it)) != 0)
+        n++;
+    return n;
 }
 
 /* Encumbrance tier: 0 unburdened, 1 encumbered (Slowed in a fight, halved

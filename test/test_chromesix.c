@@ -911,10 +911,11 @@ t_encumbrance(Test *t)
     TAP_CHECKF(t, cs_load(ME) == 15, "load=%d", cs_load(ME));
     TAP_CHECK(t, cs_encumbrance(ME) == 2);
 
-    /* item count is the same rollup: the bag holds one item, and the whole
-     * subtree under ME holds four (A, B, the bag, and C inside it) */
+    /* cs_count is direct contents only, the count a cap limits: the bag holds
+     * one (C), and ME holds three directly (A, B, the bag), with C nested in
+     * the bag not counted against ME */
     TAP_CHECKF(t, cs_count(BAG) == 1, "bag count=%d", cs_count(BAG));
-    TAP_CHECKF(t, cs_count(ME) == 4, "me count=%d", cs_count(ME));
+    TAP_CHECKF(t, cs_count(ME) == 3, "me count=%d", cs_count(ME));
 }
 
 /* M25h: room span, the deepest range band a fight can open to indoors. */

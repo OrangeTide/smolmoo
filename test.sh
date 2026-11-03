@@ -1837,6 +1837,41 @@ curl -sf -X POST -d "$SID1 drop pouch" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'Load 5/6' "the rollup follows a container's whole subtree on a move"
 
+# --- Nested containers: a container nests inside a container (Section 9) ---
+# Build six empty containers in the lobby and pick them up, then stack them.
+# A container now stows inside another, bounded to five levels deep so a hand
+# edit or a cycle cannot send a walk runaway (verb_getput.c MAX_NEST).
+for i in 1 2 3 4 5 6; do
+	curl -sf -X POST -d "$SID1 @create #300" http://localhost:$PORT/cmd >/dev/null
+	BID=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+	curl -sf -X POST -d "$SID1 @set #$BID.name=box$i" http://localhost:$PORT/cmd >/dev/null
+	curl -sf -X POST -d "$SID1 @set #$BID.cap=3" http://localhost:$PORT/cmd >/dev/null
+	curl -sf -X POST -d "$SID1 @set #$BID.location=#101" http://localhost:$PORT/cmd >/dev/null
+	curl -sf -X POST -d "$SID1 get box$i" http://localhost:$PORT/cmd >/dev/null
+done
+# Nest box2 in box1 (previously refused outright): a container is a valid item.
+curl -sf -X POST -d "$SID1 put box2 in box1" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'stow the box2' "put stows a container inside a container"
+# Deepen the stack to five levels: box1>box2>box3>box4>box5, each still legal.
+curl -sf -X POST -d "$SID1 put box3 in box2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 put box4 in box3" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 put box5 in box4" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'stow the box5' "put nests to the depth bound"
+# A sixth level exceeds the bound and is refused.
+curl -sf -X POST -d "$SID1 put box6 in box5" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'nest too deep' "put refuses nesting past the depth bound"
+# Putting box1 into one of its own descendants would make a cycle, refused.
+curl -sf -X POST -d "$SID1 put box1 in box5" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'inside itself' "put refuses a containment cycle"
+# "get X from Y" reaches through the nest: box5 sits four levels inside box1,
+# yet naming box1 as the source still finds it (child_named recurses).
+curl -sf -X POST -d "$SID1 get box5 from box1" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'take the box5 from the box1' "get from recurses into nested containers"
+# A bare get also reaches in: box4 now sits three levels inside box1, and name
+# resolution finds it without a source (obj_match_name recurses).
+curl -sf -X POST -d "$SID1 get box4" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'pick up the box4' "a bare get resolves a deeply nested item"
+
 # --- M25i: death and recovery (Section 11) ---
 # @kill is the GM entry to the death track (a Might-3D fighter almost never
 # fails all three cling rolls, so combat cannot reliably kill for a test). It is

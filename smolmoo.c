@@ -3421,6 +3421,34 @@ obj_match_player(const char *name, int sid)
     return OBJ_NONE;
 }
 
+/* How deep name resolution reaches into nested containers, matching the verb
+ * bound (verb_getput.c MAX_NEST). */
+#define CONTAINER_REACH 5
+
+/* Search a container's contents for an item named `name`, recursing into
+ * nested containers to a bounded depth. Returns the id or OBJ_NONE. */
+static int
+match_in_container(int cid, const char *name, const char *a_name,
+                   const char *a_loc, const char *a_cap, int depth)
+{
+    if (depth <= 0) return OBJ_NONE;
+    for (int j = 0; j < MAX_OBJ; j++) {
+        if (objs[j].id == OBJ_NONE) continue;
+        if (prop_objnum(&objs[j], a_loc) != cid) continue;
+        const char *n = prop_str(&objs[j], a_name);
+        if (n && strcasecmp(n, name) == 0) return objs[j].id;
+    }
+    for (int j = 0; j < MAX_OBJ; j++) {
+        if (objs[j].id == OBJ_NONE) continue;
+        if (prop_objnum(&objs[j], a_loc) != cid) continue;
+        if (prop_int(&objs[j], a_cap, 0) <= 0) continue;
+        int r = match_in_container(objs[j].id, name, a_name, a_loc, a_cap,
+                                   depth - 1);
+        if (r != OBJ_NONE) return r;
+    }
+    return OBJ_NONE;
+}
+
 /** Resolve an object name in the player's scope. */
 static int
 obj_match_name(const char *name, int sid)
@@ -3453,10 +3481,11 @@ obj_match_name(const char *name, int sid)
         if (n && strcasecmp(n, name) == 0) return 0;
     }
 
-    /* Lowest priority: reach one level into an open container (cap > 0) or a
-     * dead body resting in the room or the player's own hands. This lets you
-     * name an item inside a satchel or strip gear off a fallen body without
-     * opening it first (get/drop/put slice, chromesix-smolmoo.md Section 9). */
+    /* Lowest priority: reach into an open container (cap > 0) or a dead body
+     * resting in the room or the player's own hands. This lets you name an item
+     * inside a satchel or strip gear off a fallen body without opening it
+     * first, recursing through nested containers to a bounded depth (get/drop/
+     * put slice, chromesix-smolmoo.md Section 9). */
     const char *a_cap = make_atom("cap");
     for (int i = 0; i < MAX_OBJ; i++) {
         if (objs[i].id == OBJ_NONE) continue;
@@ -3466,12 +3495,9 @@ obj_match_name(const char *name, int sid)
             struct obj *sh = player_sheet(objs[i].id);
             if (!sh || !prop_int(sh, "dead", 0)) continue;
         }
-        for (int j = 0; j < MAX_OBJ; j++) {
-            if (objs[j].id == OBJ_NONE) continue;
-            if (prop_objnum(&objs[j], a_loc) != objs[i].id) continue;
-            const char *n = prop_str(&objs[j], a_name);
-            if (n && strcasecmp(n, name) == 0) return objs[j].id;
-        }
+        int r = match_in_container(objs[i].id, name, a_name, a_loc, a_cap,
+                                   CONTAINER_REACH);
+        if (r != OBJ_NONE) return r;
     }
     return OBJ_NONE;
 }

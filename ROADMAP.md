@@ -10,16 +10,12 @@ it.
 
 ## ChromeSix game system
 
-- **Nested containers.** Support a container inside a container. Three
-  places assume a single level and must change together: `put` refuses a
-  container as its item (`verb_getput.c`); name resolution reaches only one
-  level into a container (`obj_match_name` and the inventory flatten); and
-  `cs_count` treats a container's whole containment subtree as its `cap`
-  count, correct only while nothing nests. When nesting lands, `cap` must
-  count direct contents (a bounded `sys_rollup` depth or a direct-child
-  count), resolution must recurse to a bounded depth, and `put` must allow
-  a container while guarding against cycles and runaway depth. The weight
-  rollup (`cs_load`) already sums the full subtree and needs no change.
+Nested containers are implemented. A container may be stowed inside another:
+`cap` now counts direct contents only (`cs_count`), name resolution recurses
+into nested containers to a bounded depth (`obj_match_name` and `child_named`),
+and `put` allows a container while refusing a containment cycle or nesting past
+five levels (`verb_getput.c`, `MAX_NEST`). The weight rollup (`cs_load`) already
+summed the full subtree and was unchanged.
 
 - **Combat gear from body slots.** The sheet's `wielded`, `worn`, and
   `armor` props are still the combat source of truth. Derive the active

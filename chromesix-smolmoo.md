@@ -299,20 +299,22 @@ handled.
 **Containers.** Any worn or held item may be a container, declaring a capacity
 (`cap`, an item count). Its contents are objects located inside it and count
 against `cap`. A satchel on `back0` holds stims, magazines, and a credchip.
-Containers do not nest: a container holds items but not other containers, so
-the model stays one level deep. Nested containers are a planned extension
-(`ROADMAP.md`).
+A container may itself be stowed in another container. `cap` counts only direct
+contents, so a nested container costs one slot in its holder no matter how full
+it is. Nesting is bounded to five levels deep, a guard against a cycle or a hand
+edit sending a walk runaway, not a play limit worth reaching.
 
 **Handling loose items.** `get`, `drop`, and `put` move loose items, those with
 no body slot. `drop <item>` sets it on the room floor and `get <item>` lifts it
 back; `put <item> in <container>` stows it, refused once the container is at
-`cap`. Name resolution reaches one level past the room and the hands: into an
-open container and into a fallen body, so `get <item> from <container>` pulls
-from a satchel and `get <item> from <body>` strips a casualty's gear, clearing
-the looted slot as the item changes hands. Worn or wielded gear is not loose;
-`drop` and `put` refuse it with a reminder to `remove` it first, keeping item
-handling and the gear verbs cleanly separated. To keep the one-level view sound,
-a container does not nest inside another.
+`cap`, when it would nest past the depth bound, or when it would form a
+containment cycle. Name resolution reaches past the room and the hands into open
+containers, following the nesting to the depth bound, and into a fallen body, so
+`get <item> from <container>` pulls from a satchel or a pouch inside it and
+`get <item> from <body>` strips a casualty's gear, clearing the looted slot as
+the item changes hands. Worn or wielded gear is not loose; `drop` and `put`
+refuse it with a reminder to `remove` it first, keeping item handling and the
+gear verbs cleanly separated.
 
 **Inventory as a flatten.** The player's inventory is the object subtree
 reachable through the worn slots: the slotted items plus everything nested in
