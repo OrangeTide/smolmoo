@@ -1,22 +1,5 @@
 # Completed Milestones
 
-## Milestone 71: MooScript host bridges, step two
-
-The next four syscalls cross the bridge, which lets a MooScript verb do more than read and talk: it can
-now write shared state under its own authority. `setpriv` (grant and release of the setuid elevation),
-`now` (wall-clock seconds), `getobj` (an object-valued property read), and `rollup` (a cached sum of one
-numeric field over a containment subtree) are added. `setpriv` and `now` take only ints or nothing, so a
-verb binds their stubs directly; `getobj` and `rollup` take a string, so each gets a small wrapper that
-converts the length-prefixed MooScript string to the C string the syscall wants, with `getobj` handing
-back an object handle rather than a bare id.
-
-Two verbs prove them. `heft` (id 484) reports carried weight through `rollup(player, "weight")`, a pure
-read. `inscribe` (id 483) is setuid: it carves a timestamped, authored message into the current room and
-reads it back. It resolves the room by objref (`getobj`), brackets the write to the shared room object
-with `setpriv(1)`/`setpriv(0)`, and stamps the time with `now()`. The read-back showing the stored text
-is the proof the elevated write landed, since a player does not own the room. This is the first MooScript
-verb that writes shared state. The suite grew from 582 to 587 checks.
-
 ## Milestone 72: the ChromeSix library reaches MooScript
 
 The gameplay verbs lean on the 77-function ChromeSix helper library in `chromesix_verb.h`, which was
@@ -41,8 +24,26 @@ M43c, and short-rest tests already exercise it and still pass, so the port is fa
 from 587 to 588 checks, adding a Held-condition readout the earlier tests never produced.
 
 Still deferred: the agents and the combat turn-loop, built on the suspend and mailbox model, stay in C
-until the runtime grows a way to express them. A broader port of gameplay verbs (sheet, check) can now
-follow the `status` pattern, each adding only the `cs_moo` wrappers it needs.
+until the runtime grows a way to express them.
+
+## Milestone 73: sheet and check ported to MooScript
+
+Two more gameplay verbs follow the `status` pattern, each binding only the `cs_moo` wrappers it needs.
+`check` (`verb_check.moo`) rolls a skill check: it parses `check <skill> [tn] [push N]` in MooScript and
+crosses the bridge for the gameplay math, with new wrappers for the skill index, the push Grit spend, the
+dice pool (attribute plus rank plus push less Crash), and the roll with its wild die (returned through a
+stashed flag, since MooScript has no out-parameter). `sheet` (`verb_sheet.moo`) renders the full readout:
+the name, attributes, derived defence, resources, carry load, and conditions are built with native
+MooScript strings, while the three data-dense lines that carry their own vocabulary, the skills list and
+the faction-standing and clearance lines, are returned prebuilt by the C library through string-returning
+wrappers rather than rebuilt in MooScript. New wrappers added: `carry`, `decay`, `skill_idx`,
+`grit_push`, `skill_pool`, `roll`/`wild`, `parse_push`, and the three composite line builders.
+
+Both replace their C sources (`verb_check.c`, `verb_sheet.c`). The port needed no new tests: the existing
+M25a, chargen-render, worn-armor, push, stealth, and zero-pool checks already exercise both verbs and all
+still pass, so the suite holds at 588. With `status`, the three read-only ChromeSix display and resolution
+verbs now run in MooScript; the writers (gear, store, jobs) and the suspend-based combat loop and agents
+remain in C.
 
 ---
 
