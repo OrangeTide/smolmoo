@@ -84,6 +84,35 @@ The `@` handler routes a verb named `@tag` through `verb_dispatch` after the
 built-in tags, so a builder can add `@dig`-style commands as verbs; built-in
 tags keep priority. These commands are documented in `help.md`.
 
+## Account administration
+
+A player account is a persistent object under the Account Prototype (`#500`)
+with `name`, `pwhash`, an optional `admin` flag (wizard power), an optional
+`locked` flag, and a `character` link to its persistent character object.
+These commands manage accounts and live sessions. They are wizard-only and
+live in the core, not in a verb, because accounts, the password hash, and the
+session table are host state the verb sandbox cannot reach.
+
+- `@accounts`: list every account with its id, character id, and flags
+  (`admin`, `LOCKED`, `online`).
+- `@chars`: list each account's character by its `character` link, with the
+  character id, owning account, chargen state, and credits. It does not walk
+  `#200` directly, since that prototype also parents NPCs and live bodies.
+- `@lock <account>` / `@unlock <account>`: set or clear the `locked` flag.
+  `cmd_connect` refuses a locked account at login. Locking an account that is
+  online also disconnects it at once.
+- `@setpass <account> <newpassword>`: rehash and replace the stored password,
+  for an account that is locked out or has forgotten it.
+- `@promote <account>` / `@demote <account>`: grant or remove the `admin`
+  flag. The account flag takes effect on the next login; a live body for that
+  account is updated too, so the change applies immediately.
+- `@kick <account>`: drop an online session at once, independent of locking.
+
+To edit any other account or character field, read the object id from
+`@accounts` or `@chars` and use `@set #N.prop=value`. The password hash and
+the `admin`/`locked` flags are managed only through the commands above, never
+set by hand.
+
 ## Resets
 
 A living world is kept stocked by reset rules, an idempotent reconcile

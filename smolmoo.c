@@ -368,6 +368,25 @@ prop_set(struct obj *o, const char *name, struct value val)
     return OK;
 }
 
+/* Remove a property from an object's own prop list (not the parent chain).
+ * Order is preserved so serialization stays deterministic. Absent is OK. */
+static int
+prop_del(struct obj *o, const char *name)
+{
+    for (int i = 0; i < o->nprops; i++) {
+        if (o->props[i].name == name) {
+            rollup_note_write(o, name, o->props[i].val);
+            val_free(&o->props[i].val);
+            memmove(&o->props[i], &o->props[i + 1],
+                    (o->nprops - i - 1) * sizeof(o->props[0]));
+            o->nprops--;
+            o->dirty = 1;
+            return OK;
+        }
+    }
+    return OK;
+}
+
 static const char *
 prop_str(struct obj *o, const char *name)
 {
@@ -3878,6 +3897,8 @@ cmd_help(int sid, const char *args)
     session_write(sid, "Building: @create @set @examine @edit @view");
     session_write(sid, "          @chmod @chown @chgrp");
     session_write(sid, "Groups:   @group create|add|remove|list");
+    session_write(sid, "Admin:    @accounts @chars @lock @unlock @setpass");
+    session_write(sid, "          @promote @demote @kick");
     session_write(sid, "Feedback: @gripe @typo @bug @idea @suggest @comment");
 }
 
@@ -4774,6 +4795,258 @@ agent_boot_scan(void)
                 woke, woke == 1 ? "" : "s");
 }
 
+/* --- account and character administration (wizard-only) ----------------- */
+
+/* The online session for account `name`, or -1. A player's body carries the
+ * account name, so a name match on a live SSE session means that account is
+ * online. */
+static int
+session_for_name(const char *name)
+{
+    for (int i = 0; i < MAX_CONN; i++) {
+        const char *n;
+
+        if (cc[i].state != CONN_SSE)
+            continue;
+        n = player_name(i);
+        if (n && strcasecmp(n, name) == 0)
+            return i;
+    }
+    return -1;
+}
+
+/* Force a session off: tell the user why, announce the drop to the room, then
+ * tear the connection down. */
+static void
+session_kick(int tsid, const char *reason)
+{
+    const char *nm = player_name(tsid);
+    char b[128];
+
+    session_write(tsid, reason);
+    snprintf(b, sizeof(b), "%s has been disconnected.", nm ? nm : "Someone");
+    room_broadcast(tsid, player_room(tsid), b);
+    conn_close(tsid);
+}
+
+/* @accounts : list every player account with its id, character, and flags. */
+static void
+cmd_accounts(int sid)
+{
+    int count = 0;
+
+    if (!is_wizard(sid)) {
+        session_write(sid, "Only a wizard may @accounts.");
+        return;
+    }
+    session_write(sid, "Accounts (name #acct char flags):");
+    for (int i = 0; i < MAX_OBJ; i++) {
+        const char *nm;
+        int cid, admin, locked, online;
+        char line[160], cbuf[16];
+
+        if (objs[i].id == OBJ_NONE || objs[i].parent != ACCT_PARENT)
+            continue;
+        nm = prop_str(&objs[i], make_atom("name"));
+        cid = prop_objnum(&objs[i], make_atom("character"));
+        admin = prop_str(&objs[i], make_atom("admin")) != NULL;
+        locked = prop_str(&objs[i], make_atom("locked")) != NULL;
+        online = nm ? (session_for_name(nm) >= 0) : 0;
+        if (cid != OBJ_NONE)
+            snprintf(cbuf, sizeof(cbuf), "#%d", cid);
+        else
+            snprintf(cbuf, sizeof(cbuf), "-");
+        snprintf(line, sizeof(line), "  %-20s #%d  char %s%s%s%s",
+                 nm ? nm : "?", objs[i].id, cbuf,
+                 admin ? "  admin" : "",
+                 locked ? "  LOCKED" : "",
+                 online ? "  online" : "");
+        session_write(sid, line);
+        count++;
+    }
+    if (!count)
+        session_write(sid, "  (none)");
+}
+
+/* @chars : list each account's character, via the account's `character` link.
+ * Walking #200 directly would also hit NPCs and live bodies, which this must
+ * not, so the account link is the reliable source of player characters. */
+static void
+cmd_chars(int sid)
+{
+    int count = 0;
+
+    if (!is_wizard(sid)) {
+        session_write(sid, "Only a wizard may @chars.");
+        return;
+    }
+    session_write(sid, "Characters (name #char acct state creds):");
+    for (int i = 0; i < MAX_OBJ; i++) {
+        const char *an, *cn;
+        int cid;
+        struct obj *ch;
+        char line[160];
+
+        if (objs[i].id == OBJ_NONE || objs[i].parent != ACCT_PARENT)
+            continue;
+        an = prop_str(&objs[i], make_atom("name"));
+        cid = prop_objnum(&objs[i], make_atom("character"));
+        ch = (cid != OBJ_NONE) ? obj_find(cid) : NULL;
+        if (!ch)
+            continue;
+        cn = prop_str(ch, make_atom("name"));
+        snprintf(line, sizeof(line), "  %-20s #%d  acct %s  %s  creds %d",
+                 cn ? cn : "?", cid, an ? an : "?",
+                 prop_str(ch, make_atom("made")) ? "ready" : "unmade",
+                 prop_int(ch, "money", 0));
+        session_write(sid, line);
+        count++;
+    }
+    if (!count)
+        session_write(sid, "  (none)");
+}
+
+/* @lock <account> / @unlock <account> : block or restore login. Locking an
+ * account that is online disconnects it at once. */
+static void
+cmd_acct_lock(int sid, const char *args, int lock)
+{
+    char name[64], msg[128];
+    struct obj *acct;
+    int tsid;
+
+    if (!is_wizard(sid)) {
+        session_write(sid, lock ? "Only a wizard may @lock."
+                                : "Only a wizard may @unlock.");
+        return;
+    }
+    if (sscanf(args, "%63s", name) != 1) {
+        session_write(sid, lock ? "Lock which account?"
+                                : "Unlock which account?");
+        return;
+    }
+    acct = acct_find(name);
+    if (!acct) {
+        session_write(sid, "No such account.");
+        return;
+    }
+    if (lock) {
+        prop_set(acct, make_atom("locked"), val_str("1"));
+        tsid = session_for_name(name);
+        if (tsid >= 0 && tsid != sid)
+            session_kick(tsid,
+                "Your account has been locked by an administrator.");
+        snprintf(msg, sizeof(msg), "%s is locked.", name);
+    } else {
+        prop_del(acct, make_atom("locked"));
+        snprintf(msg, sizeof(msg), "%s is unlocked.", name);
+    }
+    session_write(sid, msg);
+}
+
+/* @setpass <account> <newpassword> : replace an account's stored hash. */
+static void
+cmd_setpass(int sid, const char *args)
+{
+    char name[64], pw[64], pwhash[PW_STR_LEN + 1], msg[128];
+    struct obj *acct;
+
+    if (!is_wizard(sid)) {
+        session_write(sid, "Only a wizard may @setpass.");
+        return;
+    }
+    if (sscanf(args, "%63s %63s", name, pw) != 2) {
+        session_write(sid, "Usage: @setpass <account> <newpassword>");
+        return;
+    }
+    acct = acct_find(name);
+    if (!acct) {
+        session_write(sid, "No such account.");
+        return;
+    }
+    if (pw_hash(pw, pwhash) != OK) {
+        session_write(sid, "Internal error hashing the password.");
+        return;
+    }
+    prop_set(acct, make_atom("pwhash"), val_str(pwhash));
+    snprintf(msg, sizeof(msg), "Password reset for %s.", name);
+    session_write(sid, msg);
+}
+
+/* @promote <account> / @demote <account> : grant or remove wizard power. The
+ * account flag takes effect on next login; a live body is updated too so the
+ * change applies at once. */
+static void
+cmd_admin_set(int sid, const char *args, int grant)
+{
+    char name[64], msg[128];
+    struct obj *acct;
+    int tsid;
+
+    if (!is_wizard(sid)) {
+        session_write(sid, grant ? "Only a wizard may @promote."
+                                 : "Only a wizard may @demote.");
+        return;
+    }
+    if (sscanf(args, "%63s", name) != 1) {
+        session_write(sid, grant ? "Promote which account?"
+                                 : "Demote which account?");
+        return;
+    }
+    acct = acct_find(name);
+    if (!acct) {
+        session_write(sid, "No such account.");
+        return;
+    }
+    if (grant)
+        prop_set(acct, make_atom("admin"), val_str("1"));
+    else
+        prop_del(acct, make_atom("admin"));
+    tsid = session_for_name(name);
+    if (tsid >= 0) {
+        struct obj *po = obj_find(cc[tsid].obj);
+
+        if (po) {
+            if (grant)
+                prop_set(po, make_atom("admin"), val_str("1"));
+            else
+                prop_del(po, make_atom("admin"));
+        }
+    }
+    snprintf(msg, sizeof(msg), "%s is %s.", name,
+             grant ? "now a wizard" : "no longer a wizard");
+    session_write(sid, msg);
+}
+
+/* @kick <account> : force an online session off (independent of locking). */
+static void
+cmd_kick(int sid, const char *args)
+{
+    char name[64], msg[128];
+    int tsid;
+
+    if (!is_wizard(sid)) {
+        session_write(sid, "Only a wizard may @kick.");
+        return;
+    }
+    if (sscanf(args, "%63s", name) != 1) {
+        session_write(sid, "Kick which account?");
+        return;
+    }
+    tsid = session_for_name(name);
+    if (tsid < 0) {
+        session_write(sid, "That account is not online.");
+        return;
+    }
+    if (tsid == sid) {
+        session_write(sid, "Use 'quit' to disconnect yourself.");
+        return;
+    }
+    session_kick(tsid, "You have been disconnected by an administrator.");
+    snprintf(msg, sizeof(msg), "%s kicked.", name);
+    session_write(sid, msg);
+}
+
 static void
 cmd_feedback(int sid, const char *args)
 {
@@ -4831,6 +5104,40 @@ cmd_feedback(int sid, const char *args)
         }
         session_write(sid, "Checking depot integrity...");
         history_fsck(sid);
+        return;
+    }
+
+    /* Account and character administration (wizard-only). */
+    if (strcmp(tag, "accounts") == 0) {
+        cmd_accounts(sid);
+        return;
+    }
+    if (strcmp(tag, "chars") == 0 || strcmp(tag, "characters") == 0) {
+        cmd_chars(sid);
+        return;
+    }
+    if (strcmp(tag, "lock") == 0) {
+        cmd_acct_lock(sid, p, 1);
+        return;
+    }
+    if (strcmp(tag, "unlock") == 0) {
+        cmd_acct_lock(sid, p, 0);
+        return;
+    }
+    if (strcmp(tag, "setpass") == 0) {
+        cmd_setpass(sid, p);
+        return;
+    }
+    if (strcmp(tag, "promote") == 0) {
+        cmd_admin_set(sid, p, 1);
+        return;
+    }
+    if (strcmp(tag, "demote") == 0) {
+        cmd_admin_set(sid, p, 0);
+        return;
+    }
+    if (strcmp(tag, "kick") == 0) {
+        cmd_kick(sid, p);
         return;
     }
 
@@ -6214,6 +6521,10 @@ cmd_connect(int sid, const char *args)
     stored = prop_str(acct, make_atom("pwhash"));
     if (!stored || pw_verify(pw, stored) != OK) {
         out_puts(sid, '!', "Wrong password.");
+        return;
+    }
+    if (prop_str(acct, make_atom("locked"))) {
+        out_puts(sid, '!', "Account locked. Contact an administrator.");
         return;
     }
     for (int i = 0; i < MAX_CONN; i++) {

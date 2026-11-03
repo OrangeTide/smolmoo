@@ -4392,6 +4392,85 @@ check_log /tmp/smolmoo_a.log 're-woke' \
 kill $ASRV $AP1 2>/dev/null || true
 rm -rf "$ADEP" "$ADEP.key" /tmp/smolmoo_a.log /tmp/smolmoo_a_p.log
 
+# --- M83: account and character admin commands (wizard-only) ---
+# @accounts/@chars list players, @lock/@unlock gate login, @setpass resets a
+# password, @promote/@demote toggle wizard power, and @kick drops a live
+# session. These touch accounts, the password hash, and the session table, none
+# of which the verb sandbox can reach, so they live in the core. Run on the main
+# server as TestPlayer1 (the bootstrap admin) against a throwaway account.
+curl -sf -X POST -d "$SID1 @accounts" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'TestPlayer1.*admin' "@accounts lists accounts with flags"
+curl -sf -X POST -d "$SID1 @chars" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Characters (name' "@chars lists characters"
+
+# mint a fresh single-use invite and stand up a throwaway non-admin account
+_before=$(grep -c 'New code:' /tmp/smolmoo_p1.log 2>/dev/null || echo 0)
+curl -sf -X POST -d "$SID1 @invite new" http://localhost:$PORT/cmd >/dev/null
+_i=0
+while [ $_i -lt $OUTCOME_TRIES ]; do
+	_now=$(grep -c 'New code:' /tmp/smolmoo_p1.log 2>/dev/null || echo 0)
+	if [ "$_now" -gt "$_before" ]; then break; fi
+	sleep 0.05
+	_i=$((_i + 1))
+done
+AINV=$(grep -o 'New code: [A-Z0-9-]*' /tmp/smolmoo_p1.log | tail -1 | sed 's/New code: //')
+curl -sN http://localhost:$PORT/events > /tmp/smolmoo_p4.log &
+P4=$!
+SID4=$(wait_sid /tmp/smolmoo_p4.log)
+curl -sf -X POST -d "$SID4 create AdminTarget passA $AINV" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p4.log 'data: +' "throwaway account created"
+
+# a non-admin is refused the admin commands
+curl -sf -X POST -d "$SID4 @accounts" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p4.log 'Only a wizard' "@accounts is refused to a non-admin"
+
+# @kick drops the live session
+curl -sf -X POST -d "$SID1 @kick AdminTarget" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'AdminTarget kicked' "@kick reports the drop"
+check_log /tmp/smolmoo_p4.log 'disconnected by an administrator' "@kick notifies the kicked session"
+
+# @lock disconnects a live session now and refuses the next login
+curl -sN http://localhost:$PORT/events > /tmp/smolmoo_p4b.log &
+P4B=$!
+SID4B=$(wait_sid /tmp/smolmoo_p4b.log)
+curl -sf -X POST -d "$SID4B connect AdminTarget passA" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p4b.log 'data: +' "throwaway reconnects after a kick"
+curl -sf -X POST -d "$SID1 @lock AdminTarget" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'AdminTarget is locked' "@lock reports"
+check_log /tmp/smolmoo_p4b.log 'locked by an administrator' "@lock disconnects the live session"
+curl -sN http://localhost:$PORT/events > /tmp/smolmoo_p4c.log &
+P4C=$!
+SID4C=$(wait_sid /tmp/smolmoo_p4c.log)
+curl -sf -X POST -d "$SID4C connect AdminTarget passA" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p4c.log 'Account locked' "a locked account cannot log in"
+curl -sf -X POST -d "$SID1 @unlock AdminTarget" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'AdminTarget is unlocked' "@unlock reports"
+curl -sf -X POST -d "$SID4C connect AdminTarget passA" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p4c.log 'data: +' "an unlocked account logs in again"
+
+# @setpass resets the password: kick, then the new password connects
+curl -sf -X POST -d "$SID1 @setpass AdminTarget passB" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Password reset for AdminTarget' "@setpass reports"
+curl -sf -X POST -d "$SID1 @kick AdminTarget" http://localhost:$PORT/cmd >/dev/null
+curl -sN http://localhost:$PORT/events > /tmp/smolmoo_p4d.log &
+P4D=$!
+SID4D=$(wait_sid /tmp/smolmoo_p4d.log)
+curl -sf -X POST -d "$SID4D connect AdminTarget passB" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p4d.log 'data: +' "the new password works after @setpass"
+
+# @promote / @demote toggle wizard power on the live session at once
+curl -sf -X POST -d "$SID1 @promote AdminTarget" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'AdminTarget is now a wizard' "@promote reports"
+curl -sf -X POST -d "$SID4D @accounts" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p4d.log 'Accounts (name' "a promoted live session gains wizard power"
+curl -sf -X POST -d "$SID1 @demote AdminTarget" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'AdminTarget is no longer a wizard' "@demote reports"
+curl -sf -X POST -d "$SID4D @accounts" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p4d.log 'Only a wizard' "a demoted live session loses wizard power"
+
+kill $P4 $P4B $P4C $P4D 2>/dev/null || true
+rm -f /tmp/smolmoo_p4.log /tmp/smolmoo_p4b.log /tmp/smolmoo_p4c.log /tmp/smolmoo_p4d.log
+
 # --- M30: depot garbage collection (@gc) ---
 # Isolated instance: build several versions so there is superseded garbage,
 # then collect it down to the newest version and confirm the world survives.
