@@ -4080,6 +4080,15 @@ check_log /tmp/smolmoo_p1.log '\[ The Maintenance Shed \]' "automap: entering a 
 curl -sf -X POST -d "$SID1 map off" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'Automap off' "automap: the setting toggles off"
 
+# --- MooScript roll verb (M70): proves a MooScript verb can reach the room
+# (broadcast) and use randomness (random) through the new host bridges. The roll
+# is announced to the whole room, so the roller's own session sees it.
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 roll 20" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'rolls a d20 and gets ' "moo: a MooScript verb broadcasts to the room"
+curl -sf -X POST -d "$SID1 roll" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'rolls a d6 and gets ' "moo: roll defaults to a six-sided die"
+
 # M48c: a foreign-signed head to plant into the isolated history instances below.
 # The @rewind, agent-persistence, and @gc tests each copy depot/, which can carry a
 # head signed by a different key (a stale depot, or a restored backup). Planting one

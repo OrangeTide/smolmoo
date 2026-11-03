@@ -1,22 +1,5 @@
 # Completed Milestones
 
-## Milestone 68: Character overlay
-
-The map now shows who is in the room. Each character is placed at a random free cell and drawn in the
-box, the viewer as `@` and everyone else as `&`, with a Here legend naming each and its cell. A placement
-is stored on the character and tagged with the room (`mapx`/`mapy`/`maproom`), so a redraw keeps everyone
-where they were, and it is assigned lazily the first time the room is drawn after a character arrives.
-Tagging the position with the room is what lets movement need no hook: a position left over from another
-room is simply replaced on the next draw.
-
-Lazy placement is a write to a shared object, so `verb_map.c` becomes setuid and brackets its work with
-`grant_accept`, the first write the map verb has needed. A character is told apart from a loose item by
-having a sheet: a `charid`, or attributes inherited from the character prototype, which a scenery item
-does not have. Placement runs after the fixed features are drawn, so a character never lands on a feature,
-and two passes keep stored positions stable: the first honours a still-free stored cell, the second
-places whoever is left. The suite grew from 574 to 577 checks, repopulating the Gnaw with its vermin pack
-and reading the viewer and a vermin out of the Here legend.
-
 ## Milestone 69: Automap on room entry
 
 The last step of the map series makes it opt-in automatic. `map on` and `map off` toggle a per-player
@@ -34,6 +17,28 @@ verb) draws the room just entered, and the flag toggles back off.
 With the map series complete, the deferred pieces remain: authored per-room ASCII art with a floor mask,
 and the global map that reflects room sizes. The `mapw`/`maph` and `dir` data authored here are the
 groundwork for that world map.
+
+## Milestone 70: MooScript host bridges, step one
+
+The first step toward MooScript as a first-class verb language, alongside C. A MooScript verb reaches the
+host only through the bridge in `sdk/runtime/host_vm.c`, which exposed property access, object moves, and
+verb calls but none of the gameplay syscalls. Two of the most-used are added here: `broadcast` (room
+output) and `random` (dice). `random` binds straight to the `sys_random` stub the runtime already
+carries; `broadcast` needs a small wrapper (`host_broadcast`) because MooScript hands strings as a
+length-prefixed value and `sys_broadcast` wants a C string. A verb binds them with the alias form, for
+example `extern host_broadcast as func broadcast(room: obj, msg: str) -> int`.
+
+The proof is a real verb: `roll`, written in MooScript (`verb_roll.moo`), rolls a die and announces it to
+the room. `roll` alone is a d6, `roll <sides>` a d<sides>, clamped to a sane range, the result broadcast
+to everyone in the room including the roller. It is the first MooScript verb that is a gameplay command
+rather than a wizard flow, and it needs no C. The suite grew from 580 to 582 checks, rolling a d20 and a
+default d6 and reading the announcement out of the roller's own stream.
+
+This sets the pattern for the rest: a syscall becomes available to MooScript by binding its stub (or a
+small converting wrapper) in the bridge. Still to come are `setpriv` for setuid writes, the `rollup`,
+`now`, and `getobj` reads, and a decision on the ChromeSix `cs_*` helper library, which gameplay verbs
+lean on and which is still C-only. The agents and the combat turn-loop, built on the suspend and mailbox
+model, stay in C until the runtime grows a way to express them.
 
 ---
 

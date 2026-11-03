@@ -38,6 +38,7 @@ extern int sys_recycle(int obj);
 extern int sys_call(int target, const char *verb, const char *argstr,
                     int dobj, int iobj);
 extern int sys_hasverb(int target, const char *verb);
+extern int sys_broadcast(int room, const char *msg);
 extern int write(int fd, const void *buf, int len);
 
 static int
@@ -174,6 +175,22 @@ const char *
 obj_of(int id)
 {
     return id > 0 ? (const char *)id : 0;
+}
+
+/* Room output for MooScript. A verb binds this as
+ *     extern host_broadcast as func broadcast(room: obj, msg: str) -> int;
+ * and calls broadcast(room, text). MooScript hands strings as a length-prefixed
+ * moo_str, so convert to the C string sys_broadcast wants; the obj handle is the
+ * room id carried as a pointer, as everywhere in this bridge. Returns the number
+ * of listeners reached. The line reaches everyone in the room, the caller
+ * included (room_broadcast excludes only the connection it is told to). */
+int
+host_broadcast(const char *room, struct moo_str *msg)
+{
+    char buf[256];
+
+    str_to_cstr(msg, buf, sizeof(buf));
+    return sys_broadcast((int)room, buf);
 }
 
 void
