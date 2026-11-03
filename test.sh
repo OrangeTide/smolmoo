@@ -2455,6 +2455,48 @@ curl -sf -X POST -d "$SID1 @sleep #$CAR" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$CAR.route=" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #$HUB" http://localhost:$PORT/cmd >/dev/null
 
+# --- M84: mid-transit position via a single `track` room (no full path) ---
+# A simple line (route + transit, no path) that names one `track` room rides
+# there while under way instead of teleporting to the destination, so it is
+# absent from both platforms until it arrives. Build a tram at the hub with one
+# track room, board it, and request a floor; it should occupy the track while
+# moving, refuse disembark with the doors shut, then pull in to the stop.
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+TRK=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$TRK.name=the track" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #100" http://localhost:$PORT/cmd >/dev/null
+TRAM=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$TRAM.name=tram" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$TRAM.description=A single tram car." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$TRAM.vehicle=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$TRAM.location=#$HUB" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$TRAM.route=$HUB,$L2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$TRAM.track=#$TRK" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$TRAM.transit=2500" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$TRAM.brain=#456" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 board tram" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @wake #$TRAM" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 floor 2" http://localhost:$PORT/cmd >/dev/null
+# catch it mid-transit: it should sit in the track room, not at either platform
+_mi=0; while [ $_mi -lt 80 ]; do
+	curl -sf -X POST -d "$SID1 @examine #$TRAM" http://localhost:$PORT/cmd >/dev/null
+	grep -q 'moving = "1"' /tmp/smolmoo_p1.log && break
+	sleep 0.05; _mi=$((_mi + 1))
+done
+check_log /tmp/smolmoo_p1.log "location = #$TRK" \
+	"a track-mode vehicle rides the tunnel while under way"
+curl -sf -X POST -d "$SID1 disembark" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'doors are closed' \
+	"disembark is refused while the tram is under way"
+check_log /tmp/smolmoo_p1.log 'tram arrives at Level Two' \
+	"a track-mode vehicle pulls in to its stop after the transit"
+curl -sf -X POST -d "$SID1 disembark" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'steps off the tram' \
+	"the rider steps off once the tram has arrived"
+curl -sf -X POST -d "$SID1 @sleep #$TRAM" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$TRAM.route=" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$HUB" http://localhost:$PORT/cmd >/dev/null
+
 # --- M39a: short rest recovers BP over time in a safe room (Section 8) ---
 # BP climbs back toward its maximum while a character sits in a `safe` room out
 # of a fight, computed lazily on a sheet read. Tune the rest period short so the

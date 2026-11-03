@@ -268,6 +268,13 @@ carries them with it.
   moves them out to the vehicle's current stop.
 - `route` is a comma-separated list of stop room ids; `stop_idx` tracks the
   current stop; `dwell` is the tick period for a timed vehicle.
+- `transit` ms > 0 gives a leg travel time: the vehicle shuts its doors
+  (`moving` set, board/disembark/floor/call refused) and arrives on the next
+  tick instead of hopping instantly. For a real mid-transit position, a simple
+  line sets one `track` room and rides there while under way, so it is absent
+  from both platforms until it pulls in; a richer line sets a full `path`
+  (every room it traverses, stops and pass-throughs) and occupies each in
+  turn. With neither, it waits out the transit parked at the destination.
 - The vehicle agent (`agent_vehicle.c`, `__transit`, named by the vehicle's
   `brain`, started with `@wake`) advances the vehicle and announces each
   move. A train is self-paced (`dwell` > 0 advances one stop per tick); an

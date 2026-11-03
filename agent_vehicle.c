@@ -20,6 +20,11 @@
  * blocks there. A pass-through room may also carry an `observe` list of rooms
  * visible from it, so a rider glimpses a platform the vehicle
  * skips and its people see it pass in the distance.
+ * A simpler line that wants an in-between position without authoring a full
+ * `path` sets `track` to one tunnel room: with a positive `transit` it rides
+ * there while under way (doors shut, absent from both platforms) and pulls in
+ * to the destination on the arrival tick. Without a `track` it waits out the
+ * transit at the destination, the original behavior.
  * Setuid: moving the vehicle needs the owner's authority. */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
@@ -108,29 +113,42 @@ announce_arrive(int self, int stop)
 }
 
 /* begin a move to `stop`. With a positive `transit` the vehicle departs, rides
-   to the stop with its doors shut (`moving` set), and opens on the next tick;
-   otherwise it is the old instant hop. */
+   with its doors shut (`moving` set), and opens on the next tick; otherwise it
+   is the old instant hop. A line that sets a `track` room (one tunnel between
+   its stops) rides there while under way, so it is absent from both platforms
+   until it arrives, a real mid-transit position without a full `path`. Without
+   a `track` it waits at the destination with the doors shut, as before. */
 static void
 go_to(int self, int stop)
 {
     int from = sys_getobj(self, "location");
+    int track;
 
     if (stop <= 0 || stop == from)
         return;
     grant_accept();
     announce_depart(self, from);
-    sys_move(self, stop);
-    if (cs_geti(self, "transit", 0) > 0)
+    if (cs_geti(self, "transit", 0) > 0) {
+        track = sys_getobj(self, "track");      /* objref prop, or -1 if unset */
+        cs_seti(self, "dest_stop", stop);       /* remember where we land */
+        sys_move(self, track > 0 ? track : stop);
         cs_seti(self, "moving", 1);             /* doors shut; open next tick */
-    else
+    } else {
+        sys_move(self, stop);
         announce_arrive(self, stop);            /* instant: open now */
+    }
 }
 
-/* the arrival tick: open the doors at the current stop and leave transit */
+/* the arrival tick: pull in to the destination (from the track room, if the
+   line uses one), open the doors, and leave transit. */
 static void
 open_doors(int self)
 {
+    int dest = cs_geti(self, "dest_stop", 0);
+
     grant_accept();
+    if (dest > 0 && sys_getobj(self, "location") != dest)
+        sys_move(self, dest);
     cs_seti(self, "moving", 0);
     announce_arrive(self, sys_getobj(self, "location"));
 }

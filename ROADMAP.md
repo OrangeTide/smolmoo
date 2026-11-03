@@ -56,18 +56,22 @@ note, not an engineering task.
 
 ## Online creation (OLC)
 
-- **Generic `@clone`.** The current clone copies a known property list,
-  which covers the common cases. A clone that copies arbitrary properties,
-  including list-valued ones, cannot be written purely in the VM today
-  (`getprop` is by-name and `sys_next` walks containment, not property
-  keys). World objects do not use list-valued properties, so this is low
-  priority.
-
-- **Vehicle mid-transit state.** Vehicles hop stop to stop with no in-between
-  state. A mid-transit position is not needed for working trains and lifts.
-
 By decision, timed `@reset` restocking is not planned: resets are
 on-demand, and a live world is topped up by running `@reset`.
+
+Vehicle mid-transit state is implemented. A line sets a `transit` travel time
+and either one `track` room (the simple case) or a full `path` of the rooms it
+traverses; while under way it occupies that room, doors shut and absent from
+both platforms, and pulls in to the destination on arrival. The maglev line
+off the cargo bay (vehicle `#940`) is a worked example in the shipped world.
+
+Generic `@clone` is complete. It copies every property with its permission
+flags, and the only value type it skips, a list, cannot occur on a world
+object: verb `setprop` stores strings only, object serialization persists only
+strings and object references, and no host path sets a list property. An
+object therefore holds string and object-reference properties alone, both of
+which `@clone` already copies. Nothing is left to generalize unless
+list-valued properties first become a persisted, first-class type.
 
 ## Engine
 

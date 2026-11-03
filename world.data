@@ -1726,3 +1726,47 @@ fixed=1
 mapx=8
 mapy=1
 weight=999
+
+#937 #100
+owner=#0
+name=Maglev Platform
+description=A short maglev platform off the cargo bay, a single gate open to the line.
+
+#938 #100
+owner=#0
+name=The Maglev Line
+description=The maglev tube, lights streaking past in the dark as the car runs between stops.
+
+#939 #100
+owner=#0
+name=Dockside Halt
+description=A spare halt at the far end of the maglev line, down among the dock cranes.
+
+#940 #100
+owner=#0
+name=maglev
+description=The maglev tram car, one clean carriage with grab rails and a route map.
+location=#937
+vehicle=1
+route=937,939
+track=#938
+transit=8000
+dwell=30000
+brain=#456
+awake=1
+
+#941 #100
+owner=#0
+name=platform
+description=A maglev platform opens off the cargo bay, east.
+location=#125
+dest=937
+dir=e
+
+#942 #100
+owner=#0
+name=cargobay
+description=Back out to the cargo bay.
+location=#937
+dest=125
+dir=w
