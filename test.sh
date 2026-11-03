@@ -4017,6 +4017,13 @@ curl -sf -X POST -d "$SID1 @go #127" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 get scrap wire" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'pick up the scrap wire' "items: craft loot picks up off the floor"
 
+# --- Fixed objects (M65): scenery that cannot be picked up. A `fixed` prop on
+# an item makes get refuse it, so room features (the wall autodoc, machines)
+# stay put. This is the groundwork for drawing fixed features on the room map.
+curl -sf -X POST -d "$SID1 @go #122" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 get autodoc" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'fixed in place' "fixed: get refuses a fixed scenery object"
+
 # M48c: a foreign-signed head to plant into the isolated history instances below.
 # The @rewind, agent-persistence, and @gc tests each copy depot/, which can carry a
 # head signed by a different key (a stale depot, or a restored backup). Planting one

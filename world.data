@@ -529,6 +529,7 @@ location=#122
 clinic=1
 treat_fee=40
 weight=999
+fixed=1
 
 #321 #300
 owner=#0

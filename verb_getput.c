@@ -221,6 +221,7 @@ main(void)
 
     if (item <= 0) { puts("You don't see that here."); _exit(0); }
     if (is_creature(item)) { puts("You can't pick that up."); _exit(0); }
+    if (cs_geti(item, "fixed", 0)) { puts("That is fixed in place."); _exit(0); }
     if (holds(self, item)) { puts("You already have that."); _exit(0); }
     cs_getstr(item, "name", nm, sizeof(nm));
     grant_accept();

@@ -1,26 +1,5 @@
 # Completed Milestones
 
-## Milestone 63: The Warrens combat area
-
-The Warrens is a combat area reached through a breach in the Underdeck sump (#129), the first zone built
-for free-fighting rather than contracts. There are no job givers; the draw is Character Points, which the
-combat engine already awards for any win (`award_cp`, each foe worth its `cp_award`, default one). The
-zone proves out multi-mob spawn points and a mob grade ladder as pure seed content on the existing reset
-and combat verbs, with no core-server change.
-
-Three spawn points populate the zone on the area's autoreset: the Gnaw keeps a pack of three `vermin`
-(mook grade, downed by any hit, one CP each), the Flooded Run a `lurker` (tough, two CP), and the Brood
-Nest the `broodmother` (tough, mig 9, four CP), the per-mob `cp_award` tuning the reward to the grade. A
-reset rule keeps up to `count` live clones of its proto in its room and skips any room with a fight in
-progress, so `count=3` is what makes the Gnaw a pack. The zone is 19 seed objects: four rooms wired by
-eight exits, three mob prototypes, the area, and its three reset rules.
-
-The suite grew from 540 to 546 checks. The block reaches the zone from the sump, fires the spawn points
-and confirms each room populated its mob by name through `@contents`, then clears the pack and the lurker
-and asserts the player's CP rose, proving kills pay out. This is also the first content added under the
-standing preference to build new behavior as a sandbox verb before the core server: it needed neither,
-being content over mechanics the engine already has.
-
 ## Milestone 64: Item catalogue and consumable buffs
 
 This fills out the item world with a wide spread of gear on the verbs the engine already carries, plus one
@@ -44,6 +23,18 @@ soak onto the sheet, stows an item in a container, and drives each buff item: a 
 spray set their timed sheet buffs, a medkit restores body points from one, and a second use of a spent
 item confirms it was consumed. Armour soak stays single-valued on the sheet (the last-worn piece wins), a
 known engine limit left untouched here.
+
+## Milestone 65: Fixed objects
+
+The first step toward a per-room map: scenery that cannot be carried off. An item with a `fixed` prop is
+refused by the floor path of the `get` verb (verb_getput.c), so a room feature like the wall-mounted
+autodoc stays put instead of being pocketed. The change is one guard in the verb and one prop on the
+autodoc seed object; no core-server change. This also closes a small gap where a heavy fixture could be
+picked up despite its weight.
+
+Fixed objects are the groundwork for the room map that follows: the map draws the room's immovable
+features at their positions, so the world first needs a way to mark an object as a feature rather than
+loose loot. The suite grew by one check, confirming `get` refuses the fixed autodoc.
 
 ---
 
