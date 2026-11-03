@@ -1134,6 +1134,22 @@ curl -sf -X POST -d "$SID3 @go #101" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID3 buy cola from dispenser" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'You buy the cola for 5 creds. Balance 95' "a non-admin completes a purchase (own-sheet write, no wizard)"
 
+# sell: the inverse of buy. A store buys back only if it sets `buyback` (percent
+# of the item's base price). TestPlayer3's cola is store-owned stock, so selling
+# it back proves the setuid move (the player does not own it) plus the own-sheet
+# credit at caller authority. buyback 50 of a 5-cred cola is 2 creds, so the
+# balance goes 95 -> 97.
+curl -sf -X POST -d "$SID1 @set #$MACH.buyback=50" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 sell cola to dispenser" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'You sell the cola for 2 creds. Balance 97' "a non-admin sells store-owned stock back (setuid move, own-sheet credit)"
+# an item the player does not carry is refused
+curl -sf -X POST -d "$SID1 sell widget to dispenser" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'no such thing to sell' "sell refuses an item not carried"
+# a store with no buyback does not buy
+curl -sf -X POST -d "$SID1 @set #$MACH.buyback=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 sell cola to dispenser" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'vendor is not buying' "a store without buyback refuses to buy"
+
 # --- M35b: spend CP to raise a skill (train) ---
 # Raising a skill costs CP equal to its current rating in dice and is capped at
 # attribute + 6 skill points, like creation. Combat is done by here, so nudging

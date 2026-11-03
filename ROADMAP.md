@@ -63,9 +63,10 @@ note, not an engineering task.
   keys). World objects do not use list-valued properties, so this is low
   priority.
 
-- **Store `sell` verb.** Players selling back to a store, plus generalizing
-  the stim's counter model into a reusable "consumable that credits a sheet
-  counter" item type. Neither is needed for builder-run stores.
+- **Consumable-counter item type.** Generalize the stim's counter model (a
+  dose that credits a sheet counter rather than carrying an object) into a
+  reusable item type, so a world can add other counter consumables without
+  C changes. The `buy`/`sell` verbs already special-case the stim counter.
 
 - **Vehicle mid-transit state.** Vehicles hop stop to stop with no in-between
   state. A mid-transit position is not needed for working trains and lifts.

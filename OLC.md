@@ -116,14 +116,19 @@ in through the `@` commands or the web editor.
   buyer and drawing its price off their creds. With no `from` the store is
   the room's `vendor` NPC; a named `from` resolves an object in the room, so
   a vending machine is the same model without an NPC.
+- `sell <item> [to <store>]` is the inverse: a priced item the player carries
+  moves into the store and credits the player. A store buys back only if it
+  sets a `buyback` percent of the item's base price; the standing shift favors
+  the seller. Equipped gear must be removed first.
 - Faction pricing (`cs_standing`) shifts the price ten percent per standing
   step from the store's `faction`, and Hostile or worse refuses the sale.
 - A reset rule with the store as its `room` restocks it.
 - The stim stays a sheet counter, not an object. A store sells it by setting
-  a `stim` base price; only a store that opts in dispenses stims.
+  a `stim` base price, and buys it back if it also sets `buyback`; only a
+  store that opts in dispenses stims.
 
-`buy` is setuid and elevates only for the stock move, then charges the
-buyer's own creds unelevated; `list` is not setuid.
+`buy` and `sell` are setuid and elevate only for the stock move, then write
+the player's own creds unelevated; `list` is not setuid.
 
 ## Mobs
 
