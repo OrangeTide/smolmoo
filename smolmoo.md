@@ -33,7 +33,7 @@ these primitives live in `chromesix.md` and `chromesix-smolmoo.md`.
 The event loop and all VM execution run on one `select(2)` thread. The single
 exception is world save: a background writer thread does the fsync-durable store
 off the loop, fed a bounded queue of snapshots so the main loop never blocks on
-disk (Milestone 26). Parallelizing VM execution itself is not done. The workload
+disk. Parallelizing VM execution itself is not done. The workload
 does split into I/O-bound work (the HTTP server) and CPU-bound work (RV32 VM
 execution), and the `rv_run(cpu, N)` model would make preemption natural (run N
 instructions, return to the I/O thread, repeat), but bounded quanta on the one
@@ -210,9 +210,7 @@ The syscall table is small:
    25  sys_taskid     the current task's id
    26  sys_notify     deliver an EV_USER (with a string arg) to an object's agent
 
-Numbers 1-3 and 5 are unused: an earlier file-descriptor event model (open,
-close, read, and a `sys_wait` multiplexer) was removed once the OLC-5 mailbox
-(`sys_listen`/`sys_getmsg`) replaced it.
+Numbers 1-3 and 5 are unused and reserved.
 
 `sys_getobj(obj, name)` returns the object id stored in an objref property (for
 example `location` or `dest`), or -1 if the property is missing or not an

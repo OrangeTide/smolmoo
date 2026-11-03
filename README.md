@@ -391,12 +391,8 @@ at most two saves are ever outstanding.
 
 This signed, verifiable history is the local half of what the CAS and
 signing foundation makes possible. The networked half, federation across
-servers (publishing the world root as a signed topic, peering by hash,
-and off-site backup followers), is deferred to a distant future by
-decision. It amounts to a new networked subsystem, and it is not
-interesting until a server carries hundreds of active players, so it is
-gated by server maturity rather than explored ahead of that. See FUTURE.md for
-that menu and the full rationale.
+servers, is deferred; see `FUTURE.md` for that menu and its rationale, and
+`ROADMAP.md` for other planned work.
 
 ## Browser UI
 
@@ -561,10 +557,12 @@ and `dm.c` is the commented version.
   in-game `#0.help` object, so `help` lists them and `help <topic>` prints one.
 - `chromesix-smolmoo.md`: the ChromeSix game mechanics and its game-specific
   commands (combat, gear, skills).
-- `FUTURE.md`: the deferred feature menu (federation, packing, asset store)
-  and the rationale for each.
-- `OLC.md`: the online-creation design record. How builders create areas,
-  rooms, items, NPCs, stores, and vehicles in-game, mostly as verbs.
+- `ROADMAP.md`: planned and deferred work across the game system, OLC, and
+  the engine.
+- `FUTURE.md`: the federation and storage directions (peering, packing, asset
+  store) and the rationale for each.
+- `OLC.md`: online creation. How builders create areas, rooms, items, NPCs,
+  stores, and vehicles in-game, mostly as verbs.
 - [Mini Six: Bare Knuckle Edition](http://www.antipaladingames.com/p/mini-six.html)
 - [Mini Six: Bare Bones Edition](https://www.drivethrurpg.com/en/product/144558/mini-six-bare-bones-edition)
 </content>
