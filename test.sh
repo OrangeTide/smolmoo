@@ -4024,6 +4024,23 @@ curl -sf -X POST -d "$SID1 @go #122" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 get autodoc" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'fixed in place' "fixed: get refuses a fixed scenery object"
 
+# --- Room map (M66): the `map` verb draws the room shape from mapw/maph and
+# cuts an opening in the wall at each exit's `dir` tag, with a legend tying
+# direction to exit name. The Warrens (#174) is authored at 11x5 with exits
+# west (gnaw), south (run), and up (sump); the Gnaw (#175) uses the default
+# size with one east exit, proving the default box.
+curl -sf -X POST -d "$SID1 @go #174" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 map" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '\[ The Warrens \]' "map: headers the current room"
+check_log /tmp/smolmoo_p1.log '+-----------+' "map: draws the authored 11-wide box"
+check_log /tmp/smolmoo_p1.log 'west: gnaw' "map: legends a west exit by name"
+check_log /tmp/smolmoo_p1.log 'south: run' "map: legends a south exit by name"
+check_log /tmp/smolmoo_p1.log 'up: sump' "map: legends an up exit by name"
+curl -sf -X POST -d "$SID1 @go #175" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 map" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log '+---------+' "map: a room without mapw draws the default box"
+check_log /tmp/smolmoo_p1.log 'east: warrens' "map: legends the default room's exit"
+
 # M48c: a foreign-signed head to plant into the isolated history instances below.
 # The @rewind, agent-persistence, and @gc tests each copy depot/, which can carry a
 # head signed by a different key (a stale depot, or a restored backup). Planting one

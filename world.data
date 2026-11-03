@@ -1128,6 +1128,8 @@ area=#927
 owner=#0
 name=The Warrens
 description=A maintenance undergrid below the sump, pipes sweating in the dark and the floor slick with runoff. Things live down here. Crawlways lead off to a gnawed hollow and a flooded run.
+mapw=11
+maph=5
 
 #175 #100
 owner=#0
@@ -1150,6 +1152,7 @@ name=warrens
 description=A rusted grate kicked out of the sump wall, a crawlway dropping into the dark below.
 location=#129
 dest=174
+dir=d
 
 #179 #100
 owner=#0
@@ -1157,6 +1160,7 @@ name=sump
 description=Back up through the grate into the sump.
 location=#174
 dest=129
+dir=u
 
 #180 #100
 owner=#0
@@ -1164,6 +1168,7 @@ name=gnaw
 description=A low crawlway into the gnawed hollow.
 location=#174
 dest=175
+dir=w
 
 #181 #100
 owner=#0
@@ -1171,6 +1176,7 @@ name=warrens
 description=Back out to the warrens.
 location=#175
 dest=174
+dir=e
 
 #182 #100
 owner=#0
@@ -1178,6 +1184,7 @@ name=run
 description=A flooded passage sloping down into black water.
 location=#174
 dest=176
+dir=s
 
 #183 #100
 owner=#0
@@ -1185,6 +1192,7 @@ name=warrens
 description=Back out to the warrens.
 location=#176
 dest=174
+dir=n
 
 #184 #100
 owner=#0
@@ -1192,6 +1200,7 @@ name=nest
 description=A clogged pipe-mouth into the brood nest.
 location=#176
 dest=177
+dir=s
 
 #185 #100
 owner=#0
@@ -1199,6 +1208,7 @@ name=run
 description=Back out to the flooded run.
 location=#177
 dest=176
+dir=n
 
 #240 #200
 owner=#0
