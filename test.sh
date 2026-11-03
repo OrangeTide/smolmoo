@@ -4055,6 +4055,18 @@ curl -sf -X POST -d "$SID1 map" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'autodoc at (0,0)' "map: first-fits a feature with no authored coordinates"
 check_log /tmp/smolmoo_p1.log 'southeast: concourse' "map: every exit now carries a heading"
 
+# --- Character overlay (M68): the map places each character in the room at a
+# random free cell, stored per character (tagged with the room) so redraws are
+# stable; the viewer is drawn @ and others &, both named with their cell in a
+# Here legend. The Gnaw (#175) is repopulated with its vermin pack so the map
+# shows the viewer and at least one other character.
+curl -sf -X POST -d "$SID1 @go #175" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @reset #930" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 map" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Here:' "map: lists the characters in the room"
+check_log /tmp/smolmoo_p1.log '(you) at (' "map: places and marks the viewer"
+check_log /tmp/smolmoo_p1.log 'vermin at (' "map: places another character in the room"
+
 # M48c: a foreign-signed head to plant into the isolated history instances below.
 # The @rewind, agent-persistence, and @gc tests each copy depot/, which can carry a
 # head signed by a different key (a stale depot, or a restored backup). Planting one

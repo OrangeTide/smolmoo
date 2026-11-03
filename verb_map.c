@@ -45,6 +45,26 @@ dir_glyph(const char *d)
     return '+';
 }
 
+/* Pick a random free interior cell (a ' ' not taken by a wall, marker, feature
+ * or character). Returns 1 with *pr,*pc set, or 0 when the floor is full. */
+static int
+free_cell(char grid[][MAP_W_MAX + 2], int w, int h, int *pr, int *pc)
+{
+    int r, c, n = 0, pick;
+
+    for (r = 1; r <= h; r++)
+        for (c = 1; c <= w; c++)
+            if (grid[r][c] == ' ') n++;
+    if (n == 0) return 0;
+    pick = sys_random(n);
+    if (pick < 0) pick = 0;
+    if (pick >= n) pick = n - 1;
+    for (r = 1; r <= h; r++)
+        for (c = 1; c <= w; c++)
+            if (grid[r][c] == ' ' && pick-- == 0) { *pr = r; *pc = c; return 1; }
+    return 0;
+}
+
 /* The grid cell a dir tag marks on a box of `rows` x `cols`. Returns 1 and sets
  * *r,*c (plus *vert for the u/d interior stair markers) for a known dir. */
 static int
@@ -70,14 +90,18 @@ int
 main(void)
 {
     int room = vm_args->room;
+    int me = vm_args->player;
     int w = cs_geti(room, "mapw", MAP_W_DEF);
     int h = cs_geti(room, "maph", MAP_H_DEF);
-    int rows, cols, r, c, it;
+    int rows, cols, r, c, it, k;
     char grid[MAP_H_MAX + 2][MAP_W_MAX + 2];
     char line[MAP_W_MAX + 3];
     char nm[48];
     struct cs_out o;
     int fid[16], fx[16], fy[16], nf = 0;      /* fixed-feature overlay records */
+    int cid[16], cx[16], cy[16], cself[16], nc = 0;   /* character overlay records */
+
+    grant_accept();   /* lazily stores a map position on each character here */
 
     if (w < 3) w = 3;
     if (w > MAP_W_MAX) w = MAP_W_MAX;
@@ -142,6 +166,49 @@ main(void)
         fid[nf++] = it;
     }
 
+    /* collect the characters in the room: a child that is not an exit and has a
+     * sheet (a charid, or attributes inherited from the character prototype). */
+    it = 0;
+    while ((it = sys_next(room, it)) != 0 && nc < 16) {
+        if (cs_geti(it, "dest", 0) > 0) continue;
+        if (cs_geti(it, "charid", -1) < 0 && cs_geti(it, "mig", 0) <= 0) continue;
+        cid[nc] = it;
+        cx[nc] = -1;
+        cy[nc] = -1;
+        cself[nc] = (it == me);
+        nc++;
+    }
+    /* pass A: honour a stored position tagged for this room while its cell is
+     * still free, so a character keeps its spot across redraws. */
+    for (k = 0; k < nc; k++) {
+        int mx, my;
+
+        if (cs_geti(cid[k], "maproom", -1) != room) continue;
+        mx = cs_geti(cid[k], "mapx", -1);
+        my = cs_geti(cid[k], "mapy", -1);
+        if (mx >= 0 && my >= 0 && mx < w && my < h && grid[my + 1][mx + 1] == ' ') {
+            grid[my + 1][mx + 1] = cself[k] ? '@' : '&';
+            cx[k] = mx;
+            cy[k] = my;
+        }
+    }
+    /* pass B: place the rest at random in a free cell and store it, tagged with
+     * this room. Lazy placement means movement needs no hook: a position tagged
+     * with another room is simply replaced the next time the room is drawn. */
+    for (k = 0; k < nc; k++) {
+        int pr, pc;
+
+        if (cx[k] >= 0) continue;
+        if (free_cell(grid, w, h, &pr, &pc)) {
+            grid[pr][pc] = cself[k] ? '@' : '&';
+            cs_seti(cid[k], "mapx", pc - 1);
+            cs_seti(cid[k], "mapy", pr - 1);
+            cs_seti(cid[k], "maproom", room);
+            cx[k] = pc - 1;
+            cy[k] = pr - 1;
+        }
+    }
+
     /* header, then the box row by row */
     cs_getstr(room, "name", nm, sizeof(nm));
     o.len = 0;
@@ -190,6 +257,30 @@ main(void)
                 cs_i(&o, fx[k]);
                 cs_s(&o, ",");
                 cs_i(&o, fy[k]);
+                cs_s(&o, ")");
+            } else {
+                cs_s(&o, " (no room)");
+            }
+            puts(cs_cstr(&o));
+        }
+    }
+
+    /* who-is-here legend: each character, the viewer marked, and its cell */
+    if (nc > 0) {
+        char cn[32];
+
+        puts("Here:");
+        for (k = 0; k < nc; k++) {
+            cs_getstr(cid[k], "name", cn, sizeof(cn));
+            o.len = 0;
+            cs_s(&o, "  ");
+            cs_s(&o, cn);
+            if (cself[k]) cs_s(&o, " (you)");
+            if (cx[k] >= 0) {
+                cs_s(&o, " at (");
+                cs_i(&o, cx[k]);
+                cs_s(&o, ",");
+                cs_i(&o, cy[k]);
                 cs_s(&o, ")");
             } else {
                 cs_s(&o, " (no room)");

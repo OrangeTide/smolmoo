@@ -1,21 +1,5 @@
 # Completed Milestones
 
-## Milestone 66: The room map verb
-
-The `map` command draws a small ASCII map of the current room. It is a read-only sandbox verb
-(`verb_map.c`), not a core-server change: it reads the room's `mapw`/`maph` to size a bordered box (a
-default when unset, so every room maps) and the new `dir` tag on each exit to cut an opening in the wall
-at that exit's heading. The four cardinal and four diagonal headings become wall gaps; `u` and `d` drop
-the roguelike `<` and `>` inside. A legend under the box ties each direction to its exit name, so the
-shape shows where an exit lies and the legend says which exit it is. Exits are told apart from items and
-characters in the room by carrying a `dest`.
-
-The exit model gained one field. Exits were named children with only a `dest`; a `dir` tag now gives each
-a heading, authored here across the Warrens zone (the hub at #174 sized 11x5, with west, south, and up
-exits) and reusable later for directional movement and a world map. The suite grew from 562 to 569
-checks, drawing the authored hub and a default-sized room and reading back the box width and the exit
-legend. Fixed-object and character overlays, plus an opt-in automap on room entry, build on this next.
-
 ## Milestone 67: Fixed-object overlay
 
 The map now draws a room's fixed features inside the box. A feature with an authored `mapx`/`mapy` sits
@@ -41,6 +25,23 @@ Every exit in the world now carries a `dir` heading, not just the Warrens zone, 
 returns south), the concourse hub spreading its ten exits across all eight compass points plus up and
 down. The suite grew from 569 to 574 checks, drawing the authored pump position, the first-fit autodoc,
 an exit rendered as a door in the wall, and a fully-headed exit legend.
+
+## Milestone 68: Character overlay
+
+The map now shows who is in the room. Each character is placed at a random free cell and drawn in the
+box, the viewer as `@` and everyone else as `&`, with a Here legend naming each and its cell. A placement
+is stored on the character and tagged with the room (`mapx`/`mapy`/`maproom`), so a redraw keeps everyone
+where they were, and it is assigned lazily the first time the room is drawn after a character arrives.
+Tagging the position with the room is what lets movement need no hook: a position left over from another
+room is simply replaced on the next draw.
+
+Lazy placement is a write to a shared object, so `verb_map.c` becomes setuid and brackets its work with
+`grant_accept`, the first write the map verb has needed. A character is told apart from a loose item by
+having a sheet: a `charid`, or attributes inherited from the character prototype, which a scenery item
+does not have. Placement runs after the fixed features are drawn, so a character never lands on a feature,
+and two passes keep stored positions stable: the first honours a still-free stored cell, the second
+places whoever is left. The suite grew from 574 to 577 checks, repopulating the Gnaw with its vermin pack
+and reading the viewer and a vermin out of the Here legend.
 
 ---
 
