@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}} &middot; {{SITE_TITLE}}</title>
+<meta name="description" content="{{ABSTRACT}}">
+<link rel="stylesheet" href="{{ROOT}}/static/css/site.css">
+<link rel="alternate" type="application/rss+xml" title="{{SITE_TITLE}}" href="{{ROOT}}/feed.xml">
+</head>
+<body class="page">
+<nav class="top-bar">
+  <a class="back-link" href="{{ROOT}}/">&larr; {{SITE_TITLE}}</a>
+</nav>
+
+<article>
+  <header class="page-header">
+    <p class="page-category">{{CATEGORY}}</p>
+    <h1>{{TITLE}}</h1>
+    <p class="page-meta">
+      <time datetime="{{DATE}}">{{DATE_DISPLAY}}</time>
+      {{REVISED}}
+    </p>
+  </header>
+
+  <div class="page-body">
+{{BODY}}
+  </div>
+</article>
+
+{{TOC}}
+
+<footer class="bottom-bar">
+  <span>{{SITE_TITLE}}</span>
+</footer>
+</body>
+</html>

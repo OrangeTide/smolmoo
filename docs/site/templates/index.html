@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{SITE_TITLE}}</title>
+<meta name="description" content="{{TAGLINE}}">
+<link rel="stylesheet" href="static/css/site.css">
+{{FEED_HEAD}}
+</head>
+<body class="home">
+<header class="site-header">
+  <h1 class="site-title">{{SITE_TITLE}}</h1>
+  <p class="site-tagline">{{TAGLINE}}</p>
+</header>
+
+<main>
+  <!-- gen-index.sh -m list fills this with <li class="entry"> elements,
+       -m cards with <a class="card"> elements. Either works inside this
+       container; the stylesheet handles both. -->
+  <ul class="entry-list card-grid">
+{{ITEMS}}
+  </ul>
+</main>
+
+<footer class="bottom-bar">
+  <span>{{SITE_TITLE}}</span>
+  {{FEED_LINK}}
+</footer>
+</body>
+</html>
