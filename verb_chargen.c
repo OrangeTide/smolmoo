@@ -193,7 +193,17 @@ main(void)
             sys_setprop(ch, pn, buf);
         }
         cs_itoa(buf, cs_geti(ch, "money", 0) + 300); sys_setprop(ch, "money", buf);
-        cs_itoa(buf, cs_geti(ch, "stims", 0) + 3);   sys_setprop(ch, "stims", buf);
+        /* Starting kit: a stack of 3 stim doses, carried as one object (a child
+         * of the stim prototype #309, inheriting its buff/amount/crash). Loose
+         * gear rides on the player body (self), not the sheet object (ch). */
+        {
+            int stim = sys_create(309);
+
+            if (stim > 0) {
+                sys_setprop(stim, "qty", "3");
+                sys_move(stim, self);
+            }
+        }
         cs_itoa(buf, cs_geti(ch, "cp", 0) + 10);     sys_setprop(ch, "cp", buf);
         if (!cs_list_has(ch, "maneuvers", "smartlink")) {
             char mv[128];

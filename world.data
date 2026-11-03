@@ -126,8 +126,13 @@ weight=1
 #309 #300
 owner=#0
 name=stim
-description=A single-use combat stim.
+description=A combat stim. A dose jolts Grit back; overuse stacks Crash.
 location=#308
+buff=grit
+amount=2
+crash=1
+price=75
+weight=0
 
 #310 #300
 owner=#0
@@ -338,7 +343,6 @@ name=quartermaster
 description=A supply broker running a stall for the Combine.
 location=#101
 faction=combine
-stim=75
 
 #214 #200
 owner=#0
@@ -533,7 +537,6 @@ owner=#0
 name=clerk
 description=A bored supply clerk behind the wire, chewing a stim stick.
 location=#123
-stim=75
 
 #320 #300
 owner=#0
@@ -766,7 +769,6 @@ owner=#0
 name=dealer
 description=A hard-eyed salvage dealer behind a crate-stall, everything priced to move.
 location=#128
-stim=90
 
 #228 #200
 owner=#0
@@ -1299,6 +1301,27 @@ room=#177
 proto=#242
 count=1
 area=#930
+
+#934 #910
+owner=#0
+name=quartermaster stim stock
+room=#213
+proto=#309
+count=5
+
+#935 #910
+owner=#0
+name=supply clerk stim stock
+room=#220
+proto=#309
+count=5
+
+#936 #910
+owner=#0
+name=salvage dealer stim stock
+room=#227
+proto=#309
+count=5
 
 #329 #300
 owner=#0

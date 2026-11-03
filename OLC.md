@@ -106,12 +106,14 @@ wounded.
 
 ## Stores and vending machines
 
-`verb_store.c` (bound to `buy` and `list`) drives stores from a data model
-that needs no schema: a store is any object holding priced item objects
+`verb_store.c` (bound to `buy`, `sell`, and `list`) drives stores from a data
+model that needs no schema: a store is any object holding priced item objects
 (`price > 0`) in its contents. A builder stocks it by moving priced items
 in through the `@` commands or the web editor.
 
 - `list [from <store>]` shows the stock at the standing-adjusted price.
+  Identical-named items fold into one `name (xN)` line, so a shelf of restocked
+  doses reads as a single count.
 - `buy <item> [from <store>]` sells one instance, moving the object to the
   buyer and drawing its price off their creds. With no `from` the store is
   the room's `vendor` NPC; a named `from` resolves an object in the room, so
@@ -122,13 +124,35 @@ in through the `@` commands or the web editor.
   the seller. Equipped gear must be removed first.
 - Faction pricing (`cs_standing`) shifts the price ten percent per standing
   step from the store's `faction`, and Hostile or worse refuses the sale.
-- A reset rule with the store as its `room` restocks it.
-- The stim stays a sheet counter, not an object. A store sells it by setting
-  a `stim` base price, and buys it back if it also sets `buyback`; only a
-  store that opts in dispenses stims.
+- A reset rule with the store as its `room` restocks it. Stacking consumables
+  (the stim) are stocked this way, as ordinary priced objects; see Consumables.
 
 `buy` and `sell` are setuid and elevate only for the stock move, then write
-the player's own creds unelevated; `list` is not setuid.
+the player's own creds unelevated; `list` is not setuid. Selling a stacked
+consumable spends one dose off the stack (no object changes hands), so the
+move and its elevation are skipped.
+
+## Consumables
+
+A consumable is a carried item the `use` verb (`verb_use.c`) spends for an
+effect. The effect is item data, so a new consumable is a seed object, not a
+code branch.
+
+- `buff` names the effect and `amount` its magnitude: `grit` restores Grit,
+  `heal` restores BP, `shield` and `mesh` raise a timed ward. An unknown tag
+  does nothing and is not spent.
+- `qty` makes the item a stack of doses. A use decrements the count and recycles
+  the item at zero, so several doses ride on one object, not one object per
+  dose. Without `qty` the item is single-use.
+- `crash` marks a consumable whose overuse taxes the body (the stim, rules
+  Section 8): each use past the safe limit (Might dice) stacks Crash, tracked
+  per kind in a `<name>_load` sheet counter.
+
+In a fight a dose costs the turn; out of combat it is free. The stim is the
+built-in example, a child of the stim prototype (`#309`) carrying
+`buff=grit amount=2 crash=1`. Chargen grants a stack of three, and stores sell
+more as ordinary priced stock. `inventory` lists loose consumables with their
+count.
 
 ## Mobs
 

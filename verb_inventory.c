@@ -120,5 +120,29 @@ main(void)
         cs_s(&o, "\n");
         cs_flush(&o);
     }
+
+    /* loose items carried in hand (no slot): consumables and ungeared gear. A
+     * stack of doses shows its count, so a consumable held as one qty-object
+     * reads the way the old stim counter did. */
+    {
+        int any = 0;
+
+        o.len = 0;
+        it = 0;
+        while ((it = sys_next(me, it)) != 0) {
+            char slot[16];
+            int qty;
+
+            cs_getstr(it, "slot", slot, sizeof(slot));
+            if (slot[0]) continue;
+            cs_getstr(it, "name", nm, sizeof(nm));
+            cs_s(&o, any ? ", " : "carrying: ");
+            cs_s(&o, nm);
+            qty = cs_geti(it, "qty", 0);
+            if (qty > 1) { cs_s(&o, " (x"); cs_i(&o, qty); cs_s(&o, ")"); }
+            any = 1;
+        }
+        if (any) { cs_s(&o, "\n"); cs_flush(&o); }
+    }
     _exit(0);
 }

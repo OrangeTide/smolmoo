@@ -1,5 +1,6 @@
-/* verb_use.c : ChromeSix consumables and maneuvers. Covers stims (restore
- * Grit, stack Crash past the safe limit) and the CP-unlock maneuvers a
+/* verb_use.c : ChromeSix consumables and maneuvers. Covers carried consumables
+ * (a buff tag and amount, an optional qty for a stack of doses, and an optional
+ * crash tag for the stim's overuse rule) and the CP-unlock maneuvers a
  * character has learned, each spending its Grit cost as the turn's action. An
  * active unlock dispatches through the cs_unlocks catalog: its Grit cost
  * and effect tag are table data, so a new maneuver is a row, not a new branch.
@@ -100,54 +101,33 @@ main(void)
     while (arg[i] && arg[i] != ' ' && i < 15) { word[i] = arg[i]; i++; }
     word[i] = '\0';
 
-    if (cs_streq(word, "stim") || cs_streq(word, "stims")) {
-        /* Using a stim in a fight spends your action, so it is gated like any
-         * turn action. Out of combat it is a free bookkeeping move. */
-        infight = (cs_geti(room, "cb_active", 0) == 1);
-        if (infight && !turn_ok(room, self, &infight)) _exit(0);
-
-        crashed = cs_stim_use(sh);
-        if (crashed < 0) { puts("You have no stims left."); _exit(0); }
-
-        cs_getstr(sh, "name", nm, sizeof(nm));
-        if (infight) {
-            cs_s(&o, nm);
-            cs_s(&o, " jabs a stim -- Grit surges back.");
-            if (crashed) cs_s(&o, " The overload bites: Crash worsens.");
-            sys_broadcast(room, cs_cstr(&o));
-            cs_end_turn(room);
-        } else {
-            cs_s(&o, "You jab a stim. Grit surges back (+2).");
-            if (crashed)
-                cs_s(&o, "\nThat was one too many -- Crash stacks (-1D on all "
-                         "pools until you rest).");
-            cs_s(&o, "\n");
-            cs_flush(&o);
-        }
-        _exit(0);
-    }
-
-    /* A buff item is a loose consumable carried in hand: `use <item>` applies
-     * its effect and spends the item. The effect tag and magnitude are item
-     * data (buff/amount), so a new consumable is a seed object, not a branch
-     * here; the effects reuse sheet fields the engine already reads (grit, bp,
-     * and the timed shield/mesh self-buffs). In a fight it costs the turn like
-     * a stim; out of combat it is free. */
+    /* A consumable is a loose item carried in hand: `use <item>` applies its
+     * effect and spends one dose. The effect tag and magnitude are item data
+     * (buff/amount), so a new consumable is a seed object, not a branch here;
+     * the effects reuse sheet fields the engine already reads (grit, bp, and
+     * the timed shield/mesh self-buffs). An item with a `qty` holds several
+     * doses: a use decrements the count and recycles the item at zero, so a
+     * stack of doses is one object, not one object per dose. An item tagged
+     * `crash` stacks Crash when overused past the safe limit (the stim rule,
+     * rules Section 8, generalized). In a fight a dose costs the turn; out of
+     * combat it is free. */
     {
         int it = buff_item_named(self, arg);
 
         if (it > 0) {
             struct cs_derived d;
             char tag[16];
-            int amt, consumed = 1;
+            int amt, qty, consumed = 1;
 
             infight = (cs_geti(room, "cb_active", 0) == 1);
             if (infight && !turn_ok(room, self, &infight)) _exit(0);
 
             cs_getstr(it, "buff", tag, sizeof(tag));
             amt = cs_geti(it, "amount", 1);
+            qty = cs_geti(it, "qty", 0);
             cs_getstr(it, "name", nm, sizeof(nm));
             cs_recalc(sh, &d);
+            crashed = 0;
             cs_s(&o, "You use the ");
             cs_s(&o, nm);
             if (cs_streq(tag, "grit")) {
@@ -177,11 +157,23 @@ main(void)
                 cs_s(&o, " does nothing.");
                 consumed = 0;
             }
-            if (consumed) sys_recycle(it);
+            if (consumed && cs_geti(it, "crash", 0)) {
+                crashed = cs_overuse(sh, nm);
+                if (crashed) cs_s(&o, " The overload bites: Crash worsens.");
+            }
+            if (consumed) {
+                if (qty > 1) cs_seti(it, "qty", qty - 1);
+                else sys_recycle(it);
+            }
             if (infight && consumed) {
                 sys_broadcast(room, cs_cstr(&o));
                 cs_end_turn(room);
             } else {
+                if (consumed && qty > 1) {
+                    cs_s(&o, " (");
+                    cs_i(&o, qty - 1);
+                    cs_s(&o, " left)");
+                }
                 cs_s(&o, "\n");
                 cs_flush(&o);
             }

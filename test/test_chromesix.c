@@ -387,36 +387,34 @@ t_push(Test *t)
     TAP_CHECK(t, cs_parse_push(buf) == 0 && strcmp(buf, "raider") == 0);
 }
 
-/* Stims: restore 2 Grit capped at max, spend a dose, and stack Crash once
- * the dose count passes the safe limit (Might dice). */
+/* Overuse: a consumable tagged `crash` (the stim) tracks a per-kind load
+ * counter and stacks Crash once the count passes the safe limit (Might dice).
+ * The Grit restore and dose accounting live in the use verb; the library owns
+ * only this overuse rule. */
 static void
-t_stim(Test *t)
+t_overuse(Test *t)
 {
     props_clear();
-    /* Might 3 -> 1 die safe; Wit/Charm 0 -> maxgrit 3. */
+    /* Might 3 -> 1 die safe. */
     seti(1, "mig", 3);
-    seti(1, "grit", 0);
-    seti(1, "stims", 3);
 
-    TAP_CHECK(t, cs_stim_use(1) == 0);                 /* dose 1: safe */
-    TAP_CHECKF(t, cs_geti(1, "grit", -1) == 2, "grit=%d", cs_geti(1, "grit", -1));
-    TAP_CHECK(t, cs_geti(1, "stims", -1) == 2);
+    TAP_CHECK(t, cs_overuse(1, "stim") == 0);          /* use 1: safe */
+    TAP_CHECK(t, cs_geti(1, "stim_load", -1) == 1);
     TAP_CHECK(t, cs_geti(1, "crash", 0) == 0);
     TAP_CHECK(t, cs_crash_penalty(1) == 0);
 
-    TAP_CHECK(t, cs_stim_use(1) == 1);                 /* dose 2: past limit */
-    TAP_CHECKF(t, cs_geti(1, "grit", -1) == 3, "cap=%d", cs_geti(1, "grit", -1));
+    TAP_CHECK(t, cs_overuse(1, "stim") == 1);          /* use 2: past limit */
     TAP_CHECK(t, cs_geti(1, "crash", 0) == 1);
     TAP_CHECK(t, cs_crash_penalty(1) == 3);            /* -1D */
 
-    TAP_CHECK(t, cs_stim_use(1) == 1);                 /* dose 3: crash stacks */
-    TAP_CHECK(t, cs_geti(1, "stims", -1) == 0);
+    TAP_CHECK(t, cs_overuse(1, "stim") == 1);          /* use 3: crash stacks */
     TAP_CHECK(t, cs_geti(1, "crash", 0) == 2);
     TAP_CHECK(t, cs_crash_penalty(1) == 6);            /* -2D */
 
-    TAP_CHECK(t, cs_stim_use(1) == -1);                /* out of stims */
-    TAP_CHECK(t, cs_geti(1, "crash", 0) == 2);         /* nothing changed */
-    TAP_CHECK(t, cs_geti(1, "grit", -1) == 3);
+    /* a different consumable keeps its own load counter */
+    TAP_CHECK(t, cs_overuse(1, "boost") == 0);         /* boost use 1: safe */
+    TAP_CHECK(t, cs_geti(1, "boost_load", -1) == 1);
+    TAP_CHECK(t, cs_geti(1, "crash", 0) == 2);         /* unchanged */
 }
 
 /* CP unlocks: whole-token match in the maneuvers list, and a flat Grit spend. */
@@ -957,7 +955,7 @@ const Case tap_cases[] = {
     { "attack_longshot_exposed", t_attack_longshot_exposed },
     { "free_strike", t_free_strike },
     { "push", t_push },
-    { "stim", t_stim },
+    { "overuse", t_overuse },
     { "unlock", t_unlock },
     { "social_derived", t_social_derived },
     { "push_resolve", t_push_resolve },

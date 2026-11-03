@@ -1135,34 +1135,30 @@ cs_grit_push(int sheet, int n)
     return n * 3;
 }
 
-/* Use one carried stim (rules Section 8): restore 2 Grit (capped at Max Grit),
- * spend a dose, and bump the stim load. Each dose past the safe limit (Might
- * dice) stacks Crash, a -1D on all the character's pools that clears only on a
- * full short rest. Returns 1 if this dose inflicted a fresh Crash stack, 0 for
- * a safe dose, or -1 when no stim is carried (nothing changes). */
+/* Apply a consumable's overuse load (rules Section 8, the stim Crash rule
+ * generalized). A consumable tagged `crash` tracks a per-kind load counter
+ * `<kind>_load` on the sheet; each use past the safe limit (Might dice) stacks
+ * Crash, a -1D on all the character's pools that clears only on a full short
+ * rest. `kind` names the load counter (the consumable's name). Returns 1 if
+ * this use inflicted a fresh Crash stack, else 0. */
 static int
-cs_stim_use(int sheet)
+cs_overuse(int sheet, const char *kind)
 {
-    struct cs_derived d;
-    int stims = cs_geti(sheet, "stims", 0);
-    int grit, load, mdice, r, crashed = 0;
+    char lp[40];
+    const char *suf = "_load";
+    int load, mdice, r, i = 0, j;
 
-    if (stims <= 0) return -1;
-    cs_recalc(sheet, &d);
-    cs_seti(sheet, "stims", stims - 1);
-
-    grit = cs_geti(sheet, "grit", 0) + 2;
-    if (grit > d.maxgrit) grit = d.maxgrit;
-    cs_seti(sheet, "grit", grit);
-
-    load = cs_geti(sheet, "stim_load", 0) + 1;
-    cs_seti(sheet, "stim_load", load);
+    while (kind[i] && i < 33) { lp[i] = kind[i]; i++; }
+    for (j = 0; suf[j] && i < 39; j++) lp[i++] = suf[j];
+    lp[i] = '\0';
+    load = cs_geti(sheet, lp, 0) + 1;
+    cs_seti(sheet, lp, load);
     mdice = cs_divmod(cs_geti(sheet, "mig", 0), 3, &r);
     if (load > mdice) {
         cs_seti(sheet, "crash", cs_geti(sheet, "crash", 0) + 1);
-        crashed = 1;
+        return 1;
     }
-    return crashed;
+    return 0;
 }
 
 /* The Crash pool penalty in points: -3 (one die) per stacked Crash. */

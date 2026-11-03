@@ -1003,8 +1003,8 @@ check_log /tmp/smolmoo_p1.log 'Grit: 5/6' "push spent one Grit off the gauge"
 # draws 75 creds off the sheet: the primary Grit money sink.
 curl -sf -X POST -d "$SID1 use stim" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'Grit surges back' "use stim restores Grit"
-curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p1.log 'Stims 2' "using a stim spends a dose"
+curl -sf -X POST -d "$SID1 inv" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'stim (x2)' "using a stim spends a dose off the stack"
 curl -sf -X POST -d "$SID1 buy stim" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'Balance 225' "buying a stim draws down creds"
 curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
@@ -1062,11 +1062,11 @@ check_log /tmp/smolmoo_p1.log 'back down' "the player yields at 0 Resolve"
 curl -sf -X POST -d "$SID1 @standing TestPlayer1 combine 2" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'now stands Friendly (2) with combine' "@standing sets a faction step"
 curl -sf -X POST -d "$SID1 buy stim" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p1.log 'buy a stim for 60 creds' "good standing discounts the price"
+check_log /tmp/smolmoo_p1.log 'buy the stim for 60 creds' "good standing discounts the price"
 # Watched (-1) sells at 110 percent: 75 -> 82.
 curl -sf -X POST -d "$SID1 @standing TestPlayer1 combine -1" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 buy stim" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p1.log 'buy a stim for 82 creds' "poor standing raises the price"
+check_log /tmp/smolmoo_p1.log 'buy the stim for 82 creds' "poor standing raises the price"
 # Hostile (-2): no deal.
 curl -sf -X POST -d "$SID1 @standing TestPlayer1 combine -2" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 buy stim" http://localhost:$PORT/cmd >/dev/null
@@ -1108,7 +1108,7 @@ check_log /tmp/smolmoo_p1.log '2 rule(s), 2 spawned' "@reset stocks a vending ma
 # list shows the store and its priced stock (no faction, so full price)
 curl -sf -X POST -d "$SID1 list from dispenser" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'dispenser offers' "list names the store"
-check_log /tmp/smolmoo_p1.log 'cola -- 5 creds' "list shows priced stock"
+check_log /tmp/smolmoo_p1.log 'cola (x2) -- 5 creds' "list folds identical stock into one counted line"
 # buy moves one instance to the buyer and draws its price
 curl -sf -X POST -d "$SID1 buy cola from dispenser" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'You buy the cola for 5 creds' "buy sells a stock item"
@@ -1991,18 +1991,25 @@ curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
 FENCE=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
 curl -sf -X POST -d "$SID1 @set #$FENCE.name=fence" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$FENCE.faction=fringe" http://localhost:$PORT/cmd >/dev/null
-curl -sf -X POST -d "$SID1 @set #$FENCE.stim=10" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$FENCE.location=#101" http://localhost:$PORT/cmd >/dev/null
+# stock the fence with two priced stim objects at a base of 10 (children of the
+# stim prototype #309, their inherited price overridden), one per sale below
+for _n in 1 2; do
+	curl -sf -X POST -d "$SID1 @create #309" http://localhost:$PORT/cmd >/dev/null
+	FSTIM=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+	curl -sf -X POST -d "$SID1 @set #$FSTIM.price=10" http://localhost:$PORT/cmd >/dev/null
+	curl -sf -X POST -d "$SID1 @set #$FSTIM.location=#$FENCE" http://localhost:$PORT/cmd >/dev/null
+done
 # Hostile with the fringe, but the fence's +1 disp lifts it to Watched: it sells.
 curl -sf -X POST -d "$SID1 @standing TestPlayer1 fringe -2" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$FENCE.disp=1" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 buy stim from fence" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p1.log 'buy a stim for 11 creds' "a positive NPC disp lifts a Hostile buyer into range"
+check_log /tmp/smolmoo_p1.log 'buy the stim for 11 creds' "a positive NPC disp lifts a Hostile buyer into range"
 # Friendly with the fringe, but the fence's -1 disp cools it to Known pricing.
 curl -sf -X POST -d "$SID1 @standing TestPlayer1 fringe 2" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$FENCE.disp=-1" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 buy stim from fence" http://localhost:$PORT/cmd >/dev/null
-check_log /tmp/smolmoo_p1.log 'buy a stim for 9 creds' "a negative NPC disp cools a friendlier faction"
+check_log /tmp/smolmoo_p1.log 'buy the stim for 9 creds' "a negative NPC disp cools a friendlier faction"
 
 # --- OLC P2 migration check: a non-admin runs the setuid combat verbs ---
 # Placed after all admin combat so it cannot disturb those fights. Test accounts

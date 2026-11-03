@@ -80,7 +80,6 @@ verb main(player: obj, room: obj)
     player:tell(def);
 
     var res: str = "Creds " + tostr(geti(sheet, "money", 0));
-    res = res + "  Stims " + tostr(geti(sheet, "stims", 0));
     res = res + "  CP " + tostr(geti(sheet, "cp", 0));
     var crash: int = geti(sheet, "crash", 0);
     if (crash > 0)

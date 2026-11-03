@@ -1,22 +1,19 @@
-/* verb_store.c : generic buy/sell/list plus the ChromeSix stim shop. A store is
- * any object that holds priced item objects in its contents: a vendor NPC, a
- * vending machine, a crate. `list [from <store>]` shows the stock; `buy <item>
- * [from <store>]` sells one instance, moving the object to the buyer and
- * drawing its price off their creds. With no `from`, the store is the room's
- * `vendor` NPC. Standing with the store's faction, plus the store's own `disp`
- * offset, shifts the price ten percent per step and gates the sale at
- * Hostile or worse (rules Section 14). A store
- * that sets a `stim` base price sells the counter-based stim dose, the Grit
- * money sink (rules Section 8), through the fallback path when no priced item
- * matches the name. Selling an object instance decrements stock; a reset rule
- * with the store as its room restocks it.
+/* verb_store.c : generic buy/sell/list. A store is any object that holds priced
+ * item objects in its contents: a vendor NPC, a vending machine, a crate.
+ * `list [from <store>]` shows the stock; `buy <item> [from <store>]` sells one
+ * instance, moving the object to the buyer and drawing its price off their
+ * creds. With no `from`, the store is the room's `vendor` NPC. Standing with
+ * the store's faction, plus the store's own `disp` offset, shifts the price ten
+ * percent per step and gates the sale at Hostile or worse (rules Section 14).
+ * Selling an object instance decrements stock; a reset rule with the store as
+ * its room restocks it. The stim is ordinary priced stock, stocked this way:
+ * the Grit money sink (rules Section 8) is a seed object, not a store branch.
  *
  * `sell <item> [to <store>]` is the inverse: a priced item the player carries
  * moves into the store and credits the player. A store buys back only if it
  * sets a `buyback` percent (of the item's base price); the standing shift
  * favors the seller, so a higher standing pays more, and Hostile still refuses.
- * A store that sets both `stim` and `buyback` buys stim doses back off the
- * sheet counter. Equipped gear must be removed first. */
+ * Equipped gear must be removed first. */
 /* SPDX-License-Identifier: 0BSD OR CC0-1.0 */
 
 #include "chromesix_verb.h"
@@ -135,7 +132,7 @@ main(void)
     else store = cs_geti(room, "vendor", 0);
 
     if (cs_streq(verb, "list")) {
-        int it = 0, any = 0, stimbase;
+        int it = 0, any = 0;
         char nm[32];
 
         if (store <= 0) {
@@ -149,26 +146,31 @@ main(void)
         cs_s(&o, nm);
         cs_s(&o, " offers:\n");
         cs_flush(&o);
-        /* one line per priced item; flush each so a large store never overflows
-           the line buffer */
+        /* one line per distinct item name; flush each so a large store never
+           overflows the line buffer. Identical-named stock (several dose
+           instances restocked by a reset rule) folds into one line with a
+           count, so a shelf of five stims reads as "stim (x5)". */
         while ((it = sys_next(store, it)) != 0) {
             int base = cs_geti(it, "price", 0);
+            int cnt = 0, firstid = 0, q = 0;
 
             if (base <= 0) continue;
             cs_getstr(it, "name", nm, sizeof(nm));
+            while ((q = sys_next(store, q)) != 0) {
+                char qm[32];
+
+                if (cs_geti(q, "price", 0) <= 0) continue;
+                cs_getstr(q, "name", qm, sizeof(qm));
+                if (!ci_eq(qm, nm)) continue;
+                if (!firstid) firstid = q;
+                cnt++;
+            }
+            if (it != firstid) continue;   /* a later duplicate folds into the first */
             cs_s(&o, "  ");
             cs_s(&o, nm);
+            if (cnt > 1) { cs_s(&o, " (x"); cs_i(&o, cnt); cs_s(&o, ")"); }
             cs_s(&o, " -- ");
             cs_i(&o, priced_at(base, step));
-            cs_s(&o, " creds\n");
-            cs_flush(&o);
-            any = 1;
-        }
-        /* the counter-based stim dose, if this store sells it */
-        stimbase = cs_geti(store, "stim", 0);
-        if (stimbase > 0) {
-            cs_s(&o, "  stim -- ");
-            cs_i(&o, priced_at(stimbase, step));
             cs_s(&o, " creds\n");
             cs_flush(&o);
             any = 1;
@@ -202,7 +204,7 @@ main(void)
         /* a priced item the player carries: moves into the store as stock */
         good = carried_priced_named(self, item);
         if (good > 0) {
-            int r;
+            int r, qty;
 
             if (sys_getprop(good, "slot", slot, sizeof(slot) - 1) > 0) {
                 puts("You must remove it first.");
@@ -212,41 +214,32 @@ main(void)
             base = cs_divmod(cs_geti(good, "price", 0) * buyback, 100, &r);
             price = priced_at(base, -step);   /* standing favors the seller */
             money = cs_geti(sh, "money", 0);
-            /* the item becomes store-owned stock, so elevate for the move;
-               credit the player's own sheet at caller authority. */
-            grant_accept();
-            j = sys_move(good, store);
-            grant_release();
-            if (j < 0) { puts("The vendor won't take it."); _exit(0); }
+            qty = cs_geti(good, "qty", 0);
+            /* A stack of doses sells one at a time: decrement the count (the
+               stack never becomes store stock), credit the caller's own sheet.
+               A single item moves into the store as stock instead, which needs
+               the owner's authority for the transfer. */
+            if (qty > 1) {
+                cs_seti(good, "qty", qty - 1);
+            } else {
+                grant_accept();
+                j = sys_move(good, store);
+                grant_release();
+                if (j < 0) { puts("The vendor won't take it."); _exit(0); }
+            }
             cs_seti(sh, "money", money + price);
-            cs_s(&o, "You sell the ");
+            cs_s(&o, "You sell ");
+            cs_s(&o, qty > 1 ? "a " : "the ");
             cs_s(&o, nm);
             cs_s(&o, " for ");
             cs_i(&o, price);
             cs_s(&o, " creds. Balance ");
             cs_i(&o, money + price);
-            cs_s(&o, ".\n");
-            cs_flush(&o);
-            _exit(0);
-        }
-
-        /* fallback: a stim dose off the sheet counter, if the store buys stims */
-        if ((cs_streq(item, "stim") || cs_streq(item, "stims")) &&
-            cs_geti(store, "stim", 0) > 0) {
-            int r, stims = cs_geti(sh, "stims", 0);
-
-            if (stims <= 0) { puts("You have no stims to sell."); _exit(0); }
-            base = cs_divmod(cs_geti(store, "stim", 0) * buyback, 100, &r);
-            price = priced_at(base, -step);
-            money = cs_geti(sh, "money", 0);
-            cs_seti(sh, "stims", stims - 1);
-            cs_seti(sh, "money", money + price);
-            cs_s(&o, "You sell a stim for ");
-            cs_i(&o, price);
-            cs_s(&o, " creds. Balance ");
-            cs_i(&o, money + price);
-            cs_s(&o, ", stims ");
-            cs_i(&o, stims - 1);
+            if (qty > 1) {
+                cs_s(&o, " (");
+                cs_i(&o, qty - 1);
+                cs_s(&o, " left)");
+            }
             cs_s(&o, ".\n");
             cs_flush(&o);
             _exit(0);
@@ -310,34 +303,6 @@ main(void)
         cs_i(&o, price);
         cs_s(&o, " creds. Balance ");
         cs_i(&o, money - price);
-        cs_s(&o, ".\n");
-        cs_flush(&o);
-        _exit(0);
-    }
-
-    /* fallback: the counter-based stim dose, for a store that sells it */
-    if ((cs_streq(item, "stim") || cs_streq(item, "stims")) &&
-        cs_geti(store, "stim", 0) > 0) {
-        /* +3 Allied sells at 70 percent, -1 Watched at 110 percent */
-        price = priced_at(cs_geti(store, "stim", 0), step);
-        money = cs_geti(sh, "money", 0);
-        if (money < price) {
-            cs_s(&o, "You can't afford a stim (");
-            cs_i(&o, price);
-            cs_s(&o, " creds). You have ");
-            cs_i(&o, money);
-            cs_s(&o, ".\n");
-            cs_flush(&o);
-            _exit(0);
-        }
-        cs_seti(sh, "money", money - price);
-        cs_seti(sh, "stims", cs_geti(sh, "stims", 0) + 1);
-        cs_s(&o, "You buy a stim for ");
-        cs_i(&o, price);
-        cs_s(&o, " creds. Balance ");
-        cs_i(&o, money - price);
-        cs_s(&o, ", stims ");
-        cs_i(&o, cs_geti(sh, "stims", 0));
         cs_s(&o, ".\n");
         cs_flush(&o);
         _exit(0);
