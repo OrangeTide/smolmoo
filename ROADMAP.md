@@ -26,9 +26,13 @@ weapons when one is removed. The dirty flag is the seam for moving the rebuild
 to a lazy read path later. NPCs set `armor`/`wielded` directly in the world and
 carry no slotted gear, so they are unaffected.
 
-- **NPC disposition and aggression.** Disposition (a faction step plus a
-  personal modifier) and hostility-driven aggression are not wired. A mob's
-  standing toward a player would steer whether it opens a fight on sight.
+NPC disposition and aggression are implemented. `cs_disposition` is an NPC's
+effective standing toward a player, the faction step plus the NPC's personal
+`disp` offset, clamped to [-3, 3], so a specific mob can be warmer or colder
+than its faction (a grudge where the faction is neutral, or a fixer who still
+deals with you). It is the one seam the store, job gates, and aggro share. On
+a player entering its room, `mob_react` opens a fight when that disposition is
+Hostile (-2) or worse, or when the mob carries the `aggro` behavior token.
 
 - **Death and recovery extensions.** A station requirement for revival,
   revival penalties, and body weight while a body is carried are deferred.

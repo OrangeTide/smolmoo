@@ -1741,6 +1741,31 @@ curl -sf -X POST -d "$SID1 @set #$AGR.cb_active=0" http://localhost:$PORT/cmd >/
 curl -sf -X POST -d "$SID3 go back" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #0.decay_secs=604800" http://localhost:$PORT/cmd >/dev/null
 
+# --- NPC personal disposition drives aggro (disp offset, rules Section 14) ---
+# cs_disposition adds a per-NPC disp offset to the faction standing, so a mob
+# can hold a personal grudge and aggro a newcomer its faction is neutral
+# toward, with no @standing set. A merc in its own den, faction mercs (which
+# TestPlayer3 is Neutral with), carries disp -2; that alone reads Hostile and
+# draws aggro on entry.
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @dig den to Merc Den" http://localhost:$PORT/cmd >/dev/null
+DEN=$(grep -oE 'Dug #[0-9]+ to #[0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '#[0-9]+' | tail -1 | tr -d '#')
+curl -sf -X POST -d "$SID1 @create #200" http://localhost:$PORT/cmd >/dev/null
+MRC=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$MRC.name=merc" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$MRC.faction=mercs" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$MRC.disp=-2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$MRC.behavior=greet" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$MRC.greeting=The merc eyes you." http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$MRC.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$MRC.location=#$DEN" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P3SH.bp=99" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P3SH.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 go den" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p3.log 'merc turns on' "a personal grudge (disp) aggros a Neutral newcomer"
+curl -sf -X POST -d "$SID1 @set #$DEN.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID3 go back" http://localhost:$PORT/cmd >/dev/null
+
 # --- M25g: body slots and the inventory flatten view (Section 9) ---
 # TestPlayer1 has the standard human anatomy (no anatomy prop, so the default
 # frame) and, from the combat block above, the pistol readied in a hand.

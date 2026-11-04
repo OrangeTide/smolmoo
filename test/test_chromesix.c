@@ -782,6 +782,38 @@ t_standing(Test *t)
     TAP_CHECK(t, has(cs_standing_word(-3), "Hunted"));
 }
 
+/* cs_disposition: an NPC's effective standing toward a player, the faction
+ * standing plus the NPC's personal `disp` offset, clamped to [-3, 3]. */
+static void
+t_disposition(Test *t)
+{
+    enum { NPC = 70, FOE = 71 };
+
+    props_clear();
+    sys_setprop(FOE, "standing", "reavers:-2,corp:1");
+    /* with no disp offset it reads exactly the faction standing */
+    TAP_CHECKF(t, cs_disposition(NPC, FOE, "reavers") == -2, "plain=%d",
+               cs_disposition(NPC, FOE, "reavers"));
+    TAP_CHECK(t, cs_disposition(NPC, FOE, "corp") == 1);
+    /* a grudge makes this NPC hostile where its faction is neutral */
+    sys_setprop(NPC, "disp", "-2");
+    TAP_CHECKF(t, cs_disposition(NPC, FOE, "arasaka") == -2, "grudge=%d",
+               cs_disposition(NPC, FOE, "arasaka"));
+    /* a warmer NPC softens a hostile faction toward the player */
+    sys_setprop(NPC, "disp", "3");
+    TAP_CHECKF(t, cs_disposition(NPC, FOE, "reavers") == 1, "warm=%d",
+               cs_disposition(NPC, FOE, "reavers"));
+    /* the sum is clamped to the band at both ends */
+    sys_setprop(FOE, "standing", "reavers:-3");
+    sys_setprop(NPC, "disp", "-3");
+    TAP_CHECKF(t, cs_disposition(NPC, FOE, "reavers") == -3, "clamp_lo=%d",
+               cs_disposition(NPC, FOE, "reavers"));
+    sys_setprop(FOE, "standing", "corp:3");
+    sys_setprop(NPC, "disp", "3");
+    TAP_CHECKF(t, cs_disposition(NPC, FOE, "corp") == 3, "clamp_hi=%d",
+               cs_disposition(NPC, FOE, "corp"));
+}
+
 /* cs_end_turn marks the actor done and posts the room's cb_task (the turn
  * loop's task id) to wake it, rather than listening on the room. */
 static void
@@ -1000,6 +1032,7 @@ const Case tap_cases[] = {
     { "wrong_mode", t_wrong_mode },
     { "end_turn", t_end_turn },
     { "standing", t_standing },
+    { "disposition", t_disposition },
     { "slots", t_slots },
     { "gear", t_gear },
     { "ammo", t_ammo },
