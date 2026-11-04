@@ -198,6 +198,7 @@ val_free(struct value *v)
 
 struct obj {
     int id;
+    int ns;          /* namespace (world) this object belongs to; see active_ns */
     int parent;
     int owner;
     int group;
@@ -216,11 +217,24 @@ struct obj {
 static struct obj objs[MAX_OBJ];
 static int eph_next;
 
+/* The namespace (world) whose objects obj_find resolves against, and which
+ * obj_create stamps onto a new object. Builder world-branching (ROADMAP) loads
+ * each world into its own namespace with a closed object graph, so an object
+ * never references outside its namespace and a native id (a branch keeps #0,
+ * #100, and the rest as its root stored them) is unambiguous once the
+ * namespace is known. The live world is namespace 0. Resolution is never
+ * ambiguous because this is fixed at each execution boundary rather than
+ * carried on every call. Until branch worlds exist it stays 0, so every object
+ * is in the live namespace and obj_find behaves exactly as before; a later
+ * phase sets it per session, verb task, and agent tick. */
+static int active_ns = 0;
+
 static void
 obj_init(void)
 {
     for (int i = 0; i < MAX_OBJ; i++) {
         objs[i].id = OBJ_NONE;
+        objs[i].ns = 0;
         objs[i].owner = OBJ_NONE;
         objs[i].group = OBJ_NONE;
         objs[i].task_id = -1;
@@ -237,7 +251,7 @@ static struct obj *
 obj_find(int id)
 {
     for (int i = 0; i < MAX_OBJ; i++)
-        if (objs[i].id == id)
+        if (objs[i].id == id && objs[i].ns == active_ns)
             return &objs[i];
     return NULL;
 }
@@ -250,6 +264,7 @@ obj_create(int id, int parent)
     for (int i = 0; i < MAX_OBJ; i++) {
         if (objs[i].id == OBJ_NONE) {
             objs[i].id = id;
+            objs[i].ns = active_ns;
             objs[i].parent = parent;
             objs[i].owner = OBJ_NONE;
             objs[i].group = OBJ_NONE;

@@ -1,7 +1,9 @@
 # Roadmap
 
-Planned and deferred work, gathered in one place. Completed milestones
-are logged in `PLAN.md`. The federation and storage directions have their
+Planned and deferred work, gathered in one place. `PLAN.md` keeps a short
+lookback of the most recent completed milestones in detail; the full
+milestone history is the git log, and each finished item here is rewritten
+as a done-note in place. The federation and storage directions have their
 own rationale in `FUTURE.md`.
 
 Nothing here is committed to a schedule. Each item is a known extension
@@ -104,9 +106,35 @@ list-valued properties first become a persisted, first-class type.
   model would make preemption natural, but bounded quanta on the single
   loop have been enough. Revisit only if VM work starves the loop.
 
-- **Builder world-branching.** Working off a fork of the live world and
-  merging when ready. It pairs naturally with OLC but is not a prerequisite.
-  See `FUTURE.md`.
+- **Builder world-branching.** Work off a fork of the live world and merge
+  when ready. It pairs naturally with OLC but is not a prerequisite. See
+  `FUTURE.md` for the content-addressed foundation it leans on.
+
+  Committed approach: one server process hosts the live world and any branch
+  worlds at once. Every object reference is a `(namespace, id)` pair and each
+  world is one namespace with a closed object graph, so no object ever
+  references outside its namespace. Ids stay native within a namespace (a
+  branch keeps `#100`, `#0`, and the rest as its root stored them), so loading
+  a branch needs no id offset and no renumbering. Resolution is never
+  ambiguous because an active namespace is fixed at each execution boundary
+  (command dispatch, verb task, agent tick, a save pass), so `obj_find` reads
+  that active namespace rather than carrying it on every call. The live world
+  is namespace 0 and its on-disk layout is unchanged.
+
+  Phases: (1) namespace the object layer: an `ns` field per object, the
+  active-namespace context, and namespace-scoped `obj_find`, objref
+  resolution, and ephemeral handling, with the live world as namespace 0 and
+  no behavior change. (2) per-namespace persistence: group dirty objects by
+  namespace, each with its own omap, root, and signed history head, the live
+  world keeping `depot/root` and `depot/head` while a branch uses
+  `depot/branches/<name>/`. (3) fork and load a branch into a free namespace
+  (`smolmoo branch <name>` forks a ref at the live root, recording the fork
+  point) and route a builder's session to it. (4) a 3-way merge keyed on the
+  shared native ids: apply changes a branch made and the live world did not,
+  keep the live version where both changed and log the clash to a conflict
+  report, and renumber only an object newly created on the branch whose id was
+  also freshly taken on the live side. The one standing cost is the shared
+  `MAX_OBJ` slot pool, which a branch roughly doubles the draw on.
 
 ## Federation and storage
 
