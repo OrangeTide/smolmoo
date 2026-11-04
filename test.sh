@@ -4204,6 +4204,37 @@ SMOLMOO_DEPOT="$CDEP" _build/smolmoo branch ../escape >/dev/null 2>&1 \
 	&& fail "branch rejects an unsafe name" \
 	|| pass "branch rejects an unsafe name"
 
+# --- M98: live session routing into a branch (world-branching phase 3) ---
+# fork in-server (the depot lock bars the offline CLI while the server runs),
+# route the wizard session into the branch, and prove an edit there does not
+# touch the live world. #101 is the lobby; /prop reads resolve in the session's
+# namespace, so the same object id reads differently from inside the branch.
+# capture the live lobby name first; an earlier OLC test may have renamed it
+LVN0=$(curl -sf "http://localhost:$PORT/prop?obj=101&prop=name&sid=$SID1")
+curl -sf -X POST -d "$SID1 @fork wb" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log "Forked branch 'wb'" "branch: @fork creates a branch in-server"
+curl -sf -X POST -d "$SID1 @branch wb" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log "Now building in branch 'wb'" "branch: @branch routes the session in"
+curl -sf -X POST -d "$SID1 @set #101.name=WBLobby" http://localhost:$PORT/cmd >/dev/null
+WBN=$(curl -sf "http://localhost:$PORT/prop?obj=101&prop=name&sid=$SID1")
+[ "$WBN" = "WBLobby" ] \
+	&& pass "branch: an edit applies in the branch namespace" \
+	|| fail "branch: an edit applies in the branch namespace (got '$WBN')"
+# leave to the live world: the same id must read its original live name
+curl -sf -X POST -d "$SID1 @branch live" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log "Back in the live world" "branch: @branch live routes the session out"
+LVN=$(curl -sf "http://localhost:$PORT/prop?obj=101&prop=name&sid=$SID1")
+[ "$LVN" = "$LVN0" ] && [ "$LVN" != "WBLobby" ] \
+	&& pass "branch: the live world is unchanged by the branch edit" \
+	|| fail "branch: the live world is unchanged by the branch edit (got '$LVN', was '$LVN0')"
+# re-entering reuses the resident namespace and still sees the branch edit
+curl -sf -X POST -d "$SID1 @branch wb" http://localhost:$PORT/cmd >/dev/null
+WBN2=$(curl -sf "http://localhost:$PORT/prop?obj=101&prop=name&sid=$SID1")
+[ "$WBN2" = "WBLobby" ] \
+	&& pass "branch: re-entry reuses the resident branch" \
+	|| fail "branch: re-entry reuses the resident branch (got '$WBN2')"
+curl -sf -X POST -d "$SID1 @branch live" http://localhost:$PORT/cmd >/dev/null
+
 # --- The Underdeck sub-area (M60) : rooms, a vendor, a contract, and a reset
 # encounter, all authored in-game through the OLC builder and captured into the
 # world.data seed (build_underdeck.sh). Walk it end to end from the wizard

@@ -60,6 +60,8 @@ enum { EV_USER, EV_TIMER, EV_ENTER, EV_WAKE };
 struct conn {
     int fd;
     int state;
+    int ns;                 /* namespace (world) this session acts in; 0 = live */
+    int home_loc;           /* live-world room to return the avatar to after a branch */
     char buf[BUFSIZE];
     int len;
     int obj;
@@ -85,12 +87,17 @@ static struct cas *cas_store;
 #define MAX_NS 4
 struct ns_store {
     struct cas_omap *omap;
-    char     root_file[64];
-    char     head_file[64];
+    char     root_file[160];
+    char     head_file[160];
     char     head_addr[CAS_HASH_HEX + 1];
     uint64_t head_seq;
 };
 static struct ns_store nsv[MAX_NS];
+
+/* Name of the branch resident in each namespace slot, or "" for an unused slot.
+ * Slot 0 is always the live world and keeps "". Set when a branch is loaded at
+ * serve time, and reused so re-entering a branch does not reload it. */
+static char ns_name[MAX_NS][64];
 
 static const char *depot_dir = "depot";
 static const char *html_file = "index.html";
@@ -1300,6 +1307,43 @@ root_write(int ns, const char *hash)
     return ptr_write(nsv[ns].root_file, hash);
 }
 
+/* A branch name becomes a depot subdirectory, so it is held to a safe
+ * character set and a length that keeps the pointer paths within their
+ * buffers. Returns 1 if the name is acceptable, 0 otherwise. */
+static int
+branch_name_ok(const char *name)
+{
+    if (!name || !*name || strlen(name) > 48)
+        return 0;
+    for (const char *p = name; *p; p++)
+        if (!isalnum((unsigned char)*p) && *p != '-' && *p != '_')
+            return 0;
+    return 1;
+}
+
+/* Write the pointer files that define branch `name`: its root and its immutable
+ * fork point, both naming `live_root`. The depot is content-addressed and
+ * shared across worlds, so the fork copies no objects, only these pointers.
+ * Creates depot/branches and depot/branches/<name>. Returns OK, ERR on failure,
+ * or 1 if the branch already exists. Shared by the offline `branch` CLI and the
+ * in-server @fork command. */
+static int
+branch_fork(const char *name, const char *live_root)
+{
+    char dir[160], rootf[168], forkf[168];
+
+    snprintf(dir, sizeof(dir), "%s/branches", depot_dir);
+    mkdir(dir, 0755);
+    snprintf(dir, sizeof(dir), "%s/branches/%s", depot_dir, name);
+    if (mkdir(dir, 0755) != 0)
+        return (errno == EEXIST) ? 1 : ERR;
+    snprintf(rootf, sizeof(rootf), "%s/root", dir);
+    snprintf(forkf, sizeof(forkf), "%s/fork", dir);
+    if (ptr_write(rootf, live_root) != OK || ptr_write(forkf, live_root) != OK)
+        return ERR;
+    return OK;
+}
+
 /* ---- world save: snapshot (main thread) + flush (writer thread) -----
  *
  * A save has two halves. save_snapshot() runs on the main thread: it
@@ -1777,6 +1821,50 @@ world_free(void)
     for (int i = 0; i < MAX_OBJ; i++)
         if (objs[i].id != OBJ_NONE)
             obj_free(&objs[i]);
+}
+
+/* Find the namespace holding branch `name`, loading it into a free slot if it
+ * is not already resident (builder world-branching phase 3). A branch forked by
+ * `smolmoo branch` is loaded from depot/branches/<name>/root into its own
+ * namespace, its objects stamped with that namespace by world_load. A resident
+ * branch is reused, so re-entering it does not reload it. Returns the namespace,
+ * or -1 if the branch does not exist on disk, every slot is taken, or the load
+ * fails. The depot and object table are shared, so a branch draws on the same
+ * MAX_OBJ slot pool as the live world. */
+static int
+branch_load(const char *name)
+{
+    int slot = -1;
+    char sub[80], rootf[200];
+
+    for (int ns = 1; ns < MAX_NS; ns++) {
+        if (nsv[ns].omap && strcmp(ns_name[ns], name) == 0)
+            return ns;                      /* already resident */
+        if (!nsv[ns].omap && slot < 0)
+            slot = ns;
+    }
+    if (slot < 0)
+        return -1;                          /* all branch slots in use */
+
+    snprintf(rootf, sizeof(rootf), "%s/branches/%s/root", depot_dir, name);
+    if (access(rootf, F_OK) != 0)
+        return -1;                          /* no such branch */
+
+    snprintf(sub, sizeof(sub), "branches/%s", name);
+    ns_set_paths(slot, sub);
+    nsv[slot].omap = cas_omap_new(cas_store);
+    if (!nsv[slot].omap)
+        return -1;
+    if (world_load(slot, NULL) != OK) {
+        cas_omap_free(nsv[slot].omap);
+        nsv[slot].omap = NULL;
+        return -1;
+    }
+    if (signing_on)
+        history_load_head(slot);
+    snprintf(ns_name[slot], sizeof(ns_name[slot]), "%s", name);
+    fprintf(stderr, "[branch] loaded '%s' into namespace %d\n", name, slot);
+    return slot;
 }
 
 /****************************************************************
@@ -3278,9 +3366,15 @@ task_run_all(void)
             task_free(i);
             continue;
         }
-        if (tasks[i].state == TASK_READY)
+        if (tasks[i].state == TASK_READY) {
+            /* A task runs in its session's world: a verb spawned by a builder
+               in a branch, or by a live player, each resolves there. Agent
+               tasks run under the system session (ns 0). */
+            active_ns = cc[sid].ns;
             task_step(i, TASK_QUANTUM);
+        }
     }
+    active_ns = 0;
 }
 
 
@@ -3857,6 +3951,23 @@ player_room(int sid)
     return o ? prop_objnum(o, make_atom("location")) : OBJ_NONE;
 }
 
+/* Move a session's avatar into namespace `ns`, room `loc`. The avatar is an
+ * ephemeral, non-persistent body: it is the session's camera and must live in
+ * whatever world the session views, so routing into or out of a branch
+ * (@branch) re-stamps its namespace and sets its location there. The caller
+ * ensures active_ns matches the avatar's current namespace so obj_find reaches
+ * it. Does nothing if the session has no avatar yet. */
+static void
+avatar_rehome(int sid, int ns, int loc)
+{
+    struct obj *av = obj_find(cc[sid].obj);
+
+    if (!av)
+        return;
+    av->ns = ns;
+    prop_set(av, make_atom("location"), val_obj(loc));
+}
+
 static void grit_schedule_regen(int sid);
 
 static void
@@ -4007,6 +4118,7 @@ cmd_help(int sid, const char *args)
     session_write(sid, "Groups:   @group create|add|remove|list");
     session_write(sid, "Admin:    @accounts @chars @lock @unlock @setpass");
     session_write(sid, "          @promote @demote @kick");
+    session_write(sid, "Branch:   @fork <name>  @branch <name>|live");
     session_write(sid, "Feedback: @gripe @typo @bug @idea @suggest @comment");
 }
 
@@ -5212,6 +5324,101 @@ cmd_feedback(int sid, const char *args)
         }
         session_write(sid, "Checking depot integrity...");
         history_fsck(sid);
+        return;
+    }
+
+    /* Builder world-branching: fork the live world into a branch from within
+     * the running server. The depot lock bars the offline `branch` CLI while
+     * the server holds it, so this is how a wizard spins up a branch live. A
+     * save is flushed first so the fork captures the current live root. */
+    if (strcmp(tag, "fork") == 0) {
+        char live_root[CAS_HASH_HEX + 1];
+        int fk;
+        if (!is_wizard(sid)) {
+            session_write(sid, "Only a wizard may @fork.");
+            return;
+        }
+        if (!branch_name_ok(p)) {
+            session_write(sid,
+                "Usage: @fork <name> (letters, digits, '-', '_', <=48)");
+            return;
+        }
+        world_save_async();
+        saver_wait_idle();
+        if (root_read(0, live_root) != OK) {
+            session_write(sid, "Fork failed: no live root to fork.");
+            return;
+        }
+        fk = branch_fork(p, live_root);
+        if (fk == 1)
+            session_write(sid, "A branch by that name already exists.");
+        else if (fk != OK)
+            session_write(sid, "Fork failed: could not write branch pointers.");
+        else {
+            char buf[128];
+            snprintf(buf, sizeof(buf),
+                "Forked branch '%s'. Enter it with @branch %s.", p, p);
+            session_write(sid, buf);
+        }
+        return;
+    }
+
+    /* Builder world-branching: route this session into a branch world, or back
+     * to the live world. Commands then resolve in the session's namespace, so a
+     * wizard can build on a fork without touching the live world. */
+    if (strcmp(tag, "branch") == 0) {
+        char buf[128];
+        if (!is_wizard(sid)) {
+            session_write(sid, "Only a wizard may @branch.");
+            return;
+        }
+        if (!*p) {
+            if (cc[sid].ns == 0)
+                session_write(sid, "You are in the live world.");
+            else {
+                snprintf(buf, sizeof(buf),
+                    "You are building in branch '%s'. Use @branch live to leave.",
+                    ns_name[cc[sid].ns]);
+                session_write(sid, buf);
+            }
+            return;
+        }
+        if (strcmp(p, "live") == 0) {
+            if (cc[sid].ns == 0) {
+                session_write(sid, "You are already in the live world.");
+                return;
+            }
+            avatar_rehome(sid, 0, cc[sid].home_loc ? cc[sid].home_loc : 101);
+            cc[sid].ns = 0;
+            cc[sid].home_loc = 0;
+            active_ns = 0;
+            session_write(sid, "Back in the live world. Type 'look'.");
+            return;
+        }
+        {
+            int ns = branch_load(p);
+            if (ns < 0) {
+                session_write(sid,
+                    "No such branch, or no free slot. "
+                    "Fork one first with @fork <name>.");
+                return;
+            }
+            /* remember the live position once, so @branch live returns there */
+            if (cc[sid].ns == 0) {
+                struct obj *av = obj_find(cc[sid].obj);
+                cc[sid].home_loc = av ? prop_objnum(av, make_atom("location"))
+                                      : 0;
+            }
+            /* the branch is a fork of the live world, so #101 (the lobby) is a
+               safe, predictable arrival room in every branch */
+            avatar_rehome(sid, ns, 101);
+            cc[sid].ns = ns;
+            active_ns = ns;
+            snprintf(buf, sizeof(buf),
+                "Now building in branch '%s'. Type 'look'; @branch live to leave.",
+                p);
+            session_write(sid, buf);
+        }
         return;
     }
 
@@ -7225,6 +7432,11 @@ dispatch(int sid, char *line)
     if (!*line)
         return;
 
+    /* Resolve this command in the session's world. A builder routed into a
+     * branch (@branch) acts in that namespace; everyone else is in the live
+     * world (ns 0). conn_dispatch restores active_ns to 0 after the request. */
+    active_ns = cc[sid].ns;
+
     /* pre-login: only connect/create allowed */
     if (cc[sid].obj == OBJ_NONE) {
         char *sp = strchr(line, ' ');
@@ -7335,6 +7547,8 @@ handle_prop_get(int fd, const char *path)
         http_respond(fd, "403 Forbidden", "text/plain", "Forbidden", 9);
         return;
     }
+    /* resolve the object in the session's world (conn_dispatch resets after) */
+    active_ns = cc[sid].ns;
     o = obj_find(objid);
     if (!o) {
         http_respond(fd, "404 Not Found", "text/plain",
@@ -7382,6 +7596,8 @@ handle_prop_post(int fd, const char *path, const char *body, int bodylen)
         http_respond(fd, "403 Forbidden", "text/plain", "Forbidden", 9);
         return;
     }
+    /* resolve the object in the session's world (conn_dispatch resets after) */
+    active_ns = cc[sid].ns;
     o = obj_find(objid);
     if (!o) {
         http_respond(fd, "404 Not Found", "text/plain",
@@ -7529,6 +7745,10 @@ conn_dispatch(int i)
                  "Not Found", 9);
         conn_close(i);
     }
+    /* A request handled above may have routed into a branch session's
+     * namespace (dispatch, /prop). Reset to the live world so the main loop,
+     * timers, and the save thread's snapshot default to ns 0. */
+    active_ns = 0;
 }
 
 static void
@@ -7722,19 +7942,12 @@ static int
 cmd_branch(const char *name)
 {
     char live_root[CAS_HASH_HEX + 1];
-    char dir[200], rootf[208], forkf[208];
-    int rc = 1;
+    int rc = 1, fk;
 
-    if (!name || !*name || strlen(name) > 48) {
-        fprintf(stderr, "branch: name must be 1 to 48 characters\n");
+    if (!branch_name_ok(name)) {
+        fprintf(stderr,
+                "branch: name must be 1 to 48 of letters, digits, '-', '_'\n");
         return 1;
-    }
-    for (const char *p = name; *p; p++) {
-        if (!isalnum((unsigned char)*p) && *p != '-' && *p != '_') {
-            fprintf(stderr,
-                    "branch: name may use only letters, digits, '-', '_'\n");
-            return 1;
-        }
     }
 
     cas_store = cas_new(depot_dir);
@@ -7746,25 +7959,15 @@ cmd_branch(const char *name)
         goto out;
     }
 
-    snprintf(dir, sizeof(dir), "%s/branches", depot_dir);
-    mkdir(dir, 0755);
-    snprintf(dir, sizeof(dir), "%s/branches/%s", depot_dir, name);
-    if (mkdir(dir, 0755) != 0) {
-        if (errno == EEXIST)
-            fprintf(stderr, "branch: '%s' already exists\n", name);
-        else
-            perror("branch: mkdir");
-        goto out;
-    }
-
-    snprintf(rootf, sizeof(rootf), "%s/root", dir);
-    snprintf(forkf, sizeof(forkf), "%s/fork", dir);
-    if (ptr_write(rootf, live_root) != OK || ptr_write(forkf, live_root) != OK) {
+    fk = branch_fork(name, live_root);
+    if (fk == 1)
+        fprintf(stderr, "branch: '%s' already exists\n", name);
+    else if (fk != OK)
         fprintf(stderr, "branch: failed to write branch pointers\n");
-        goto out;
+    else {
+        fprintf(stderr, "branch '%s' forked at live root %s\n", name, live_root);
+        rc = 0;
     }
-    fprintf(stderr, "branch '%s' forked at live root %s\n", name, live_root);
-    rc = 0;
 out:
     cas_free(cas_store);
     return rc;

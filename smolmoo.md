@@ -90,21 +90,32 @@ map, and stores a fresh root and history record for every namespace that
 changed. The live world is `depot/root`/`depot/head`; a branch lives under
 `depot/branches/<name>/`.
 
-A branch is forked offline with `smolmoo branch <name>`. The command points the
-branch's root at the current live root and records the same root as an immutable
-fork point in `depot/branches/<name>/fork`, the common ancestor a later merge
-diffs against. Because the depot is content-addressed and shared, the fork
-copies no objects, only those pointers. The branch's own root then advances as
-it is edited while the fork point stays put, and its signed history chain starts
-fresh on its first save.
+A branch is forked either offline with `smolmoo branch <name>` or, because the
+depot's single-writer lock bars the CLI while the server runs, in-server by a
+wizard with `@fork <name>`. The fork points the branch's root at the current
+live root and records the same root as an immutable fork point in
+`depot/branches/<name>/fork`, the common ancestor a later merge diffs against.
+Because the depot is content-addressed and shared, the fork copies no objects,
+only those pointers. The branch's own root then advances as it is edited while
+the fork point stays put, and its signed history chain starts fresh on its first
+save.
 
-Today only the live world is loaded at serve time, so `active_ns` is always 0
-and resolution behaves as if namespaces did not exist. The remaining seams the
-later world-branching phases build on are loading a branch into a free namespace
-at serve time, routing a builder session into it, and a merge back to the live
-world. The account, invite, reset, and group scans are deliberately not
-namespaced yet; those subsystems are live-world concerns whose global-or-per-
-world handling is settled in a later phase.
+A wizard routes into a branch with `@branch <name>`, which loads it into a free
+namespace on demand (a resident branch is reused), and leaves with `@branch
+live`. Each session carries a namespace. `active_ns` is set to it at command
+dispatch, in the web-editor property handlers, and in any verb or agent task the
+session spawns, then reset to the live world after each request, so the main
+loop, timers, and the save thread default to namespace 0. The session's avatar
+is an ephemeral, non-persistent body, so it is not part of a branch fork;
+entering or leaving a branch re-homes the avatar into that world (at the branch
+lobby on entry, at the remembered live room on return).
+
+The account, invite, reset, and group scans are deliberately not namespaced.
+Building touches world objects, which are namespaced, while login and account
+administration run in the live world, so a branch and the live world stay
+isolated for building. Cross-namespace tells and sweeping a branch's timers are
+not handled, and a branch stays resident until the server stops. The one
+remaining phase is a merge back to the live world.
 
 ## Cached containment rollups
 

@@ -130,14 +130,24 @@ list-valued properties first become a persisted, first-class type.
   world keeping `depot/root` and `depot/head` while a branch uses
   `depot/branches/<name>/`. The depot and the signing key are shared.
 
-  Phase 3 (fork and route) is partly done. `smolmoo branch <name>` forks the
-  live world: it points a new `depot/branches/<name>/root` at the current live
-  root and records the same root as an immutable fork point
-  (`depot/branches/<name>/fork`), the common ancestor a merge diffs against.
-  The depot is content-addressed and shared, so the fork copies no objects,
-  only pointers. Still to do in phase 3: load a branch into a free namespace at
-  serve time and route a builder's session to it (per-session namespace, active
-  namespace fixed at command dispatch and in any task the session spawns).
+  Phase 3 (fork and route) is implemented. A branch is forked either offline
+  with `smolmoo branch <name>` or, since the depot's single-writer lock bars the
+  CLI while the server runs, in-server by a wizard with `@fork <name>`. Both
+  point a new `depot/branches/<name>/root` at the current live root and record
+  the same root as an immutable fork point (`depot/branches/<name>/fork`), the
+  common ancestor a merge diffs against. The depot is content-addressed and
+  shared, so the fork copies no objects, only pointers. A wizard enters a branch
+  with `@branch <name>`, which loads it into a free namespace on demand (reusing
+  a resident branch), and leaves with `@branch live`. The session carries a
+  namespace; `active_ns` is fixed to it at command dispatch, in the web-editor
+  prop handlers, and in any verb or agent task the session spawns, and reset to
+  the live world after each request. The session's avatar is an ephemeral body,
+  so entering or leaving a branch re-homes it into that world at the branch
+  lobby and restores its live position on return. Known limits: the account,
+  invite, reset, and group scans stay live-world (building touches world
+  objects, which are already namespaced, and login and account admin run in the
+  live world); cross-namespace tells and background sweeps into a branch are not
+  handled; and a branch is not unloaded until the server stops.
 
   Phase 4 is a 3-way merge keyed on the shared native ids: apply changes a
   branch made and the live world did not, keep the live version where both
