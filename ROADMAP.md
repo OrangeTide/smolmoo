@@ -62,10 +62,18 @@ room out of a scene, on the `rest_secs` cadence, and a full recovery clears a
 `yielded` concession so a character is not conceded forever. Banked at the same
 lazy points as BP: a move, a sheet readout, and the start of a new push.
 
-- **Multi-attacker resolution.** A character-to-session resolver so a foe
-  can prompt a player who did not open the fight. It would make the elite
-  NPC's second reaction observable (it is wired but latent in the current
-  one-action-per-round model) and enable fights with several attackers.
+Multi-attacker resolution is implemented. A character-to-session resolver
+(`sys_tell`) lets the turn task prompt any player-driven combatant in their own
+session, not just the fight's opener, so more than one player can fight in a
+single scene. The combat loop keys turns, targeting, and the win and loss
+counts off session resolution (`is_pc`) rather than a single tracked player:
+foes are the non-player side, the player side holds the humans, an NPC turns on
+the first player still standing, and each downed player runs its own dying
+track. A player who attacks a fight they are not in joins it as reinforcement
+(`verb_attack`) and acts on their own turn next round. Still a rules call left
+for later: sides and teams (combat is free-for-all, a player can target
+anyone), and splitting the Character Point award among several players (the
+opener books it today).
 
 Pricing in `chromesix.md` is first-pass and tuned by play; that is a rules
 note, not an engineering task.

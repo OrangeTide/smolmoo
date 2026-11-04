@@ -2242,6 +2242,65 @@ curl -sf -X POST -d "$SID3 floooble" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p3.log 'Unknown command' \
 	"combat does not hijack commands (unknown stays unknown mid-fight)"
 
+# --- Multi-attacker resolution: a second player joins an active fight ---
+# The goon fight TestPlayer3 opened is still live. A character-to-session
+# resolver (sys_tell) lets the turn task prompt a combatant who is not the
+# opener, so more than one player can fight in a single scene. TestPlayer1
+# walks in and joins TestPlayer3's fight, then is prompted on their own turn in
+# their own session (p1.log). TestPlayer3 is tanked so the fight cannot collapse
+# before the join lands; the goon always targets the first player on the roster
+# (TestPlayer3), leaving the joiner free to observe its own prompt. Counts are
+# taken as deltas because p1.log already holds these lines from earlier fights.
+curl -sf -X POST -d "$SID1 @set #$P3SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+WADE1=$(grep -c 'wade into the fight' /tmp/smolmoo_p1.log 2>/dev/null || true)
+YT1=$(grep -c 'your turn' /tmp/smolmoo_p1.log 2>/dev/null || true)
+FO1=$(grep -c 'fight is over' /tmp/smolmoo_p1.log 2>/dev/null || true)
+# Join: TestPlayer1 is not on the roster, so the attack enlists them rather than
+# taking a turn. Poll until the join line lands; the fight stays open on
+# TestPlayer3's blocked turn.
+_i=0
+while [ $_i -lt 25 ]; do
+	curl -sf -X POST -d "$SID1 attack goon" http://localhost:$PORT/cmd >/dev/null
+	_w=$(grep -c 'wade into the fight' /tmp/smolmoo_p1.log 2>/dev/null || true)
+	[ "${_w:-0}" -gt "${WADE1:-0}" ] && break
+	sleep 0.2
+	_i=$((_i + 1))
+done
+_w=$(grep -c 'wade into the fight' /tmp/smolmoo_p1.log 2>/dev/null || true)
+if [ "${_w:-0}" -gt "${WADE1:-0}" ]; then
+	pass "a second player joins an active fight"
+else
+	fail "a second player joins an active fight"
+fi
+# Drive both players' turns to a finish. Each attack lands only on its sender's
+# own turn (the other is told 'not your turn'); the task prompts whichever
+# player's turn it is in that player's session, so TestPlayer1 -- who did not
+# open this fight -- is prompted afresh, and the two down the goon together.
+_k=0
+while [ $_k -lt 60 ]; do
+	curl -sf -X POST -d "$SID3 attack goon" http://localhost:$PORT/cmd >/dev/null
+	curl -sf -X POST -d "$SID1 attack goon" http://localhost:$PORT/cmd >/dev/null
+	_f=$(grep -c 'fight is over' /tmp/smolmoo_p1.log 2>/dev/null || true)
+	[ "${_f:-0}" -gt "${FO1:-0}" ] && break
+	sleep 0.2
+	_k=$((_k + 1))
+done
+_yt=$(grep -c 'your turn' /tmp/smolmoo_p1.log 2>/dev/null || true)
+if [ "${_yt:-0}" -gt "${YT1:-0}" ]; then
+	pass "the turn task prompts a non-opener player on their own turn"
+else
+	fail "the turn task prompts a non-opener player on their own turn"
+fi
+_f=$(grep -c 'fight is over' /tmp/smolmoo_p1.log 2>/dev/null || true)
+if [ "${_f:-0}" -gt "${FO1:-0}" ]; then
+	pass "a multi-attacker fight resolves for both players"
+else
+	fail "a multi-attacker fight resolves for both players"
+fi
+# safety: clear any residue so later lobby work is not joined to a stale fight
+curl -sf -X POST -d "$SID1 @set #101.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+
 # --- OLC-5: event system and runtime message loop (see OLC.md) ---
 # An agent is a verb that links -lverbmain (the agent_ prefix), giving it a
 # generic event loop instead of a one-shot main(). @wake #N starts object #N as

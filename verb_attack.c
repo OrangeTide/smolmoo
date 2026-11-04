@@ -74,6 +74,43 @@ main(void)
         _exit(0);
     }
 
+    /* A player not yet in this fight joins it as reinforcement. They are
+     * appended to the roster and enter the turn order next round, when the
+     * combat task prompts their own session on their turn. This is the path
+     * that puts more than one player in a single fight; the foe-draw below and
+     * the turn resolution are for a combatant already in the order. */
+    if (!on_roster(room, self)) {
+        char rbuf[64], num[12];
+        int rn, j;
+
+        if (cs_room_full(room)) {
+            puts("There is no room to join the fight here.");
+            _exit(0);
+        }
+        rn = sys_getprop(room, "cb_roster", rbuf, sizeof(rbuf) - 1);
+        if (rn < 0) rn = 0;
+        rbuf[rn] = '\0';
+        cs_itoa(num, self);
+        if (rn > 0 && rn < (int)sizeof(rbuf) - 14) {
+            rbuf[rn++] = ',';
+            for (j = 0; num[j] && rn < (int)sizeof(rbuf) - 1; j++)
+                rbuf[rn++] = num[j];
+            rbuf[rn] = '\0';
+            sys_setprop(room, "cb_roster", rbuf);
+        }
+        sys_setprop(atk, "cover", "0");
+        sys_setprop(atk, "cover_bonus", "0");
+        sys_setprop(atk, "moved", "0");
+        sys_setprop(atk, "move_bank", "0");
+        sys_setprop(atk, "stance", "");
+        o.len = 0;
+        cs_s(&o, "You wade into the fight against the ");
+        cs_s(&o, foename);
+        cs_s(&o, "!\n");
+        cs_flush(&o);
+        _exit(0);
+    }
+
     if (cs_geti(room, "cb_turn", -1) != self) {
         puts("It is not your turn.");
         _exit(0);

@@ -52,27 +52,57 @@ write_roster(int room, int *ids, int n)
     sys_setprop(room, "cb_roster", cs_cstr(&o));
 }
 
-/* count foes (non-player) still in the scene: not downed and not yielded.
- * In a fight nobody yields, so this reduces to "still standing"; in a social
- * scene nobody is downed, so it reduces to "has not conceded". */
+/* A combatant is player-driven when its body resolves to a live session. An
+ * empty tell is a pure probe, so this neither writes nor disturbs output. The
+ * single `player` the task was spawned for is the opener; every other connected
+ * combatant is a player too, which is how a second attacker is told apart from
+ * an NPC. */
 static int
-foes_up(int *ids, int n, int player)
+is_pc(int obj)
+{
+    return sys_tell(obj, "");
+}
+
+/* count foes (the non-player side) still in the scene: not downed and not
+ * yielded. In a fight nobody yields, so this reduces to "still standing"; in a
+ * social scene nobody is downed, so it reduces to "has not conceded". */
+static int
+foes_up(int *ids, int n)
 {
     int c = 0;
 
     for (int i = 0; i < n; i++) {
         int sh = cs_sheet(ids[i]);
-        if (ids[i] != player && !cs_geti(sh, "downed", 0)
+        if (!is_pc(ids[i]) && !cs_geti(sh, "downed", 0)
             && !cs_geti(sh, "yielded", 0))
             c++;
     }
     return c;
 }
 
-/* On a won scene, grant the player Character Points summed over the
- * defeated foes. Each foe is worth its `cp_award`, or a base default when it
- * names none. Called once at the resolver's win point, so a settled scene grants
- * nothing more. The player sheet is written under the task's grant. */
+/* count the player side still in the scene, by the same rule. The fight (or
+ * scene) is lost when this reaches zero: every player is down or has conceded. */
+static int
+pcs_up(int *ids, int n)
+{
+    int c = 0;
+
+    for (int i = 0; i < n; i++) {
+        int sh = cs_sheet(ids[i]);
+        if (is_pc(ids[i]) && !cs_geti(sh, "downed", 0)
+            && !cs_geti(sh, "yielded", 0))
+            c++;
+    }
+    return c;
+}
+
+/* On a won scene, grant Character Points summed over the defeated foes. Each
+ * foe is worth its `cp_award`, or a base default when it names none. Fellow
+ * players are skipped, so beating an ally earns nothing. The award goes to the
+ * opener (the combatant the task was spawned for), who books the contract;
+ * splitting it among several players is a rules call left for later. Called
+ * once at the resolver's win point, so a settled scene grants nothing more. The
+ * player sheet is written under the task's grant. */
 static void
 award_cp(int player, int *ids, int n)
 {
@@ -81,7 +111,7 @@ award_cp(int player, int *ids, int n)
     struct cs_out o;
 
     for (i = 0; i < n; i++) {
-        if (ids[i] == player) continue;
+        if (is_pc(ids[i])) continue;
         total += cs_geti(cs_sheet(ids[i]), "cp_award", CP_AWARD_BASE);
     }
     if (total <= 0) return;
@@ -111,7 +141,7 @@ mark_job_done(int player, int *ids, int n)
     if (!target[0])
         return;
     for (i = 0; i < n; i++) {
-        if (ids[i] == player) continue;
+        if (is_pc(ids[i])) continue;
         cs_getstr(cs_sheet(ids[i]), "name", nm, sizeof(nm));
         if (cs_streq(nm, target)) {
             cs_seti(psh, "job_done", 1);
@@ -126,13 +156,13 @@ mark_job_done(int player, int *ids, int n)
  * against re-firing. NPCs that script no hook rely on cs_push_resolve's
  * broadcast concession, so nothing more is owed here. */
 static void
-fire_yield_hooks(int *ids, int n, int player)
+fire_yield_hooks(int *ids, int n)
 {
     for (int i = 0; i < n; i++) {
         int sh = cs_sheet(ids[i]);
         int verb;
 
-        if (ids[i] == player) continue;
+        if (is_pc(ids[i])) continue;
         if (!cs_geti(sh, "yielded", 0) || cs_geti(sh, "yield_done", 0)) continue;
         cs_seti(sh, "yield_done", 1);
         verb = cs_geti(sh, "on_yield", -1);
@@ -189,10 +219,10 @@ run_dying(int sh, int room)
 /* the player's turn prompt in a social scene: Resolve meter, each opponent's
  * remaining Resolve, and the four Charm approaches */
 static void
-print_social_prompt(int round, int player, int *ids, int n)
+print_social_prompt(int round, int pc, int *ids, int n)
 {
     struct cs_out o;
-    int sh = cs_sheet(player);
+    int sh = cs_sheet(pc);
     int maxr = cs_max_resolve(sh);
 
     o.len = 0;
@@ -205,7 +235,7 @@ print_social_prompt(int round, int player, int *ids, int n)
         int fsh, fmax;
         char fn[32];
 
-        if (ids[k] == player) continue;
+        if (ids[k] == pc) continue;
         fsh = cs_sheet(ids[k]);
         if (cs_geti(fsh, "yielded", 0)) continue;
         fmax = cs_max_resolve(fsh);
@@ -221,15 +251,15 @@ print_social_prompt(int round, int player, int *ids, int n)
         cs_s(&o, " to sway)\n");
     }
     cs_s(&o, "Actions: command, negotiate, con, perform, flee, hold\n");
-    cs_flush(&o);
+    sys_tell(pc, cs_cstr(&o));
 }
 
 static void
-print_prompt(int round, int player, int *ids, int n)
+print_prompt(int round, int pc, int *ids, int n)
 {
     struct cs_out o;
     struct cs_derived d;
-    int sh = cs_sheet(player);
+    int sh = cs_sheet(pc);
     int cover = cs_geti(sh, "cover", 0);
 
     cs_recalc(sh, &d);
@@ -248,7 +278,7 @@ print_prompt(int round, int player, int *ids, int n)
         struct cs_derived fd;
         char fn[32];
 
-        if (ids[k] == player) continue;
+        if (ids[k] == pc) continue;
         fsh = cs_sheet(ids[k]);
         if (cs_geti(fsh, "downed", 0)) continue;
         cs_getstr(fsh, "name", fn, sizeof(fn));
@@ -266,16 +296,32 @@ print_prompt(int round, int player, int *ids, int n)
     }
     cs_s(&o, "Actions: attack, cover, close, engage, retreat, "
             "disengage, go, hold\n");
-    cs_flush(&o);
+    sys_tell(pc, cs_cstr(&o));
 }
 
-/* One NPC's turn: close toward the player when out of reach (blocked by
+/* The player-driven combatant an NPC turns on: the first on the roster still
+ * standing, so with one player it is that player and with several the foes
+ * focus the first in initiative order still up. Zero when no player is up. */
+static int
+pick_target(int *ids, int n)
+{
+    for (int i = 0; i < n; i++) {
+        int sh = cs_sheet(ids[i]);
+
+        if (is_pc(ids[i]) && !cs_geti(sh, "downed", 0)
+            && !cs_geti(sh, "yielded", 0))
+            return ids[i];
+    }
+    return 0;
+}
+
+/* One NPC's turn: close toward its target when out of reach (blocked by
  * frontage when the melee is full), otherwise attack. */
 static void
-npc_turn(int me, int player, int room)
+npc_turn(int me, int target, int room)
 {
     struct cs_out o;
-    int sh = cs_sheet(me), psh = cs_sheet(player);
+    int sh = cs_sheet(me), psh = cs_sheet(target);
     int wpn = cs_geti(sh, "wielded", 305);
     int band = cs_geti(sh, "band", 0);
     int reach = cs_reach(wpn), gap = band - reach;
@@ -290,7 +336,7 @@ npc_turn(int me, int player, int room)
         int nb = band - 1;
 
         if (nb == 0 &&
-            cs_engaged_count(room, player) >= cs_frontage(psh)) {
+            cs_engaged_count(room, target) >= cs_frontage(psh)) {
             cs_s(&o, nm);
             cs_s(&o, " cannot find room in the melee.");
             sys_broadcast(room, cs_cstr(&o));
@@ -311,13 +357,13 @@ npc_turn(int me, int player, int room)
     sys_broadcast(room, cs_cstr(&o));
 }
 
-/* One NPC's social turn: push the player, draining their Resolve. The NPC's
+/* One NPC's social turn: push its target, draining their Resolve. The NPC's
  * approach is its `approach` prop (a Charm skill), defaulting to Command. */
 static void
-npc_social_turn(int me, int player, int room)
+npc_social_turn(int me, int target, int room)
 {
     struct cs_out o;
-    int sh = cs_sheet(me), psh = cs_sheet(player);
+    int sh = cs_sheet(me), psh = cs_sheet(target);
     char skill[16];
     int yield;
 
@@ -399,7 +445,7 @@ main(void)
             cs_cond_tick(sh, room);
             if (cs_geti(sh, "downed", 0)) { sys_suspend(NPC_PACE_MS); continue; }
             /* an ambushed foe loses this one round's action, then recovers */
-            if (me != player && cs_geti(sh, "surprised", 0)) {
+            if (!is_pc(me) && cs_geti(sh, "surprised", 0)) {
                 struct cs_out o;
                 char nm[32];
 
@@ -442,12 +488,12 @@ main(void)
                 cs_seti(sh, "react_left", cs_streq(g, "elite") ? 2 : 1);
             }
 
-            if (me == player) {
+            if (is_pc(me)) {
                 int waited = 0, acted = 0;
                 struct verb_event ev;
 
-                if (cs_scene_social(room)) print_social_prompt(round, player, ids, n);
-                else print_prompt(round, player, ids, n);
+                if (cs_scene_social(room)) print_social_prompt(round, me, ids, n);
+                else print_prompt(round, me, ids, n);
                 /* Block for the whole turn timeout; the player's action verb
                  * (cs_end_turn) posts an EV_WAKE that resumes us immediately.
                  * A timeout wake carries no event and advances the clock; the
@@ -462,10 +508,14 @@ main(void)
                     if (cs_geti(room, "cb_acted", 0) == 1) { acted = 1; break; }
                     if (!woke) waited += chunk;
                 }
-                if (!acted) puts("You hesitate; the moment passes.");
+                if (!acted) sys_tell(me, "You hesitate; the moment passes.");
             } else {
-                if (cs_scene_social(room)) npc_social_turn(me, player, room);
-                else npc_turn(me, player, room);
+                int target = pick_target(ids, n);
+
+                if (target) {
+                    if (cs_scene_social(room)) npc_social_turn(me, target, room);
+                    else npc_turn(me, target, room);
+                }
                 sys_suspend(NPC_PACE_MS);
             }
 
@@ -473,20 +523,36 @@ main(void)
 
             {
                 int social = cs_scene_social(room);
+                struct cs_out o;
 
-                if (social) fire_yield_hooks(ids, n, player);
+                if (social) fire_yield_hooks(ids, n);
 
                 if (cs_geti(room, "cb_fled", 0)) {
-                    struct cs_out o;
-
                     o.len = 0;
                     cs_s(&o, social ? "The two break off." : "The fight breaks off.");
                     sys_broadcast(room, cs_cstr(&o));
                     goto done;
                 }
-                if (foes_up(ids, n, player) == 0) {
-                    struct cs_out o;
 
+                /* Run the dying track for any player cut down this turn. A
+                 * player who rallies to 1 BP fights on, so only the ones who
+                 * stay down (dead or stabilized) are marked resolved; a player
+                 * downed again after rallying runs it afresh. */
+                if (!social) {
+                    for (int j = 0; j < n; j++) {
+                        int jsh = cs_sheet(ids[j]);
+
+                        if (is_pc(ids[j]) && cs_geti(jsh, "downed", 0)
+                            && !cs_geti(jsh, "dying_seen", 0)) {
+                            run_dying(jsh, room);
+                            if (cs_geti(jsh, "downed", 0))
+                                cs_seti(jsh, "dying_seen", 1);
+                        }
+                    }
+                }
+
+                /* Win: the whole foe side is out. */
+                if (foes_up(ids, n) == 0) {
                     o.len = 0;
                     cs_s(&o, social ? "The matter is settled." : "The fight is over.");
                     sys_broadcast(room, cs_cstr(&o));
@@ -494,19 +560,15 @@ main(void)
                     mark_job_done(player, ids, n);  /* Bounty complete */
                     goto done;
                 }
-                /* social: the player conceding ends the scene, no penalty.
-                 * fight: a downed player runs the dying track. */
-                if (social) {
-                    if (cs_geti(cs_sheet(player), "yielded", 0)) {
-                        struct cs_out o;
-
-                        o.len = 0;
-                        cs_s(&o, "You back down; the matter is lost for now.");
-                        sys_broadcast(room, cs_cstr(&o));
-                        goto done;
-                    }
-                } else if (cs_geti(cs_sheet(player), "downed", 0)) {
-                    run_dying(cs_sheet(player), room);
+                /* Loss: every player is down (fight) or has conceded (social).
+                 * In a solo scene this is the one player; in a multi-attacker
+                 * fight it waits for the last one to fall. */
+                if (pcs_up(ids, n) == 0) {
+                    o.len = 0;
+                    cs_s(&o, social
+                         ? "The challengers all back down; the matter is lost for now."
+                         : "The fighters are all down; the field is lost.");
+                    sys_broadcast(room, cs_cstr(&o));
                     goto done;
                 }
             }
@@ -524,6 +586,7 @@ done:
         sys_setprop(sh, "band", "0");
         sys_setprop(sh, "surprised", "0");
         sys_setprop(sh, "move_bank", "0");     /* Slowed half-step progress */
+        sys_setprop(sh, "dying_seen", "0");    /* per-down dying-track guard */
         /* a yield is for the scene (rules Section 16): clear it at teardown so
          * it neither blocks a later social scene nor, via foes_up, ends a later
          * fight early */

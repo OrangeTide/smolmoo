@@ -3046,6 +3046,24 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
         RET((int)time(NULL));
         return 0;
     }
+    case 28: { /* sys_tell(obj, msg): deliver one line to obj's player session,
+                * returning 1 if obj is a connected player and 0 otherwise. The
+                * combat turn task uses it to prompt a player who did not open
+                * the fight, and, with an empty msg, to tell a player-driven
+                * combatant from an NPC without emitting a stray line. The return
+                * reports that a session exists even if the write itself stalls,
+                * so the player/NPC branch stays stable under backpressure. */
+        int objid = (int)ARG(0);
+        int sid = sid_of_player_obj(objid);
+        char msg[256];
+
+        if (sid < 0) { RET(0); return 0; }
+        vm_read_str(vm, ARG(1), msg, sizeof(msg));
+        if (msg[0])
+            session_write(sid, msg);
+        RET(1);
+        return 0;
+    }
     }
     /* Unknown syscall: fall through to the ECALL trap. Any nonzero that is not
        RV_ECALL_RETRY (-1) traps; -1 would instead park and re-execute the same

@@ -100,6 +100,9 @@ extern int sys_post(int task);               /* wake a task by id (EV_WAKE) */
 extern int sys_taskid(void);                 /* the current task's id */
 extern int sys_notify(int obj, const char *arg); /* EV_USER to obj's agent */
 extern int sys_now(void);                    /* wall-clock time in seconds */
+extern int sys_tell(int obj, const char *msg); /* line to obj's player session;
+                                                  1 if obj is a connected player
+                                                  (an empty msg only probes) */
 
 /* Privilege bracketing (see OLC.md). A verb runs with its caller's authority by
  * default. grant_accept() elevates to the verb owner's authority, but only if

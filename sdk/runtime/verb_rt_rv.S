@@ -38,6 +38,7 @@
     .globl sys_taskid
     .globl sys_notify
     .globl sys_now
+    .globl sys_tell
     .globl _start
 
     /* CRT entry: the ELF entry point for every C verb. The host has seeded sp;
@@ -169,6 +170,11 @@ sys_notify:                             /* a0=obj, a1=arg -> a0=0 ok / -1 */
 
 sys_now:                                /* -> a0=wall-clock seconds */
     li      a7, 27
+    ecall
+    ret
+
+sys_tell:                               /* a0=obj, a1=msg -> a0=1 if a player got it, else 0 */
+    li      a7, 28
     ecall
     ret
 

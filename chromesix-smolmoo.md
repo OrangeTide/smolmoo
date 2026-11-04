@@ -192,6 +192,20 @@ LambdaMOO handler:
 * Orphan cleanup already exists: tasks are reaped when their session
   disconnects.
 
+More than one player fights in a single scene. The task prompts each combatant
+in their own session through `sys_tell`, a host call that resolves a body to
+its live session, so a player who did not open the fight still gets their turn
+prompt where they can see it (the opener's stream is no longer the only output
+path). The loop decides player from NPC by whether a combatant resolves to a
+session (`is_pc`), not by matching one tracked opener: turns, NPC targeting
+(the first player still standing), the win count (the non-player side is clear)
+and the loss count (every player is down or has conceded) all follow from that,
+and each downed player runs its own dying track. A player who attacks a fight
+they are not yet part of joins it as reinforcement (`verb_attack`) and enters
+the order next round. Combat stays free-for-all with no teams, and the
+Character Point award still goes to the opener; both are rules calls left for
+later.
+
 The in-game clock. A round is about five in-game seconds (rules Section 15),
 resolved turn by turn at whatever real pace the task sets, so it never draws on
 the wall clock. Outside combat the world clock advances with real time at a
