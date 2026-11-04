@@ -17,10 +17,14 @@ and `put` allows a container while refusing a containment cycle or nesting past
 five levels (`verb_getput.c`, `MAX_NEST`). The weight rollup (`cs_load`) already
 summed the full subtree and was unchanged.
 
-- **Combat gear from body slots.** The sheet's `wielded`, `worn`, and
-  `armor` props are still the combat source of truth. Derive the active
-  weapon and Soak from the items in the hand and worn slots instead, so the
-  slot model and combat agree without a separate copy.
+Combat gear from body slots is implemented. The worn Soak and active weapon
+are a projection of the body's slotted items, not a separately kept tally. A
+slot change raises a `gear_dirty` flag on the sheet and the gear verb rebuilds
+the projection (`cs_regear`): Soak is the single best worn piece, since armor
+does not stack, and the active weapon re-derives from the remaining hand
+weapons when one is removed. The dirty flag is the seam for moving the rebuild
+to a lazy read path later. NPCs set `armor`/`wielded` directly in the world and
+carry no slotted gear, so they are unaffected.
 
 - **NPC disposition and aggression.** Disposition (a faction step plus a
   personal modifier) and hostility-driven aggression are not wired. A mob's

@@ -75,10 +75,13 @@ each unlock's effect still lives with its use rather than in one dispatch table.
 Equipment and money: weapons, armor, and stims are ordinary smolmoo objects
 held in the creature's contents. A weapon object carries its damage rating, an
 armor object its soak bonus, a stim its Grit restore, and each item that is
-worn or held names its body slot (Section 9). `recalc` sets `armor` from the
-best worn armor piece, and the attack verb reads the weapon in the acting hold
-or dual slot, defaulting to unarmed 2D when it is empty. Money is a plain
-integer counter, spent and refunded like the Grit gauge.
+worn or held names its body slot (Section 9). Soak and the active weapon are a
+projection of those slots the gear verb rebuilds on a slot change: `armor` is
+the single best worn armor piece, and `wielded` is the weapon in the acting
+hold or dual slot, defaulting to unarmed 2D when the hands are empty. A
+`gear_dirty` flag on the sheet marks the projection stale, the seam for a lazy
+rebuild later. Money is a plain integer counter, spent and refunded like the
+Grit gauge.
 
 ## 3. Randomness
 

@@ -850,6 +850,43 @@ t_slots(Test *t)
     TAP_CHECK(t, cs_find_free_slot(600, 'w', 0, tag, sizeof(tag)));
 }
 
+/* Derived gear projection: worn Soak is the single best piece (armor does not
+ * stack) and the active weapon re-derives from the held weapons. */
+static void
+t_gear(Test *t)
+{
+    enum { ME = 510, HAT = 511, VEST = 512, BELT = 513, B1 = 514, B2 = 515 };
+
+    props_clear();
+    /* three worn pieces of different Soak, each in a slot. The projection
+     * takes the single best (5), not the last worn (BELT, 0). */
+    seti(HAT, "location", ME);  sys_setprop(HAT, "slot", "head0");   seti(HAT, "soak", 3);
+    seti(VEST, "location", ME); sys_setprop(VEST, "slot", "torso0"); seti(VEST, "soak", 5);
+    seti(BELT, "location", ME); sys_setprop(BELT, "slot", "waist0"); seti(BELT, "soak", 0);
+    sys_setprop(ME, "gear_dirty", "1");
+    cs_regear(ME);
+    TAP_CHECKF(t, cs_geti(ME, "armor", -1) == 5, "armor=%d", cs_geti(ME, "armor", -1));
+    TAP_CHECK(t, cs_geti(ME, "gear_dirty", 1) == 0);
+
+    /* removing the best piece drops Soak to the next best still worn */
+    sys_setprop(VEST, "slot", "");
+    cs_regear(ME);
+    TAP_CHECKF(t, cs_geti(ME, "armor", -1) == 3, "armor=%d", cs_geti(ME, "armor", -1));
+
+    /* two weapons held: a removed weapon re-derives to another held weapon,
+     * or bare hands (305) when none is left */
+    seti(B1, "location", ME); sys_setprop(B1, "slot", "hand0"); seti(B1, "dmg", 2);
+    seti(B2, "location", ME); sys_setprop(B2, "slot", "hand1"); seti(B2, "dmg", 2);
+    TAP_CHECK(t, cs_hand_weapon(ME, B1) == B2);
+    sys_setprop(B2, "slot", "");
+    TAP_CHECK(t, cs_hand_weapon(ME, B1) == 305);
+
+    /* a held weapon is never counted toward worn Soak */
+    cs_regear(ME);
+    TAP_CHECKF(t, cs_geti(ME, "armor", -1) == 3, "armor with weapon=%d",
+               cs_geti(ME, "armor", -1));
+}
+
 /* M25g slice 2: ammunition depletion and reload. */
 static void
 t_ammo(Test *t)
@@ -964,6 +1001,7 @@ const Case tap_cases[] = {
     { "end_turn", t_end_turn },
     { "standing", t_standing },
     { "slots", t_slots },
+    { "gear", t_gear },
     { "ammo", t_ammo },
     { "encumbrance", t_encumbrance },
     { "room_span", t_room_span },

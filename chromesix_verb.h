@@ -664,8 +664,9 @@ cs_sheet(int obj)
  * A creature's anatomy is a comma-separated list of slot tags on the creature
  * object, each a part name plus an index (hand0, torso0, tentacle3). Items in
  * the creature's contents occupy a slot by naming its tag in a `slot` prop.
- * The sheet's wielded/worn/armor props stay the combat source of truth; these
- * helpers add the physical slot frame the inventory view and gear verbs read. */
+ * The slots are the source of truth for the worn Soak and the active weapon;
+ * combat reads them as the sheet's `armor` and `wielded`, a projection the
+ * gear verbs rebuild on a slot change (see cs_regear below). */
 
 /* The frame a creature falls back to when it declares no anatomy. */
 #define CS_ANATOMY_HUMAN \
@@ -764,6 +765,70 @@ cs_find_free_slot(int creature, char need, const char *pref, char *out, int sz)
         }
     }
     return 0;
+}
+
+/* --- derived gear projection (Section 4 Soak, Section 9 slots) ---
+ *
+ * The sheet's `armor` (worn Soak) and `wielded` (active weapon) are a
+ * projection of the body's slotted items, not a separately kept tally. A slot
+ * change raises `gear_dirty` on the sheet and the projection is rebuilt from
+ * the slots, so the slot model and combat always agree. Armor does not stack
+ * (chromesix.md Section "Anatomy, Weapons, and Armor"), so Soak takes the
+ * single best worn piece, where the old single copy held only the last worn.
+ * The active weapon is a choice the slots alone cannot encode (two hands may
+ * hold weapons), so the gear verb sets it when the player readies one and
+ * re-derives it from the remaining hand weapons when one is removed; it always
+ * names an item actually in a hand slot, or bare hands.
+ *
+ * The rebuild runs at the point of change, where the body is in scope. The
+ * dirty flag is the seam for moving the rebuild to a lazy read path later.
+ * NPCs set `armor`/`wielded` directly in the world and carry no slotted gear,
+ * so they never dirty and are unaffected. */
+
+/* Raise the stale marker after a slot change (see cs_regear). */
+static void
+cs_regear_mark(int body)
+{
+    sys_setprop(cs_sheet(body), "gear_dirty", "1");
+}
+
+/* The first weapon still held on the body other than `except` (a dmg-dealing
+ * item in a slot), or 305 (bare hands) when none remains. */
+static int
+cs_hand_weapon(int body, int except)
+{
+    int it = 0;
+    char slot[16];
+
+    while ((it = sys_next(body, it)) != 0) {
+        if (it == except) continue;
+        cs_getstr(it, "slot", slot, sizeof(slot));
+        if (slot[0] == '\0') continue;
+        if (cs_geti(it, "dmg", 0) > 0) return it;
+    }
+    return 305;
+}
+
+/* Rebuild the worn Soak bonus as the single best worn (non-weapon) slotted
+ * piece, since armor does not stack, and clear the stale marker. The active
+ * weapon is maintained by the gear verb, which knows which hand the player
+ * just chose. */
+static void
+cs_regear(int body)
+{
+    int sh = cs_sheet(body);
+    int it = 0, best = 0, s;
+    char slot[16];
+
+    while ((it = sys_next(body, it)) != 0) {
+        cs_getstr(it, "slot", slot, sizeof(slot));
+        if (slot[0] == '\0') continue;
+        if (cs_geti(it, "dmg", 0) > 0) continue;
+        s = cs_geti(it, "soak", 0);
+        if (s > best) best = s;
+    }
+    cs_seti(sh, "armor", best);
+    sys_setprop(sh, "gear_dirty", "0");
 }
 
 /* --- ammunition (rules Section 6, MUD-mode) ---

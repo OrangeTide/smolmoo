@@ -25,16 +25,17 @@ main(void)
         cs_getstr(item, "slot", slot, sizeof(slot));
         if (slot[0] == '\0') { puts("You are not using that."); _exit(0); }
         sys_setprop(item, "slot", "");
-        if (item == cs_geti(sh, "worn", 0)) {
-            sys_setprop(sh, "worn", "0");
-            sys_setprop(sh, "armor", "0");
-            cs_s(&o, "You take off the ");
-        } else if (item == cs_geti(sh, "wielded", 0)) {
-            cs_seti(sh, "wielded", 305);        /* back to bare hands */
+        cs_regear_mark(me);
+        /* removing the active weapon falls back to another held weapon, or to
+         * bare hands; removing worn gear leaves the weapon untouched. */
+        if (cs_geti(item, "dmg", 0) > 0) {
+            if (item == cs_geti(sh, "wielded", 0))
+                cs_seti(sh, "wielded", cs_hand_weapon(me, item));
             cs_s(&o, "You put away the ");
         } else {
-            cs_s(&o, "You stow the ");
+            cs_s(&o, "You take off the ");
         }
+        cs_regear(me);
     } else if (cs_streq(verb, "wear")) {
         if (cs_item_role(item) != 'w') {
             puts("You cannot wear that.");
@@ -47,8 +48,8 @@ main(void)
         }
         sys_move(item, me);
         sys_setprop(item, "slot", tag);
-        cs_seti(sh, "worn", item);
-        cs_seti(sh, "armor", cs_geti(item, "soak", 0));
+        cs_regear_mark(me);
+        cs_regear(me);                  /* worn Soak is the best piece now worn */
         cs_s(&o, "You put on the ");
     } else {
         if (cs_item_role(item) != 'h') {
@@ -62,7 +63,9 @@ main(void)
         }
         sys_move(item, me);
         sys_setprop(item, "slot", tag);
-        cs_seti(sh, "wielded", item);
+        cs_seti(sh, "wielded", item);   /* the readied weapon becomes active */
+        cs_regear_mark(me);
+        cs_regear(me);
         cs_s(&o, "You ready the ");
     }
     cs_s(&o, nm);

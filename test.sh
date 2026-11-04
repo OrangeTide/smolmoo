@@ -963,6 +963,35 @@ curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'Soak 8' "worn armor raises soak"
 curl -sf -X POST -d "$SID1 remove vest" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'take off the vest' "remove unwears armor"
+# Derived gear: worn Soak is the single best piece (armor does not stack), so a
+# soak-0 item worn last cannot zero out a better piece already worn, and
+# removing the best piece drops Soak to the next best still worn. Clean up so
+# the fight blocks below run against the baseline frame.
+mkarmor() {   # mkarmor <name> <soak> <part> -> echoes the new object id
+	curl -sf -X POST -d "$SID1 @create #300" http://localhost:$PORT/cmd >/dev/null
+	id=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+	curl -sf -X POST -d "$SID1 @set #$id.name=$1" http://localhost:$PORT/cmd >/dev/null
+	curl -sf -X POST -d "$SID1 @set #$id.soak=$2" http://localhost:$PORT/cmd >/dev/null
+	curl -sf -X POST -d "$SID1 @set #$id.part=$3" http://localhost:$PORT/cmd >/dev/null
+	curl -sf -X POST -d "$SID1 @set #$id.location=#101" http://localhost:$PORT/cmd >/dev/null
+	echo "$id"
+}
+GPLATE=$(mkarmor warplate 5 torso)
+GHELM=$(mkarmor warhelm 3 head)
+GBELT=$(mkarmor warbelt 0 waist)
+curl -sf -X POST -d "$SID1 wear warplate" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 wear warhelm" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 wear warbelt" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Soak 11' "worn Soak is the best piece, not the last worn"
+curl -sf -X POST -d "$SID1 remove warplate" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'Soak 9' "removing the best piece drops Soak to the next best"
+curl -sf -X POST -d "$SID1 remove warhelm" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 remove warbelt" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @recycle #$GPLATE" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @recycle #$GHELM" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @recycle #$GBELT" http://localhost:$PORT/cmd >/dev/null
 # hold in a fight passes the turn cleanly, and the prompt lists the actions.
 # The hold loop passes turns while the thug swings back, so refresh first or the
 # passive fighter can be downed at residual BP before 'holds, watching' is seen.
