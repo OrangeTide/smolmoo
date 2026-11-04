@@ -1962,6 +1962,58 @@ check_log /tmp/smolmoo_p1.log 'no room to draw another' "occupancy: a full room 
 curl -sf -X POST -d "$SID1 @set #$ARENA.cb_active=0" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 
+# --- Out-of-combat travel cost: encumbered travel is halved (Section 6) ---
+# An exit with a `cost` is a long traverse. An unencumbered mover crosses it in
+# one step; an encumbered mover's travel is halved, taking two go's (the twin of
+# the in-fight Slowed rule). Raise Might so the base loadout is unencumbered,
+# dig a costly corridor, then load a heavy ballast pack past the carry rating to
+# force the two-step crossing. Might is restored afterward.
+TMIG=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=mig&sid=$SID1")
+curl -sf -X POST -d "$SID1 @set #$P1SH.mig=60" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @dig haulway to Haulway" http://localhost:$PORT/cmd >/dev/null
+FWD=$(grep -oE 'Dug #[0-9]+ to #[0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+curl -sf -X POST -d "$SID1 @set #$FWD.cost=1" http://localhost:$PORT/cmd >/dev/null
+# unencumbered: one step through the costly exit, no half step
+curl -sf -X POST -d "$SID1 go haulway" http://localhost:$PORT/cmd >/dev/null
+sleep 0.3
+if grep -q 'trudge halfway' /tmp/smolmoo_p1.log; then
+	fail "unencumbered travel crosses a costly exit in one step"
+else
+	pass "unencumbered travel crosses a costly exit in one step"
+fi
+curl -sf -X POST -d "$SID1 go back" http://localhost:$PORT/cmd >/dev/null
+sleep 0.3
+# a heavy ballast pack tips the fighter over its carry rating (cap 40)
+curl -sf -X POST -d "$SID1 @create #300" http://localhost:$PORT/cmd >/dev/null
+BALLAST=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$BALLAST.name=ballast" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BALLAST.weight=50" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$BALLAST.location=#101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 get ballast" http://localhost:$PORT/cmd >/dev/null
+sleep 0.2
+HB=$(grep -c 'heads out through the haulway' /tmp/smolmoo_p1.log 2>/dev/null || true)
+# encumbered: the first go is a half step that does not cross
+curl -sf -X POST -d "$SID1 go haulway" http://localhost:$PORT/cmd >/dev/null
+check_log /tmp/smolmoo_p1.log 'trudge halfway through the haulway' "encumbered travel takes a half step first"
+HM=$(grep -c 'heads out through the haulway' /tmp/smolmoo_p1.log 2>/dev/null || true)
+[ "${HM:-0}" = "${HB:-0}" ] \
+	&& pass "the half step does not cross the room yet" \
+	|| fail "the half step wrongly crossed (was ${HB} now ${HM})"
+# the second go completes the crossing
+curl -sf -X POST -d "$SID1 go haulway" http://localhost:$PORT/cmd >/dev/null
+sleep 0.3
+HA=$(grep -c 'heads out through the haulway' /tmp/smolmoo_p1.log 2>/dev/null || true)
+[ "${HA:-0}" -gt "${HB:-0}" ] \
+	&& pass "the second go completes the costly crossing" \
+	|| fail "the second go did not complete the crossing (was ${HB} now ${HA})"
+# cleanup: drop ballast, return, restore Might, recycle, back to the lobby
+curl -sf -X POST -d "$SID1 drop ballast" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 go back" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.mig=$TMIG" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @recycle #$BALLAST" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M25i: death and recovery (Section 11) ---
 # @kill is the GM entry to the death track (a Might-3D fighter almost never
 # fails all three cling rolls, so combat cannot reliably kill for a test). It is

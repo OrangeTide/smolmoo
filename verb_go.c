@@ -96,6 +96,26 @@ main(void)
         cs_seti(room, "cb_fled", 1);
         puts("You slip away from the fight.");
     } else {
+        /* Out-of-combat travel cost (rules Section 6): an exit with a `cost` is
+         * a long traverse, and an encumbered mover's travel is halved, so it
+         * takes two steps. The first go banks a half step (keyed to the exit so
+         * changing direction resets it); the second completes the crossing. An
+         * unencumbered mover and a cost-free exit cross in one step. In a fight
+         * the same load makes you Slowed instead (verb_move). */
+        if (cs_geti(exit, "cost", 0) > 0 && cs_encumbrance(self) == 1
+                && (cs_geti(self, "travel_exit", 0) != exit
+                    || cs_geti(self, "travel_bank", 0) < 1)) {
+            cs_seti(self, "travel_bank", 1);
+            cs_seti(self, "travel_exit", exit);
+            o.len = 0;
+            cs_s(&o, "You trudge halfway through the ");
+            cs_s(&o, en);
+            cs_s(&o, ", slowed by the load. (go again to finish)");
+            cs_flush(&o);
+            _exit(0);
+        }
+        cs_seti(self, "travel_bank", 0);   /* crossing done: clear the half step */
+        cs_seti(self, "travel_exit", 0);
         o.len = 0;
         cs_s(&o, nm);
         cs_s(&o, " heads out through the ");

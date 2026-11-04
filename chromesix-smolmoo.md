@@ -365,6 +365,13 @@ locks movement until weight is shed. The carry rating comes from the Might
 attribute (`cs_carry`) and the current load is the weight rollup of the
 inventory (`cs_load`, a cached containment rollup, see `smolmoo.md`).
 
+The out-of-combat halving reads an exit's `cost`: an exit with a `cost` is a
+long traverse that an encumbered mover crosses in two `go`s rather than one,
+the twin of the in-fight Slowed rule where a band costs two Moves. The first
+`go` banks a half step (keyed to that exit) and the second completes the
+crossing; an unencumbered mover and a cost-free exit cross in one step. A
+short doorway leaves its `cost` unset and so never slows anyone.
+
 **Derived from slots.** `recalc` reads the slots for combat. Soak armor is the
 best single worn armor piece, not the sum (rules Section 6), plus cyberware.
 Passive Defense folds in the best single defensive-gear piece, again not the

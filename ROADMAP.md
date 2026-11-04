@@ -48,9 +48,12 @@ downed bodies alike (`cs_room_full`), so once the room is at the cap `attack`
 cannot draw another foe in and an aggressive mob will not join. Enforced at the
 foe-draw (`verb_attack`) and the mob aggro-join (`mob_react`).
 
-- **Out-of-combat travel cost.** An exit `cost` feeding the halved-travel
-  rule for an encumbered character moving between rooms. In a fight,
-  encumbrance already slows movement; out of a fight it does not yet.
+Out-of-combat travel cost is implemented. An exit with a `cost` prop is a long
+traverse, and an encumbered mover's travel is halved: `go` crosses it in two
+steps, the first banking a half step (keyed to the exit) and the second
+completing the crossing (`verb_go`), the twin of the in-fight Slowed rule where
+a band costs two Moves. An unencumbered mover and a cost-free exit cross in one
+step; overloaded movers are still locked in place.
 
 - **Social Resolve recovery.** A social scene drains Resolve and handles
   yield only; there is no recovery path yet, the counterpart to short-rest
