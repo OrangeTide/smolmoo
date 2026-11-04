@@ -73,22 +73,49 @@ struct conn {
 static struct conn cc[MAX_CONN];
 static volatile sig_atomic_t running = 1;
 static struct cas *cas_store;
-static struct cas_omap *obj_map;
+
+/* Per-namespace persistence (builder world-branching phase 2). Each namespace
+ * (world) owns its object map and its own durable root and signed history head,
+ * so a branch persists to its own store while the live world keeps
+ * depot/root and depot/head. The depot (cas_store) and the signing key are
+ * shared: all namespaces are the one server, deduplicated in the one depot and
+ * signed by the one key. The live world is namespace 0. head_addr/head_seq
+ * track a namespace's newest version record and, once serving begins, are
+ * owned by the save writer thread. */
+#define MAX_NS 4
+struct ns_store {
+    struct cas_omap *omap;
+    char     root_file[64];
+    char     head_file[64];
+    char     head_addr[CAS_HASH_HEX + 1];
+    uint64_t head_seq;
+};
+static struct ns_store nsv[MAX_NS];
 
 static const char *depot_dir = "depot";
 static const char *html_file = "index.html";
-static char root_file[256] = "depot/root";
-static char head_file[256] = "depot/head";
 static char key_file[256] = "depot.key";
 
-/* Signed world history. The signing key is loaded at serve start;
- * head_addr/head_seq track the newest version record and are owned by the
- * save writer thread once serving begins. */
 static unsigned char server_sk[CAS_SIGN_SECKEY_LEN];
 static unsigned char server_pk[CAS_SIGN_PUBKEY_LEN];
 static int signing_on = 0;
-static char head_addr[CAS_HASH_HEX + 1] = "";
-static uint64_t head_seq = 0;
+
+/* Point a namespace's root and head pointer files at the depot. `sub` is NULL
+ * for the live world (depot/root, depot/head) or a subpath like "branches/foo"
+ * for a branch. The object map is opened separately, once cas_store exists. */
+static void
+ns_set_paths(int ns, const char *sub)
+{
+    struct ns_store *w = &nsv[ns];
+
+    if (sub && *sub) {
+        snprintf(w->root_file, sizeof(w->root_file), "%s/%s/root", depot_dir, sub);
+        snprintf(w->head_file, sizeof(w->head_file), "%s/%s/head", depot_dir, sub);
+    } else {
+        snprintf(w->root_file, sizeof(w->root_file), "%s/root", depot_dir);
+        snprintf(w->head_file, sizeof(w->head_file), "%s/head", depot_dir);
+    }
+}
 
 static void
 on_signal(int sig)
@@ -1225,9 +1252,9 @@ obj_deserialize(const char *data, size_t len)
  ****************************************************************/
 
 static int
-root_read(char *hash_out)
+root_read(int ns, char *hash_out)
 {
-    FILE *f = fopen(root_file, "r");
+    FILE *f = fopen(nsv[ns].root_file, "r");
 
     if (!f) return ERR;
     if (!fgets(hash_out, CAS_HASH_HEX + 1, f)) {
@@ -1268,9 +1295,9 @@ ptr_write(const char *file, const char *val)
 }
 
 static int
-root_write(const char *hash)
+root_write(int ns, const char *hash)
 {
-    return ptr_write(root_file, hash);
+    return ptr_write(nsv[ns].root_file, hash);
 }
 
 /* ---- world save: snapshot (main thread) + flush (writer thread) -----
@@ -1288,6 +1315,7 @@ root_write(const char *hash)
 
 struct save_ent {
     uint64_t id;
+    int ns;          /* the namespace this object persists to */
     char *buf;
     size_t len;
 };
@@ -1331,6 +1359,7 @@ save_snapshot(void)
         if (obj_serialize(o, &buf, &len) != OK)
             continue;               /* leave dirty; retry on next save */
         job->ents[job->n].id = (uint64_t)o->id;
+        job->ents[job->n].ns = o->ns;
         job->ents[job->n].buf = buf;
         job->ents[job->n].len = len;
         job->n++;
@@ -1339,61 +1368,72 @@ save_snapshot(void)
     return job;
 }
 
-/* Append a signed version record naming `root` to the world history chain
-   and advance the head pointer. Called from save_flush after the root is
+/* Append a signed version record naming `root` to namespace `ns`'s history
+   chain and advance its head pointer. Called from save_flush after the root is
    durable, so a crash before the record is written loses only a history
    entry, never world content. Head state is owned by the writer thread
-   during serve. */
+   during serve. The signing key is shared across namespaces. */
 static void
-history_record(const char *root)
+history_record(int ns, const char *root)
 {
+    struct ns_store *w = &nsv[ns];
     struct cas_vrec v;
     unsigned char rec[CAS_VREC_LEN];
     char vaddr[CAS_HASH_HEX + 1];
 
     memcpy(v.pubkey, server_pk, CAS_SIGN_PUBKEY_LEN);
-    v.seq = head_seq + 1;
+    v.seq = w->head_seq + 1;
     v.timestamp = (int64_t)time(NULL);
     memcpy(v.root, root, CAS_HASH_HEX + 1);
-    memcpy(v.prev, head_addr, CAS_HASH_HEX + 1);
+    memcpy(v.prev, w->head_addr, CAS_HASH_HEX + 1);
 
     if (cas_vrec_encode(&v, server_sk, rec) != CAS_OK ||
         cas_put_object(cas_store, CAS_VREC_TYPE, rec, CAS_VREC_LEN,
                        vaddr) != CAS_OK ||
-        ptr_write(head_file, vaddr) != OK) {
-        fprintf(stderr, "[history] failed to record version %llu\n",
-                (unsigned long long)v.seq);
+        ptr_write(w->head_file, vaddr) != OK) {
+        fprintf(stderr, "[history] ns %d failed to record version %llu\n",
+                ns, (unsigned long long)v.seq);
         return;
     }
-    memcpy(head_addr, vaddr, CAS_HASH_HEX + 1);
-    head_seq = v.seq;
+    memcpy(w->head_addr, vaddr, CAS_HASH_HEX + 1);
+    w->head_seq = v.seq;
 }
 
-/* Write a snapshot into the CAS, update the object map, rewrite the root,
-   and free the job. Touches obj_map and the root file; during serve this
-   runs only on the writer thread. */
+/* Write a snapshot into the CAS and update each namespace's object map, root,
+   and history head. A save job may span namespaces; each object goes to its
+   own namespace's map, and every namespace that received a change has its root
+   stored and recorded. During serve this runs only on the writer thread. */
 static int
 save_flush(struct save_job *job)
 {
     int rc = OK;
+    unsigned char touched[MAX_NS] = { 0 };
 
     for (int i = 0; i < job->n; i++) {
+        int ns = job->ents[i].ns;
         char hash[CAS_HASH_HEX + 1];
-        if (cas_put_object(cas_store, "obj", job->ents[i].buf,
+        if (ns < 0 || ns >= MAX_NS || !nsv[ns].omap ||
+            cas_put_object(cas_store, "obj", job->ents[i].buf,
                            job->ents[i].len, hash) != CAS_OK ||
-            cas_omap_put(obj_map, job->ents[i].id, hash) != CAS_OK)
+            cas_omap_put(nsv[ns].omap, job->ents[i].id, hash) != CAS_OK)
             rc = ERR;
+        else
+            touched[ns] = 1;
         free(job->ents[i].buf);
     }
-    if (rc == OK && job->n > 0) {
-        char root[CAS_HASH_HEX + 1];
-        if (cas_omap_store(obj_map, root) != CAS_OK ||
-            root_write(root) != OK)
-            rc = ERR;
-        else {
-            fprintf(stderr, "[save] %d dirty objects stored\n", job->n);
+    if (rc == OK) {
+        for (int ns = 0; ns < MAX_NS; ns++) {
+            char root[CAS_HASH_HEX + 1];
+            if (!touched[ns])
+                continue;
+            if (cas_omap_store(nsv[ns].omap, root) != CAS_OK ||
+                root_write(ns, root) != OK) {
+                rc = ERR;
+                break;
+            }
+            fprintf(stderr, "[save] ns %d stored\n", ns);
             if (signing_on)
-                history_record(root);
+                history_record(ns, root);
         }
     }
     free(job->ents);
@@ -1540,16 +1580,17 @@ world_save_async(void)
    the current world root. The world data is untouched; only the
    history chain resets. The server key must be loaded first. */
 static void
-history_load_head(void)
+history_load_head(int ns)
 {
+    struct ns_store *w = &nsv[ns];
     FILE *f;
     char line[CAS_HASH_HEX + 2];
     const char *why = NULL;
 
-    head_addr[0] = '\0';
-    head_seq = 0;
+    w->head_addr[0] = '\0';
+    w->head_seq = 0;
 
-    f = fopen(head_file, "r");
+    f = fopen(w->head_file, "r");
     if (!f)
         return;
     if (fgets(line, sizeof(line), f)) {
@@ -1570,8 +1611,8 @@ history_load_head(void)
                 if (memcmp(mine, v.topic_id, CAS_HASH_LEN) != 0) {
                     why = "head belongs to a foreign key";
                 } else {
-                    memcpy(head_addr, line, CAS_HASH_HEX + 1);
-                    head_seq = v.seq;
+                    memcpy(w->head_addr, line, CAS_HASH_HEX + 1);
+                    w->head_seq = v.seq;
                 }
             }
             cas_close(&cf);
@@ -1580,13 +1621,14 @@ history_load_head(void)
     fclose(f);
 
     if (why) {
-        fprintf(stderr, "[history] %s; re-basing to a fresh chain\n", why);
+        fprintf(stderr, "[history] ns %d %s; re-basing to a fresh chain\n",
+                ns, why);
         /* Discard the stale head on disk too, so the re-base is durable at
            once. history_head_addr and the @history/@rewind/@gc/@fsck commands
            read head_file, not these globals; without this a wizard running one
            of them before the first save would see the foreign or damaged head,
            and @rewind could splice a foreign snapshot back into the world. */
-        remove(head_file);
+        remove(w->head_file);
     }
 }
 
@@ -1619,10 +1661,10 @@ history_init(void)
         return;
     }
 
-    history_load_head();
+    history_load_head(0);
     signing_on = 1;
     fprintf(stderr, "[history] world signing on, chain at seq %llu\n",
-            (unsigned long long)head_seq);
+            (unsigned long long)nsv[0].head_seq);
 }
 
 /* Read an entire file into a malloc'd, NUL-terminated buffer.
@@ -1703,26 +1745,30 @@ load_one_cb(uint64_t id, const char *hash, void *ctx)
 }
 
 static int
-world_load(const char *path)
+world_load(int ns, const char *path)
 {
     char root[CAS_HASH_HEX + 1];
+    int saved = active_ns, rc = OK;
 
-    if (root_read(root) == OK) {
-        if (cas_omap_load(obj_map, root) != CAS_OK) {
+    /* Objects created by the loader are stamped with the namespace being
+     * loaded, so a branch loads into its own namespace. */
+    active_ns = ns;
+    if (root_read(ns, root) == OK) {
+        if (cas_omap_load(nsv[ns].omap, root) != CAS_OK) {
             fprintf(stderr, "failed to load omap root\n");
-            return ERR;
+            rc = ERR;
+        } else {
+            int count = 0;
+            cas_omap_foreach(nsv[ns].omap, load_one_cb, &count);
+            fprintf(stderr, "loaded %d objects from omap (ns %d)\n", count, ns);
         }
-        int count = 0;
-        cas_omap_foreach(obj_map, load_one_cb, &count);
-        fprintf(stderr, "loaded %d objects from omap\n", count);
-        return OK;
+    } else if (path && access(path, F_OK) == 0) {
+        rc = world_migrate(path);
+    } else {
+        fprintf(stderr, "no world data found, starting fresh\n");
     }
-
-    if (access(path, F_OK) == 0)
-        return world_migrate(path);
-
-    fprintf(stderr, "no world data found, starting fresh\n");
-    return OK;
+    active_ns = saved;
+    return rc;
 }
 
 static void
@@ -1853,12 +1899,13 @@ obj_next_id(void)
     static const char placeholder[CAS_HASH_HEX + 1] =
         "0000000000000000000000000000000000000000000000000000000000000001";
 
-    if (obj_map) {
+    struct cas_omap *omap = nsv[active_ns].omap;
+    if (omap) {
         uint64_t start = 0;
-        while (cas_omap_alloc(obj_map, start, OBJ_EPH_BASE - start,
+        while (cas_omap_alloc(omap, start, OBJ_EPH_BASE - start,
                               &id) == CAS_OK) {
             if (!obj_find((int)id)) {
-                cas_omap_put(obj_map, id, placeholder);
+                cas_omap_put(omap, id, placeholder);
                 return (int)id;
             }
             start = id + 1;
@@ -4206,9 +4253,9 @@ program_compile(int sid, const char *src, char *hash_out, int is_c,
    writer thread updates it atomically). Returns 1 with addr filled, or 0
    if there is no head yet. */
 static int
-history_head_addr(char *addr)
+history_head_addr(int ns, char *addr)
 {
-    FILE *f = fopen(head_file, "r");
+    FILE *f = fopen(nsv[ns].head_file, "r");
 
     addr[0] = '\0';
     if (!f)
@@ -4372,9 +4419,9 @@ history_gc(int sid, int keep)
 
     g.mark = &mark;
     g.keep = keep;
-    if (history_head_addr(head))
+    if (history_head_addr(active_ns, head))
         cas_vchain_walk(cas_store, head, 0, gc_walk_cb, &g);
-    if (root_read(live) == OK)
+    if (root_read(active_ns, live) == OK)
         gc_add_root(&g, live);
 
     scratch = cas_omap_new(cas_store);
@@ -4545,7 +4592,7 @@ history_fsck(int sid)
     cas_foreach(cas_store, fsck_content_cb, &f);
 
     /* reachability pass: the live world resolves with no dangling refs */
-    if (root_read(live) == OK) {
+    if (root_read(active_ns, live) == OK) {
         struct cas_omap *scratch = cas_omap_new(cas_store);
 
         if (scratch && cas_omap_load(scratch, live) == CAS_OK) {
@@ -4559,7 +4606,7 @@ history_fsck(int sid)
     }
 
     /* chain pass: the signed history verifies end to end */
-    if (!history_head_addr(head)) {
+    if (!history_head_addr(active_ns, head)) {
         chain = "none";
     } else {
         rc = cas_vchain_walk(cas_store, head, 0, fsck_chain_cb, NULL);
@@ -4612,14 +4659,14 @@ cmd_history(int sid)
     struct hist_ctx h;
     int rc;
 
-    if (!history_head_addr(head)) {
+    if (!history_head_addr(active_ns, head)) {
         session_write(sid, "No world history yet.");
         return;
     }
     h.sid = sid;
     h.shown = 0;
     h.limit = 50;
-    if (root_read(h.live) != OK)
+    if (root_read(active_ns, h.live) != OK)
         h.live[0] = '\0';
 
     session_write(sid, "World history (newest first):");
@@ -4676,7 +4723,7 @@ cmd_rewind(int sid, const char *arg)
         session_write(sid, "Usage: @rewind <seq>  (see @history)");
         return;
     }
-    if (!history_head_addr(head)) {
+    if (!history_head_addr(active_ns, head)) {
         session_write(sid, "No world history yet.");
         return;
     }
@@ -4696,8 +4743,8 @@ cmd_rewind(int sid, const char *arg)
     /* Quiesce the writer so nothing is mid-save, then record the rewind as
        the new head before touching the live world. */
     saver_wait_idle();
-    history_record(r.root);
-    if (root_write(r.root) != OK) {
+    history_record(active_ns, r.root);
+    if (root_write(active_ns, r.root) != OK) {
         session_write(sid, "@rewind failed: could not write root.");
         return;
     }
@@ -4721,12 +4768,12 @@ cmd_rewind(int sid, const char *arg)
 
     /* Replace the live persistent world with the restored root. */
     world_free();
-    if (cas_omap_load(obj_map, r.root) != CAS_OK) {
+    if (cas_omap_load(nsv[active_ns].omap, r.root) != CAS_OK) {
         fprintf(stderr, "[history] FATAL: could not load rewound root\n");
         running = 0;
         return;
     }
-    cas_omap_foreach(obj_map, load_one_cb, &count);
+    cas_omap_foreach(nsv[active_ns].omap, load_one_cb, &count);
     world_bootstrap();
     /* The old world's agents were bound to objects just freed; stop them and
        re-wake the ones the restored world marks awake. */
@@ -7533,10 +7580,10 @@ cmd_export(int argc, char **argv, int start)
 {
     cas_store = cas_new(depot_dir);
     if (!cas_store) return 1;
-    obj_map = cas_omap_new(cas_store);
-    if (!obj_map) return 1;
+    nsv[0].omap = cas_omap_new(cas_store);
+    if (!nsv[0].omap) return 1;
     obj_init();
-    if (world_load("world.data") != OK) return 1;
+    if (world_load(0, "world.data") != OK) return 1;
 
     for (int i = 0; i < MAX_OBJ; i++) {
         struct obj *o = &objs[i];
@@ -7553,7 +7600,7 @@ cmd_export(int argc, char **argv, int start)
         }
     }
     world_free();
-    cas_omap_free(obj_map);
+    cas_omap_free(nsv[0].omap);
     cas_free(cas_store);
     return 0;
 }
@@ -7573,10 +7620,10 @@ cmd_merge(const char *path)
 
     cas_store = cas_new(depot_dir);
     if (!cas_store) return 1;
-    obj_map = cas_omap_new(cas_store);
-    if (!obj_map) return 1;
+    nsv[0].omap = cas_omap_new(cas_store);
+    if (!nsv[0].omap) return 1;
     obj_init();
-    if (world_load("world.data") != OK) return 1;
+    if (world_load(0, "world.data") != OK) return 1;
 
     data = file_slurp(path, &len);
     if (!data) { perror(path); return 1; }
@@ -7643,7 +7690,7 @@ cmd_merge(const char *path)
             lc.count, path, base, base + n - 1);
 
     world_free();
-    cas_omap_free(obj_map);
+    cas_omap_free(nsv[0].omap);
     cas_free(cas_store);
     return 0;
 }
@@ -7653,12 +7700,12 @@ cmd_migrate(void)
 {
     cas_store = cas_new(depot_dir);
     if (!cas_store) return 1;
-    obj_map = cas_omap_new(cas_store);
-    if (!obj_map) return 1;
+    nsv[0].omap = cas_omap_new(cas_store);
+    if (!nsv[0].omap) return 1;
     obj_init();
     if (world_migrate("world.data") != OK) return 1;
     world_free();
-    cas_omap_free(obj_map);
+    cas_omap_free(nsv[0].omap);
     cas_free(cas_store);
     return 0;
 }
@@ -7795,10 +7842,10 @@ cmd_install(const char *conf_path, const char *sdk)
 
     cas_store = cas_new(depot_dir);
     if (!cas_store) return 1;
-    obj_map = cas_omap_new(cas_store);
-    if (!obj_map) return 1;
+    nsv[0].omap = cas_omap_new(cas_store);
+    if (!nsv[0].omap) return 1;
     obj_init();
-    world_load("world.data");
+    world_load(0, "world.data");
     world_bootstrap();
 
     f = fopen(conf_path, "r");
@@ -7969,7 +8016,7 @@ cmd_install(const char *conf_path, const char *sdk)
 
     world_save(NULL);
     world_free();
-    cas_omap_free(obj_map);
+    cas_omap_free(nsv[0].omap);
     cas_free(cas_store);
     return had_dup ? 1 : 0;
 }
@@ -8003,8 +8050,7 @@ main(int argc, char *argv[])
         if ((v = getenv("SMOLMOO_DEPOT"))) depot_dir = v;
         if ((v = getenv("SMOLMOO_HTML"))) html_file = v;
     }
-    snprintf(root_file, sizeof(root_file), "%s/root", depot_dir);
-    snprintf(head_file, sizeof(head_file), "%s/head", depot_dir);
+    ns_set_paths(0, NULL);   /* live world: depot/root, depot/head */
     { const char *v = getenv("SMOLMOO_KEY");
         if (v) snprintf(key_file, sizeof(key_file), "%s", v);
         else   snprintf(key_file, sizeof(key_file), "%s.key", depot_dir);
@@ -8072,14 +8118,14 @@ main(int argc, char *argv[])
         fprintf(stderr, "failed to initialize CAS\n");
         return 1;
     }
-    obj_map = cas_omap_new(cas_store);
-    if (!obj_map) {
+    nsv[0].omap = cas_omap_new(cas_store);
+    if (!nsv[0].omap) {
         fprintf(stderr, "failed to initialize object map\n");
         return 1;
     }
 
     obj_init();
-    if (world_load("world.data") != OK)
+    if (world_load(0, "world.data") != OK)
         return 1;
     world_bootstrap();
     task_init();
@@ -8260,7 +8306,7 @@ main(int argc, char *argv[])
     world_save_async();     /* queue a final snapshot of remaining changes */
     saver_stop();           /* drain the queue and join the writer thread */
     world_free();
-    cas_omap_free(obj_map);
+    cas_omap_free(nsv[0].omap);
     cas_free(cas_store);
     return 0;
 }

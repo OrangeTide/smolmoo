@@ -80,13 +80,23 @@ one spawner, an agent tick for one world, a save pass for one world. Because
 the graph is closed, no lookup ever needs an object without first knowing its
 namespace, so a plain active value is enough and the per-call cost stays nil.
 
+Persistence is per namespace. Each namespace owns its object map and its own
+durable root pointer and signed history head, so a branch persists to its own
+store while the live world keeps `depot/root` and `depot/head`. The depot and
+the signing key are shared across namespaces: every world is the one server,
+deduplicated in the one depot and signed by the one key. A save pass serializes
+the dirty objects across all namespaces, routes each to its own namespace's
+map, and stores a fresh root and history record for every namespace that
+changed. The live world is `depot/root`/`depot/head`; a branch lives under
+`depot/branches/<name>/`.
+
 Today only the live world is loaded, so `active_ns` is always 0 and resolution
-behaves as if namespaces did not exist. The machinery is the seam the later
-world-branching phases build on: per-namespace persistence, forking and loading
-a branch, routing a builder session into it, and a merge back to the live
+behaves as if namespaces did not exist. The remaining seams the later
+world-branching phases build on are forking and loading a branch into a free
+namespace, routing a builder session into it, and a merge back to the live
 world. The account, invite, reset, and group scans are deliberately not
-namespaced yet; those subsystems are live-world concerns whose global-versus-
-per-world handling is settled in a later phase.
+namespaced yet; those subsystems are live-world concerns whose global-or-per-
+world handling is settled in a later phase.
 
 ## Cached containment rollups
 
