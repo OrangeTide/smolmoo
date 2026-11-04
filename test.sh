@@ -1946,6 +1946,34 @@ check_log /tmp/smolmoo_p1.log 'wake at the recovery point' "revival wakes at the
 # Now alive again: recover is rejected, which proves the revive cleared 'dead'.
 curl -sf -X POST -d "$SID1 recover" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'You are not dead' "recover is rejected once alive"
+# Revival leaves wounds (rules Section 7/11): a revived character is alive but
+# still injured, so death costs more than the flat fee. Wound the fighter, kill
+# and revive, and confirm the wounds survive the revive (they used to clear).
+curl -sf -X POST -d "$SID1 @grant TestPlayer1 500" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.wounds=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @kill TestPlayer1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 recover" http://localhost:$PORT/cmd >/dev/null
+RW=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=wounds&sid=$SID1")
+[ "$RW" = "2" ] \
+	&& pass "revival leaves wounds to be treated" \
+	|| fail "revival leaves wounds to be treated (wounds=$RW)"
+# The wounds are paid off at a clinic, not on revive: haul to the autodoc (#122)
+# and treat. The mend is a Wit-based Medicine/Cybertech roll, so fund it, teach
+# Medicine, and poll to a success (a failed attempt still spends the fee).
+curl -sf -X POST -d "$SID1 @go #122" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @teach TestPlayer1 medicine 12" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.wit=12" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @grant TestPlayer1 1000" http://localhost:$PORT/cmd >/dev/null
+_i=0
+while [ $_i -lt 20 ]; do
+	curl -sf -X POST -d "$SID1 treat" http://localhost:$PORT/cmd >/dev/null
+	grep -q 'treats your wound' /tmp/smolmoo_p1.log 2>/dev/null && break
+	_i=$((_i + 1))
+done
+check_log /tmp/smolmoo_p1.log 'treats your wound' "treat mends a wound at a clinic"
+# back to an unwounded baseline in the lobby for the blocks below
+curl -sf -X POST -d "$SID1 @set #$P1SH.wounds=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 # Auto-recovery: die again and wait out the death timer (2s span in the test),
 # which revives free at the recovery point. Poll for the second wake line.
 curl -sf -X POST -d "$SID1 @kill TestPlayer1" http://localhost:$PORT/cmd >/dev/null

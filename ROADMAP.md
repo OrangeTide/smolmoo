@@ -34,10 +34,12 @@ deals with you). It is the one seam the store, job gates, and aggro share. On
 a player entering its room, `mob_react` opens a fight when that disposition is
 Hostile (-2) or worse, or when the mob carries the `aggro` behavior token.
 
-- **Death and recovery extensions.** A station requirement for revival,
-  revival penalties, and body weight while a body is carried are deferred.
-  The first recovery slice revives at a fixed point or in place with no
-  cost beyond the clinic fee.
+- **Death and recovery extensions.** Revival penalties are now wired:
+  `player_revive` restores BP but no longer clears Wounds, so a revived
+  character comes back alive but injured and pays the `treat` clinic verb to
+  mend each wound (rules Section 7, slow and expensive). Still deferred: a
+  station requirement for the paid revive (it works anywhere now), and body
+  weight while a body is carried (carrying is weightless today).
 
 - **Room occupant capacity.** A hard cap on how many combatants or bodies a
   room holds, alongside the existing range-band span.

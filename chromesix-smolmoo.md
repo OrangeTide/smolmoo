@@ -430,6 +430,7 @@ ready.
     recover                      pay a clinic to revive your body (Section 11)
     carry <player> | release     lift a fallen ally's body and set it down
     revive <player>              patch a body back to life (Medicine or Cybertech)
+    treat                        mend one wound at a clinic (Medicine or Cybertech)
     train <skill>                spend Character Points to raise a skill one pip
     learn [unlock]               list the unlock catalog, or acquire one by id
     jobs                         list contracts offered here and your active one
@@ -493,11 +494,14 @@ its body persists in the room as an inert object still holding its inventory.
 * **Auto-recovery.** If no one intervenes, a timer revives the character at the
   default recovery point once `death_tick` is 24 in-game hours old.
 
-On recovery the character returns alive at the recovery point with BP restored
-and Wounds cleared; any gear looted while it lay dead stays lost. A revival
-penalty (reduced Grit, a lingering condition, or a service debt) is a tuning
-knob, so death stings without deleting the character. The tabletop permadeath
-mode simply skips all of this: a dead creature is retired.
+On recovery the character returns alive with BP restored but its Wounds intact:
+revival patches you breathing, it does not heal injuries. Wounds are slow and
+expensive (rules Section 7), so a revived character limps to a clinic and pays
+the `treat` verb (a Medicine or Cybertech roll, a fee per wound) to mend each
+one. That retained damage is death's penalty beyond the revive fee, so death
+stings without deleting the character; any gear looted while it lay dead stays
+lost too. The tabletop permadeath mode simply skips all of this: a dead
+creature is retired.
 
 The paid `recover` service and the auto-recovery timer are host-side; a dead
 player is gated to passive commands and revived in place, the player object

@@ -6707,10 +6707,13 @@ cmd_create_acct(int sid, const char *args)
 
 static int death_recover_ms = 24 * 3600 * 1000;   /* auto-recovery span, tunable */
 
-/* Bring a dead player back (Section 11): clear the death state, restore BP and
- * Wounds, wake the body in `room`, and print `wake_msg`. Shared by the paid
- * clinic, the auto-recovery timer, and an ally's in-place revival. Any carrier
- * link is dropped, since a revived player is no longer a body. */
+/* Bring a dead player back (Section 11): clear the death state, restore BP,
+ * wake the body in `room`, and print `wake_msg`. Shared by the paid clinic, the
+ * auto-recovery timer, and an ally's in-place revival. Any carrier link is
+ * dropped, since a revived player is no longer a body. Wounds are NOT cleared:
+ * a revived character is alive but still injured and must mend each wound at a
+ * clinic (the `treat` verb), since wounds are slow and expensive to heal
+ * (rules Section 7). That lingering cost is death's penalty beyond the fee. */
 static void
 player_revive(int sid, int room, const char *wake_msg)
 {
@@ -6723,7 +6726,6 @@ player_revive(int sid, int room, const char *wake_msg)
     prop_set(sheet, make_atom("dying"), val_str("0"));
     prop_set(sheet, make_atom("downed"), val_str("0"));
     prop_set(sheet, make_atom("death_tick"), val_str("0"));
-    prop_set(sheet, make_atom("wounds"), val_str("0"));
     snprintf(b, sizeof(b), "%d", bp_max(sheet));
     prop_set(sheet, make_atom("bp"), val_str(b));
     if (pobj) {
