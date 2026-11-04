@@ -427,7 +427,8 @@ obj_has_dependents(int id)
     const char *a_loc = make_atom("location");
 
     for (int i = 0; i < MAX_OBJ; i++) {
-        if (objs[i].id == OBJ_NONE || objs[i].id == id)
+        if (objs[i].id == OBJ_NONE || objs[i].id == id
+            || objs[i].ns != active_ns)
             continue;
         if (objs[i].parent == id)
             return 1;
@@ -485,7 +486,7 @@ rollup_compute(int container, const char *field)
     int sum = 0;
 
     for (int i = 0; i < MAX_OBJ; i++) {
-        if (objs[i].id == OBJ_NONE) continue;
+        if (objs[i].id == OBJ_NONE || objs[i].ns != active_ns) continue;
         if (prop_objnum(&objs[i], a_loc) != container) continue;
         sum += (*field ? prop_int(&objs[i], field, 0) : 1)
              + rollup_of(objs[i].id, field);
@@ -2545,7 +2546,7 @@ mob_enter(int intruder, int room, int sid)
         struct verb_match m;
         int mob = objs[i].id, ti;
 
-        if (mob == OBJ_NONE || mob == intruder)
+        if (mob == OBJ_NONE || mob == intruder || objs[i].ns != active_ns)
             continue;
         if (prop_objnum(&objs[i], make_atom("location")) != room)
             continue;
@@ -2804,7 +2805,8 @@ vm_ecall(struct rv_cpu *cpu, void *ctx)
         for (int i = 0; i < MAX_OBJ; i++) {
             int id = objs[i].id;
 
-            if (id == OBJ_NONE || id <= after) continue;
+            if (id == OBJ_NONE || id <= after
+                || objs[i].ns != active_ns) continue;
             if (prop_objnum(&objs[i], a_loc) != container) continue;
             if (best == 0 || id < best) best = id;
         }
@@ -3493,7 +3495,7 @@ obj_match_name(const char *name, int sid)
     int found_room = OBJ_NONE;
 
     for (int i = 0; i < MAX_OBJ; i++) {
-        if (objs[i].id == OBJ_NONE) continue;
+        if (objs[i].id == OBJ_NONE || objs[i].ns != active_ns) continue;
         const char *n = prop_str(&objs[i], a_name);
         if (!n || strcasecmp(n, name) != 0) continue;
         int loc = prop_objnum(&objs[i], a_loc);
@@ -3521,7 +3523,7 @@ obj_match_name(const char *name, int sid)
      * put slice, chromesix-smolmoo.md Section 9). */
     const char *a_cap = make_atom("cap");
     for (int i = 0; i < MAX_OBJ; i++) {
-        if (objs[i].id == OBJ_NONE) continue;
+        if (objs[i].id == OBJ_NONE || objs[i].ns != active_ns) continue;
         int loc = prop_objnum(&objs[i], a_loc);
         if (loc != player && loc != room) continue;
         if (prop_int(&objs[i], a_cap, 0) <= 0) {
@@ -3543,7 +3545,7 @@ obj_match_exit(const char *name, int sid)
     int room = player_room(sid);
 
     for (int i = 0; i < MAX_OBJ; i++) {
-        if (objs[i].id == OBJ_NONE) continue;
+        if (objs[i].id == OBJ_NONE || objs[i].ns != active_ns) continue;
         if (prop_objnum(&objs[i], a_loc) != room) continue;
         const char *n = prop_str(&objs[i], a_name);
         if (n && strcasecmp(n, name) == 0)
@@ -3682,7 +3684,7 @@ verb_resolve(int sid, const char *verb, const char *rest,
         for (int ancestor = link, depth = 0;
              ancestor != OBJ_NONE && depth < MAX_OBJ; depth++) {
             for (int i = 0; i < MAX_OBJ; i++) {
-                if (objs[i].id == OBJ_NONE) continue;
+                if (objs[i].id == OBJ_NONE || objs[i].ns != active_ns) continue;
                 if (objs[i].parent != ancestor) continue;
 
                 const char *n = prop_str(&objs[i], a_verb);
@@ -3756,7 +3758,7 @@ verb_resolve_on(int target, const char *verb, int sid, struct verb_match *m)
         for (int ancestor = link, depth = 0;
              ancestor != OBJ_NONE && depth < MAX_OBJ; depth++) {
             for (int i = 0; i < MAX_OBJ; i++) {
-                if (objs[i].id == OBJ_NONE) continue;
+                if (objs[i].id == OBJ_NONE || objs[i].ns != active_ns) continue;
                 if (objs[i].parent != ancestor) continue;
 
                 const char *n = prop_str(&objs[i], a_verb);
@@ -6083,7 +6085,7 @@ cmd_feedback(int sid, const char *args)
         if (!obj_find(cid)) { session_write(sid, "No such object."); return; }
         for (int i = 0; i < MAX_OBJ; i++) {
             const char *nm;
-            if (objs[i].id == OBJ_NONE) continue;
+            if (objs[i].id == OBJ_NONE || objs[i].ns != active_ns) continue;
             if (prop_objnum(&objs[i], a_loc) != cid) continue;
             nm = prop_str(&objs[i], a_name);
             snprintf(b, sizeof(b), "  %s  %s",

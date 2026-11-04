@@ -61,6 +61,33 @@ property (an object reference) names its container. The parent chain is
 inheritance; the `location` chain is where a thing physically sits. `sys_next`
 walks a container's direct contents.
 
+## Object namespaces
+
+Every object carries a namespace (`obj.ns`), the world it belongs to. The
+server can hold more than one world at once: the live world is namespace 0, and
+builder world-branching (see `ROADMAP.md`) loads a branch into its own
+namespace. Each world is a closed object graph. No object references outside its
+namespace, so an object keeps its native id within its world (a branch keeps
+`#0`, `#100`, and the rest as its root stored them) and the pair of namespace
+and id is unambiguous.
+
+Resolution reads an active namespace rather than carrying it on every call. A
+single `active_ns` names the world that `obj_find`, the containment-graph scans
+(child iteration, rollups, recycle-dependency and name resolution), and verb
+dispatch resolve against. It is fixed at each execution boundary, where the
+world in play is unambiguous: a command runs for one session, a verb task for
+one spawner, an agent tick for one world, a save pass for one world. Because
+the graph is closed, no lookup ever needs an object without first knowing its
+namespace, so a plain active value is enough and the per-call cost stays nil.
+
+Today only the live world is loaded, so `active_ns` is always 0 and resolution
+behaves as if namespaces did not exist. The machinery is the seam the later
+world-branching phases build on: per-namespace persistence, forking and loading
+a branch, routing a builder session into it, and a merge back to the live
+world. The account, invite, reset, and group scans are deliberately not
+namespaced yet; those subsystems are live-world concerns whose global-versus-
+per-world handling is settled in a later phase.
+
 ## Cached containment rollups
 
 Many derived quantities are a sum over an object's containment subtree: total
