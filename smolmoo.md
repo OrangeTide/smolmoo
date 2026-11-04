@@ -110,12 +110,27 @@ is an ephemeral, non-persistent body, so it is not part of a branch fork;
 entering or leaving a branch re-homes the avatar into that world (at the branch
 lobby on entry, at the remembered live room on return).
 
+A branch is merged back into the live world offline with
+`smolmoo mergeback <name>`, which takes the depot's single-writer lock. The
+merge is a 3-way diff keyed on the shared native ids between three object-map
+snapshots: the fork point (the ancestor), the branch now, and the live world
+now. Because the depot is content-addressed, comparing the CAS hash stored for
+an id in each snapshot is a whole-object diff with no deserialization: equal
+hashes mean identical objects. Per id, the live world stays authoritative on a
+clash. A change the branch made where the live world did not is applied; where
+both changed, the live version is kept and the clash is reported. An object the
+branch created is added, unless the live world independently took that id, in
+which case the branch object is renumbered into a fresh id with every reference
+to it rewritten (the one case that must deserialize, which reuses the merge
+loader's id remap). A branch deletion applies only where the live world left the
+object untouched. The merge writes a new live root and prints a report of what
+it applied, renumbered, deleted, and kept on conflict.
+
 The account, invite, reset, and group scans are deliberately not namespaced.
 Building touches world objects, which are namespaced, while login and account
 administration run in the live world, so a branch and the live world stay
 isolated for building. Cross-namespace tells and sweeping a branch's timers are
-not handled, and a branch stays resident until the server stops. The one
-remaining phase is a merge back to the live world.
+not handled, and a branch stays resident until the server stops.
 
 ## Cached containment rollups
 

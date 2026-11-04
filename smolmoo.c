@@ -1272,6 +1272,23 @@ root_read(int ns, char *hash_out)
     return OK;
 }
 
+/* Read a one-line CAS hash from an arbitrary pointer file (a branch root or
+   fork point). Returns OK with hash_out filled, trailing newline stripped. */
+static int
+hash_file_read(const char *path, char *hash_out)
+{
+    FILE *f = fopen(path, "r");
+
+    if (!f) return ERR;
+    if (!fgets(hash_out, CAS_HASH_HEX + 1, f)) {
+        fclose(f);
+        return ERR;
+    }
+    fclose(f);
+    hash_out[strcspn(hash_out, "\r\n")] = '\0';
+    return OK;
+}
+
 /* Atomically and durably write a one-line pointer file (root or history
    head). The value is flushed and fsynced before the rename, and the
    containing directory is fsynced after, so the pointer never references
@@ -7973,6 +7990,292 @@ out:
     return rc;
 }
 
+/* ---- branch mergeback: 3-way merge back to the live world (phase 4) ----
+ *
+ * A branch forked at an ancestor root is merged back into the live world by
+ * comparing three object-map snapshots keyed on the shared native ids:
+ * A (the fork point), B (the branch now), and L (the live world now). The CAS
+ * is content-addressed, so a per-id hash comparison is a whole-object diff with
+ * no deserialization: equal hashes mean identical objects.
+ *
+ * Per id the merge keeps the live world authoritative on a clash. A change the
+ * branch made where the live world did not is applied; where both changed, the
+ * live version is kept and the clash reported. An object the branch created is
+ * added, unless the live world has independently taken that id, in which case
+ * the branch object is renumbered into a fresh id with its references rewritten
+ * (the only case that must deserialize). A branch deletion applies only where
+ * the live world left that object untouched. */
+
+struct mb_ctx {
+    struct cas_omap *A, *B, *L;
+    int *apply, napply;     /* branch ids to copy into live (changed or new) */
+    int *coll,  ncoll;      /* branch-created ids the live world also took */
+    int *conf,  nconf;      /* clashes kept on the live side */
+    int *del,   ndel;       /* branch deletions to apply to live */
+    int  bmax;              /* highest persistent id seen in the branch */
+    int  overflow;          /* a list would exceed MAX_OBJ */
+};
+
+static int
+mb_track_max(uint64_t id, const char *hash, void *ctx)
+{
+    int *m = ctx;
+    (void)hash;
+    if ((int)id < OBJ_EPH_BASE && (int)id > *m)
+        *m = (int)id;
+    return 0;
+}
+
+/* Classify one branch id against the fork point and the live world. */
+static int
+mb_scan_branch(uint64_t id64, const char *bhash, void *vctx)
+{
+    struct mb_ctx *c = vctx;
+    int id = (int)id64;
+    char ah[CAS_HASH_HEX + 1], lh[CAS_HASH_HEX + 1];
+    int haveA = cas_omap_get(c->A, id64, ah) == CAS_OK;
+    int haveL = cas_omap_get(c->L, id64, lh) == CAS_OK;
+
+    if (id > c->bmax)
+        c->bmax = id;
+
+    if (haveL && strcmp(bhash, lh) == 0)
+        return 0;                       /* already identical in live */
+
+    if (haveA) {                        /* object existed at the fork */
+        if (strcmp(bhash, ah) == 0)
+            return 0;                   /* branch left it unchanged */
+        if (!haveL || strcmp(lh, ah) != 0) {
+            /* live deleted it, or both sides changed it: keep live */
+            if (c->nconf < MAX_OBJ) c->conf[c->nconf++] = id;
+            else c->overflow = 1;
+        } else {                        /* live unchanged: take the branch */
+            if (c->napply < MAX_OBJ) c->apply[c->napply++] = id;
+            else c->overflow = 1;
+        }
+    } else {                            /* branch created the object */
+        if (!haveL) {
+            if (c->napply < MAX_OBJ) c->apply[c->napply++] = id;
+            else c->overflow = 1;
+        } else {                        /* live took the same id: renumber */
+            if (c->ncoll < MAX_OBJ) c->coll[c->ncoll++] = id;
+            else c->overflow = 1;
+        }
+    }
+    return 0;
+}
+
+/* Find branch deletions: an id present at the fork and gone from the branch. */
+static int
+mb_scan_deletes(uint64_t id64, const char *ahash, void *vctx)
+{
+    struct mb_ctx *c = vctx;
+    char lh[CAS_HASH_HEX + 1];
+
+    if (cas_omap_exists(c->B, id64))
+        return 0;                       /* still present in the branch */
+    if (cas_omap_get(c->L, id64, lh) != CAS_OK)
+        return 0;                       /* already gone from live */
+    if (strcmp(lh, ahash) == 0) {       /* live untouched: apply deletion */
+        if (c->ndel < MAX_OBJ) c->del[c->ndel++] = (int)id64;
+        else c->overflow = 1;
+    } else {                            /* live changed, branch deleted: keep */
+        if (c->nconf < MAX_OBJ) c->conf[c->nconf++] = (int)id64;
+        else c->overflow = 1;
+    }
+    return 0;
+}
+
+/* Copy the serialized bytes of a branch object (named by id in B) onto the end
+   of *buf, growing it. Appends a blank line so obj_load_buf sees a boundary.
+   Returns OK, or ERR on a CAS or allocation failure. */
+static int
+mb_append_obj(char **buf, size_t *len, size_t *cap, struct cas_omap *B, int id)
+{
+    char h[CAS_HASH_HEX + 1];
+    struct cas_file cf;
+    char type[CAS_TYPE_MAX];
+
+    if (cas_omap_get(B, (uint64_t)id, h) != CAS_OK)
+        return ERR;
+    if (cas_open_object(cas_store, &cf, h, type, sizeof(type)) != CAS_OK)
+        return ERR;
+    if (*len + cf.len + 2 > *cap) {
+        size_t nc = *cap ? *cap : 4096;
+        while (*len + cf.len + 2 > nc) nc *= 2;
+        char *nb = realloc(*buf, nc);
+        if (!nb) { cas_close(&cf); return ERR; }
+        *buf = nb;
+        *cap = nc;
+    }
+    memcpy(*buf + *len, cf.data, cf.len);
+    *len += cf.len;
+    (*buf)[(*len)++] = '\n';
+    (*buf)[(*len)++] = '\n';
+    cas_close(&cf);
+    return OK;
+}
+
+static int
+cmd_mergeback(const char *name)
+{
+    char liveroot[CAS_HASH_HEX + 1], branchroot[CAS_HASH_HEX + 1];
+    char forkroot[CAS_HASH_HEX + 1], newroot[CAS_HASH_HEX + 1];
+    char path[160];
+    struct cas_omap *A = NULL, *B = NULL, *L = NULL;
+    static int apply[MAX_OBJ], coll[MAX_OBJ], conf[MAX_OBJ], del[MAX_OBJ];
+    static int cfrom[MAX_OBJ], cto[MAX_OBJ];
+    struct mb_ctx mc = { 0 };
+    int rc = 1, lmax = 0, base;
+
+    if (!branch_name_ok(name)) {
+        fprintf(stderr, "mergeback: invalid branch name\n");
+        return 1;
+    }
+
+    cas_store = cas_new(depot_dir);
+    if (!cas_store) return 1;
+    obj_init();
+
+    if (root_read(0, liveroot) != OK) {
+        fprintf(stderr, "mergeback: no live world\n");
+        goto out;
+    }
+    snprintf(path, sizeof(path), "%s/branches/%s/root", depot_dir, name);
+    if (hash_file_read(path, branchroot) != OK) {
+        fprintf(stderr, "mergeback: no such branch '%s'\n", name);
+        goto out;
+    }
+    snprintf(path, sizeof(path), "%s/branches/%s/fork", depot_dir, name);
+    if (hash_file_read(path, forkroot) != OK) {
+        fprintf(stderr, "mergeback: branch '%s' has no fork point\n", name);
+        goto out;
+    }
+
+    L = cas_omap_new(cas_store);
+    B = cas_omap_new(cas_store);
+    A = cas_omap_new(cas_store);
+    if (!L || !B || !A) {
+        fprintf(stderr, "mergeback: out of memory\n");
+        goto out;
+    }
+    if (cas_omap_load(L, liveroot) != CAS_OK ||
+        cas_omap_load(B, branchroot) != CAS_OK ||
+        cas_omap_load(A, forkroot) != CAS_OK) {
+        fprintf(stderr, "mergeback: failed to load a snapshot\n");
+        goto out;
+    }
+
+    mc.A = A; mc.B = B; mc.L = L;
+    mc.apply = apply; mc.coll = coll; mc.conf = conf; mc.del = del;
+    cas_omap_foreach(B, mb_scan_branch, &mc);
+    cas_omap_foreach(A, mb_scan_deletes, &mc);
+    if (mc.overflow) {
+        fprintf(stderr, "mergeback: too many changed objects (> %d)\n", MAX_OBJ);
+        goto out;
+    }
+
+    cas_omap_foreach(L, mb_track_max, &lmax);
+    base = (lmax > mc.bmax ? lmax : mc.bmax) + 1;
+    if (base + mc.ncoll >= OBJ_EPH_BASE) {
+        fprintf(stderr, "mergeback: id space exhausted\n");
+        goto out;
+    }
+    for (int i = 0; i < mc.ncoll; i++) {
+        cfrom[i] = coll[i];
+        cto[i] = base + i;
+    }
+
+    printf("mergeback '%s' -> live\n", name);
+    for (int i = 0; i < mc.nconf; i++)
+        printf("  CONFLICT #%d (kept the live version)\n", conf[i]);
+    for (int i = 0; i < mc.ncoll; i++)
+        printf("  renumber #%d -> #%d (id taken on the live side)\n",
+               cfrom[i], cto[i]);
+
+    if (mc.napply == 0 && mc.ncoll == 0 && mc.ndel == 0) {
+        printf("nothing to apply; live world unchanged\n");
+        fprintf(stderr, "mergeback: %d conflict(s), nothing applied\n",
+                mc.nconf);
+        rc = 0;
+        goto out;
+    }
+
+    if (mc.ncoll == 0) {
+        /* no id clashes: every apply is a pure object-map hash copy */
+        for (int i = 0; i < mc.napply; i++) {
+            char h[CAS_HASH_HEX + 1];
+            if (cas_omap_get(B, (uint64_t)apply[i], h) != CAS_OK ||
+                cas_omap_put(L, (uint64_t)apply[i], h) != CAS_OK) {
+                fprintf(stderr, "mergeback: failed to apply #%d\n", apply[i]);
+                goto out;
+            }
+        }
+    } else {
+        /* a renumber is in play: load every applied and renumbered branch
+           object through the remap so references to a renumbered id are
+           rewritten, then reserialize each into the live map */
+        char *buf = NULL;
+        size_t len = 0, cap = 0;
+        struct load_ctx lc = { 0 };
+        int ok = 1;
+
+        for (int i = 0; i < mc.napply && ok; i++)
+            ok = mb_append_obj(&buf, &len, &cap, B, apply[i]) == OK;
+        for (int i = 0; i < mc.ncoll && ok; i++)
+            ok = mb_append_obj(&buf, &len, &cap, B, coll[i]) == OK;
+        if (!ok) {
+            free(buf);
+            fprintf(stderr, "mergeback: failed to read a branch object\n");
+            goto out;
+        }
+        lc.map_from = cfrom;
+        lc.map_to = cto;
+        lc.map_n = mc.ncoll;
+        obj_load_buf(buf, len, &lc);
+        free(buf);
+
+        for (int i = 0; i < MAX_OBJ; i++) {
+            struct obj *o = &objs[i];
+            char *ob;
+            size_t ol;
+            char h[CAS_HASH_HEX + 1];
+            if (o->id == OBJ_NONE || obj_is_ephemeral(o->id))
+                continue;
+            if (obj_serialize(o, &ob, &ol) != OK)
+                continue;
+            if (cas_put_object(cas_store, "obj", ob, ol, h) != CAS_OK ||
+                cas_omap_put(L, (uint64_t)o->id, h) != CAS_OK) {
+                free(ob);
+                fprintf(stderr, "mergeback: failed to store #%d\n", o->id);
+                world_free();
+                goto out;
+            }
+            free(ob);
+        }
+        world_free();
+    }
+
+    for (int i = 0; i < mc.ndel; i++)
+        cas_omap_del(L, (uint64_t)del[i]);
+
+    if (cas_omap_store(L, newroot) != CAS_OK || root_write(0, newroot) != OK) {
+        fprintf(stderr, "mergeback: failed to write the new live root\n");
+        goto out;
+    }
+
+    printf("applied %d, renumbered %d, deleted %d, conflicts %d\n",
+           mc.napply, mc.ncoll, mc.ndel, mc.nconf);
+    fprintf(stderr, "mergeback: new live root %s\n", newroot);
+    rc = 0;
+out:
+    if (A) cas_omap_free(A);
+    if (B) cas_omap_free(B);
+    if (L) cas_omap_free(L);
+    cas_free(cas_store);
+    return rc;
+}
+
 /* Namespace isolation smoke test (builder world-branching). Loads two worlds
  * into the one object table at the same native ids and drives the real object
  * layer directly, no depot or network, to prove the active namespace isolates
@@ -8302,6 +8605,7 @@ main(int argc, char *argv[])
             "  merge <file>         import objects, renumbered\n"
             "  migrate              migrate world.data to omap\n"
             "  branch <name>        fork the live world into a branch\n"
+            "  mergeback <name>     3-way merge a branch back into live\n"
             "\n"
             "environment:\n"
             "  SMOLMOO_PORT   listen port (default 7777)\n"
@@ -8337,6 +8641,13 @@ main(int argc, char *argv[])
             return 1;
         }
         return cmd_branch(argv[2]);
+    }
+    if (strcmp(argv[1], "mergeback") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "usage: smolmoo mergeback <name>\n");
+            return 1;
+        }
+        return cmd_mergeback(argv[2]);
     }
     if (strcmp(argv[1], "nstest") == 0)
         return cmd_nstest();

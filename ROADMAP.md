@@ -106,55 +106,26 @@ list-valued properties first become a persisted, first-class type.
   model would make preemption natural, but bounded quanta on the single
   loop have been enough. Revisit only if VM work starves the loop.
 
-- **Builder world-branching.** Work off a fork of the live world and merge
-  when ready. It pairs naturally with OLC but is not a prerequisite. See
-  `FUTURE.md` for the content-addressed foundation it leans on.
+Builder world-branching is implemented. A wizard works off a fork of the live
+world and merges back when ready. The architecture and usage are documented in
+`smolmoo.md` (Object namespaces); `FUTURE.md` holds the content-addressed
+foundation it leans on. In outline: one server process hosts the live world and
+up to a few branch worlds at once, each a namespace with a closed object graph
+addressed by `(namespace, id)`; the live world is namespace 0 with an unchanged
+on-disk layout. A branch is forked (`smolmoo branch` offline, or `@fork`
+in-server) at the live root, which doubles as the immutable merge ancestor. A
+wizard enters a branch with `@branch <name>` and leaves with `@branch live`.
+`smolmoo mergeback <name>` runs the 3-way merge back to live: a per-id hash diff
+of ancestor, branch, and live applies a branch-only change, keeps the live
+version on a clash and reports it, adds a branch-new object, renumbers one whose
+id the live world also took (rewriting references), and applies a branch
+deletion the live world left untouched.
 
-  Committed approach: one server process hosts the live world and any branch
-  worlds at once. Every object reference is a `(namespace, id)` pair and each
-  world is one namespace with a closed object graph, so no object ever
-  references outside its namespace. Ids stay native within a namespace (a
-  branch keeps `#100`, `#0`, and the rest as its root stored them), so loading
-  a branch needs no id offset and no renumbering. Resolution is never
-  ambiguous because an active namespace is fixed at each execution boundary
-  (command dispatch, verb task, agent tick, a save pass), so `obj_find` reads
-  that active namespace rather than carrying it on every call. The live world
-  is namespace 0 and its on-disk layout is unchanged.
-
-  Phases 1 and 2 are implemented. The object layer carries an `ns` field per
-  object with an active-namespace context, so `obj_find`, objref resolution,
-  the containment-graph scans, and ephemeral handling all read the active
-  namespace, with the live world as namespace 0 and no behavior change.
-  Persistence is per namespace: a save groups dirty objects by namespace, each
-  with its own object map, durable root, and signed history head, the live
-  world keeping `depot/root` and `depot/head` while a branch uses
-  `depot/branches/<name>/`. The depot and the signing key are shared.
-
-  Phase 3 (fork and route) is implemented. A branch is forked either offline
-  with `smolmoo branch <name>` or, since the depot's single-writer lock bars the
-  CLI while the server runs, in-server by a wizard with `@fork <name>`. Both
-  point a new `depot/branches/<name>/root` at the current live root and record
-  the same root as an immutable fork point (`depot/branches/<name>/fork`), the
-  common ancestor a merge diffs against. The depot is content-addressed and
-  shared, so the fork copies no objects, only pointers. A wizard enters a branch
-  with `@branch <name>`, which loads it into a free namespace on demand (reusing
-  a resident branch), and leaves with `@branch live`. The session carries a
-  namespace; `active_ns` is fixed to it at command dispatch, in the web-editor
-  prop handlers, and in any verb or agent task the session spawns, and reset to
-  the live world after each request. The session's avatar is an ephemeral body,
-  so entering or leaving a branch re-homes it into that world at the branch
-  lobby and restores its live position on return. Known limits: the account,
-  invite, reset, and group scans stay live-world (building touches world
-  objects, which are already namespaced, and login and account admin run in the
-  live world); cross-namespace tells and background sweeps into a branch are not
-  handled; and a branch is not unloaded until the server stops.
-
-  Phase 4 is a 3-way merge keyed on the shared native ids: apply changes a
-  branch made and the live world did not, keep the live version where both
-  changed and log the clash to a conflict report, and renumber only an object
-  newly created on the branch whose id was also freshly taken on the live side.
-  The one standing cost is the shared `MAX_OBJ` slot pool, which a branch
-  roughly doubles the draw on.
+Remaining extensions, none yet called for: unloading a branch namespace while
+the server runs (today a branch stays resident until shutdown); namespacing the
+account, invite, reset, and group scans (they stay live-world, which is correct
+for building but blocks those subsystems inside a branch); and raising the
+shared `MAX_OBJ` slot pool, which a resident branch roughly doubles the draw on.
 
 ## Federation and storage
 

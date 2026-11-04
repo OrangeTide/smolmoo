@@ -4658,6 +4658,80 @@ check_log /tmp/smolmoo_h.log 'rewound to seq 1' \
 kill $HSRV $HP1 2>/dev/null || true
 rm -rf "$HDEP" "$HDEP.key" /tmp/smolmoo_h.log /tmp/smolmoo_h_p.log
 
+# --- M99: branch mergeback, the 3-way merge back to live (world-branching
+# phase 4). Isolated instance on its own port and depot: build divergent edits
+# in a branch and in the live world, quiesce the server (the merge takes the
+# depot lock), merge offline, then export the live world to check the outcome.
+MDEP=$(mktemp -d)
+cp -a depot/* "$MDEP/" 2>/dev/null || true
+SMOLMOO_PORT=7784 SMOLMOO_DEPOT="$MDEP" _build/smolmoo serve --bootstrap \
+	2>/tmp/smolmoo_m.log &
+MSRV=$!
+wait_ready /tmp/smolmoo_m.log 'admin invite:'
+MINV=$(grep -o 'admin invite: [A-Z0-9-]*' /tmp/smolmoo_m.log | head -1 | cut -d' ' -f3)
+curl -sN http://localhost:7784/events > /tmp/smolmoo_m_p.log &
+MP1=$!
+MSID=$(wait_sid /tmp/smolmoo_m_p.log) || fail "no session id: /tmp/smolmoo_m_p.log"
+curl -sf -X POST -d "$MSID create MWiz mpass $MINV" http://localhost:7784/cmd >/dev/null
+curl -sf -X POST -d "$MSID @save" http://localhost:7784/cmd >/dev/null
+curl -sf -X POST -d "$MSID @fork b1" http://localhost:7784/cmd >/dev/null
+# branch edits: change #301 (and point it at a branch-new object), rename #101
+: > /tmp/smolmoo_m_p.log
+curl -sf -X POST -d "$MSID @branch b1" http://localhost:7784/cmd >/dev/null
+curl -sf -X POST -d "$MSID @create #300" http://localhost:7784/cmd >/dev/null
+MBNEW=$(grep -ao 'Created #[0-9]*' /tmp/smolmoo_m_p.log | head -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$MSID @set #$MBNEW.name=BranchGadget" http://localhost:7784/cmd >/dev/null
+curl -sf -X POST -d "$MSID @set #301.name=BranchSword" http://localhost:7784/cmd >/dev/null
+curl -sf -X POST -d "$MSID @set #301.link=#$MBNEW" http://localhost:7784/cmd >/dev/null
+curl -sf -X POST -d "$MSID @set #101.name=BranchLobby" http://localhost:7784/cmd >/dev/null
+curl -sf -X POST -d "$MSID @save" http://localhost:7784/cmd >/dev/null
+# live edits: a conflicting rename of #101, a live-only change, and a new object
+# at the same id the branch used (forcing a renumber on merge)
+: > /tmp/smolmoo_m_p.log
+curl -sf -X POST -d "$MSID @branch live" http://localhost:7784/cmd >/dev/null
+curl -sf -X POST -d "$MSID @create #300" http://localhost:7784/cmd >/dev/null
+MLNEW=$(grep -ao 'Created #[0-9]*' /tmp/smolmoo_m_p.log | head -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$MSID @set #$MLNEW.name=LiveGadget" http://localhost:7784/cmd >/dev/null
+curl -sf -X POST -d "$MSID @set #101.name=LiveLobby" http://localhost:7784/cmd >/dev/null
+curl -sf -X POST -d "$MSID @set #302.name=LivePotion" http://localhost:7784/cmd >/dev/null
+curl -sf -X POST -d "$MSID @save" http://localhost:7784/cmd >/dev/null
+[ "$MBNEW" = "$MLNEW" ] \
+	&& pass "mergeback: branch and live took the same new id (collision set up)" \
+	|| fail "mergeback: new ids differ ($MBNEW vs $MLNEW), collision not exercised"
+# quiesce so the offline merge can take the depot lock
+kill $MSRV $MP1 2>/dev/null || true
+wait $MSRV 2>/dev/null || true
+SMOLMOO_DEPOT="$MDEP" _build/smolmoo mergeback b1 >/tmp/smolmoo_mb.txt 2>&1
+MBASE=$(grep -o 'renumber #[0-9]* -> #[0-9]*' /tmp/smolmoo_mb.txt | grep -o '#[0-9]*' | tail -1 | tr -d '#')
+grep -q "renumber #$MBNEW -> #$MBASE" /tmp/smolmoo_mb.txt \
+	&& pass "mergeback: a colliding branch id is renumbered" \
+	|| fail "mergeback: collision not renumbered"
+grep -q "CONFLICT #101" /tmp/smolmoo_mb.txt \
+	&& pass "mergeback: a both-changed object is a conflict" \
+	|| fail "mergeback: #101 conflict not reported"
+grep -q "applied 1, renumbered 1, deleted 0, conflicts 1" /tmp/smolmoo_mb.txt \
+	&& pass "mergeback: summary counts are right" \
+	|| fail "mergeback: wrong summary ($(tail -1 /tmp/smolmoo_mb.txt))"
+SMOLMOO_DEPOT="$MDEP" _build/smolmoo export 2>/dev/null > /tmp/smolmoo_mb_exp.txt
+awk '/^#301 /{p=1} /^$/{p=0} p' /tmp/smolmoo_mb_exp.txt | grep -qa "name=BranchSword" \
+	&& pass "mergeback: a branch-only change is applied to live" \
+	|| fail "mergeback: #301 change not applied"
+awk '/^#301 /{p=1} /^$/{p=0} p' /tmp/smolmoo_mb_exp.txt | grep -qa "link=#$MBASE" \
+	&& pass "mergeback: a reference to a renumbered object is rewritten" \
+	|| fail "mergeback: #301 link not rewritten to #$MBASE"
+awk '/^#101 /{p=1} /^$/{p=0} p' /tmp/smolmoo_mb_exp.txt | grep -qa "name=LiveLobby" \
+	&& pass "mergeback: a conflict keeps the live version" \
+	|| fail "mergeback: #101 did not keep LiveLobby"
+awk -v id="#$MBASE " '$0 ~ "^"id{p=1} /^$/{p=0} p' /tmp/smolmoo_mb_exp.txt | grep -qa "name=BranchGadget" \
+	&& pass "mergeback: the renumbered branch object is added to live" \
+	|| fail "mergeback: renumbered object #$MBASE missing"
+awk -v id="#$MLNEW " '$0 ~ "^"id{p=1} /^$/{p=0} p' /tmp/smolmoo_mb_exp.txt | grep -qa "name=LiveGadget" \
+	&& pass "mergeback: the live object keeps its id through a collision" \
+	|| fail "mergeback: live #$MLNEW lost to the branch"
+kill $MSRV $MP1 2>/dev/null || true
+rm -rf "$MDEP" "$MDEP.key" /tmp/smolmoo_m.log /tmp/smolmoo_m_p.log \
+	/tmp/smolmoo_mb.txt /tmp/smolmoo_mb_exp.txt
+
 # --- M48a: an instance re-bases a history chain it did not sign ---
 # A depot can carry a history head signed by a different key (a stale depot from an
 # earlier run, or a restored backup). An instance builds only on history in its own
