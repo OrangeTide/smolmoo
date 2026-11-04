@@ -89,8 +89,16 @@ main(void)
      * default band does not inflate that count. */
     if (!on_roster(room, foe)) {
         char rbuf[64], num[12];
-        int rn = sys_getprop(room, "cb_roster", rbuf, sizeof(rbuf) - 1), j;
+        int rn;
+        int j;
 
+        /* the room's occupancy cap counts the fight's living and fallen; a
+         * full room cannot take another combatant (rules Section 8 span). */
+        if (cs_room_full(room)) {
+            puts("There is no room to draw another into the fight here.");
+            _exit(0);
+        }
+        rn = sys_getprop(room, "cb_roster", rbuf, sizeof(rbuf) - 1);
         cs_seti(defsh, "band",
                 cs_engaged_count(room, self) < cs_frontage(atk) ? 0 : 1);
         if (rn < 0) rn = 0;

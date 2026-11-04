@@ -106,9 +106,10 @@ mob_react(int mob, int foe, int room)
             return;
         grant_accept();     /* writes room combat state and both sheets */
 
-        /* a fight is already running here: fall in rather than reopen it */
+        /* a fight is already running here: fall in rather than reopen it,
+         * unless the room's occupancy cap is already met */
         if (cs_geti(room, "cb_active", 0) == 1) {
-            if (!cs_scene_social(room))
+            if (!cs_scene_social(room) && !cs_room_full(room))
                 roster_add(room, mob);
             return;
         }

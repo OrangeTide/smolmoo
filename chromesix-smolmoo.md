@@ -171,6 +171,14 @@ box gives no ground at all, while an open outdoor room lets a fighter fall back
 to Long without leaving. Larger spaces are still modelled as several linked
 rooms, not one room with a big number.
 
+A room's **occupancy** caps how many combatants a fight there can hold, the
+floor-space sibling to span. An `occupancy` prop (unset or 0 means uncapped)
+limits the combat roster, which carries the living fighters and the downed
+bodies alike, since a fallen combatant stays on the roster taking up the floor
+(`cs_room_full`). Once a fight is at the cap, `attack` cannot draw another foe
+in and an aggressive mob will not pile on, so a cramped room forces the fight
+to stay small.
+
 ## 6. Turn scheduling
 
 Map the turn queue onto smolmoo's task and timer systems rather than a

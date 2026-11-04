@@ -1926,6 +1926,42 @@ check_log /tmp/smolmoo_p1.log 'take the box5 from the box1' "get from recurses i
 curl -sf -X POST -d "$SID1 get box4" http://localhost:$PORT/cmd >/dev/null
 check_log /tmp/smolmoo_p1.log 'pick up the box4' "a bare get resolves a deeply nested item"
 
+# --- Room occupant capacity: a fight's combatant+body count is capped ---
+# A room's `occupancy` limits how many combatants (living or fallen) a fight
+# holds, alongside span and frontage. Dig an arena capped at two, open a fight
+# there, and confirm a third combatant cannot be drawn into the full room.
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @dig arena to Arena" http://localhost:$PORT/cmd >/dev/null
+ARENA=$(grep -oE 'Dug #[0-9]+ to #[0-9]+' /tmp/smolmoo_p1.log | tail -1 | grep -oE '#[0-9]+' | tail -1 | tr -d '#')
+curl -sf -X POST -d "$SID1 @set #$ARENA.occupancy=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #201" http://localhost:$PORT/cmd >/dev/null
+OT1=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$OT1.name=thugone" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$OT1.location=#$ARENA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$OT1.downed=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @create #201" http://localhost:$PORT/cmd >/dev/null
+OT2=$(grep -o 'Created #[0-9]*' /tmp/smolmoo_p1.log | tail -1 | grep -o '[0-9]*')
+curl -sf -X POST -d "$SID1 @set #$OT2.name=thugtwo" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$OT2.location=#$ARENA" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$OT2.downed=0" http://localhost:$PORT/cmd >/dev/null
+# tank the fighter so the retry loop below cannot be downed before the refuse
+curl -sf -X POST -d "$SID1 @set #$P1SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$ARENA" http://localhost:$PORT/cmd >/dev/null
+# open the fight on thugone: the roster is player + thugone = 2, at the cap
+social_drive "attack thugone" 'move on the thugone' || true
+check_log /tmp/smolmoo_p1.log 'move on the thugone' "occupancy: a fight opens in the capped arena"
+# drawing a third combatant is refused once the room holds its cap
+_i=0
+while [ $_i -lt 25 ]; do
+	curl -sf -X POST -d "$SID1 attack thugtwo" http://localhost:$PORT/cmd >/dev/null
+	grep -q 'no room to draw another' /tmp/smolmoo_p1.log 2>/dev/null && break
+	sleep 0.2
+	_i=$((_i + 1))
+done
+check_log /tmp/smolmoo_p1.log 'no room to draw another' "occupancy: a full room refuses a new combatant"
+curl -sf -X POST -d "$SID1 @set #$ARENA.cb_active=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M25i: death and recovery (Section 11) ---
 # @kill is the GM entry to the death track (a Might-3D fighter almost never
 # fails all three cling rolls, so combat cannot reliably kill for a test). It is

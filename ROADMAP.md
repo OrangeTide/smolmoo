@@ -41,8 +41,12 @@ Hostile (-2) or worse, or when the mob carries the `aggro` behavior token.
   station requirement for the paid revive (it works anywhere now), and body
   weight while a body is carried (carrying is weightless today).
 
-- **Room occupant capacity.** A hard cap on how many combatants or bodies a
-  room holds, alongside the existing range-band span.
+Room occupant capacity is implemented. A room's `occupancy` prop (unset or 0
+means uncapped) caps how many combatants a fight holds, the floor-space sibling
+to span. It limits the combat roster, which carries the living fighters and the
+downed bodies alike (`cs_room_full`), so once the room is at the cap `attack`
+cannot draw another foe in and an aggressive mob will not join. Enforced at the
+foe-draw (`verb_attack`) and the mob aggro-join (`mob_react`).
 
 - **Out-of-combat travel cost.** An exit `cost` feeding the halved-travel
   rule for an encumbered character moving between rooms. In a fight,

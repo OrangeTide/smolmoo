@@ -1007,6 +1007,30 @@ t_room_span(Test *t)
     TAP_CHECKF(t, cs_room_span(R) == 2, "clamp high=%d", cs_room_span(R));
 }
 
+/* Room occupant capacity: `occupancy` caps the combat roster, which carries
+ * both the living fighters and the downed bodies still in the room. */
+static void
+t_room_full(Test *t)
+{
+    enum { R = 820 };
+
+    props_clear();
+    sys_setprop(R, "cb_roster", "11,12,13");
+    /* no occupancy prop: never full */
+    TAP_CHECK(t, cs_room_full(R) == 0);
+    /* a cap counts every roster entry, living or fallen */
+    seti(R, "occupancy", 2);
+    TAP_CHECK(t, cs_room_full(R) == 1);           /* 3 >= 2 */
+    sys_setprop(R, "cb_roster", "11,12");
+    TAP_CHECK(t, cs_room_full(R) == 1);           /* 2 >= 2 */
+    sys_setprop(R, "cb_roster", "11");
+    TAP_CHECKF(t, cs_room_full(R) == 0, "one=%d", cs_room_full(R));  /* 1 < 2 */
+    /* occupancy 0 is uncapped even with a crowded roster */
+    seti(R, "occupancy", 0);
+    sys_setprop(R, "cb_roster", "11,12,13,14");
+    TAP_CHECK(t, cs_room_full(R) == 0);
+}
+
 const Case tap_cases[] = {
     { "recalc", t_recalc },
     { "passperc", t_passperc },
@@ -1038,5 +1062,6 @@ const Case tap_cases[] = {
     { "ammo", t_ammo },
     { "encumbrance", t_encumbrance },
     { "room_span", t_room_span },
+    { "room_full", t_room_full },
     { NULL, NULL },
 };

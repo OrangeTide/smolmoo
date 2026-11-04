@@ -1187,6 +1187,21 @@ cs_frontage(int sheet)
     return cs_geti(sheet, "size", 0) >= 1 ? 4 : 2;
 }
 
+/* Room occupant capacity, the sibling to span and frontage. An `occupancy`
+ * prop (unset or 0 means uncapped) limits how many combatants a fight in the
+ * room holds, counting the living and the fallen alike: a downed combatant
+ * stays on the roster as a body still taking up the floor. Returns 1 when the
+ * fight is at that cap and cannot take another combatant. */
+static int
+cs_room_full(int room)
+{
+    int cap = cs_geti(room, "occupancy", 0);
+    int ids[16];
+
+    if (cap <= 0) return 0;
+    return cs_roster_foes(room, 0, ids, 16) >= cap;
+}
+
 /* Push a roll (rules Section 10): spend n Grit for +nD, capped at +2D.
  * Returns the pool bonus in points (3 per die), 0 for no push, or -1 when the
  * sheet cannot afford it (nothing is spent). The grit property is the store
