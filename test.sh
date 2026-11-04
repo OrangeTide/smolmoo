@@ -2732,6 +2732,39 @@ check_log /tmp/smolmoo_p1.log 'BP 7/21' "an unsafe room does not recover BP"
 curl -sf -X POST -d "$SID1 @set #0.rest_secs=7200" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @set #$P1SH.bp=21" http://localhost:$PORT/cmd >/dev/null
 
+# --- Resolve recovers over a short rest of calm (Section 16) ---
+# Resolve is the social counterpart to BP: it climbs back toward its max in a
+# safe room out of a scene, and a full recovery lifts a past concession so a
+# broken character is not conceded forever. Drain the fighter to 0 Resolve and
+# mark it yielded, then rest in the safehouse and read the sheet until it pays
+# out (Resolve is not shown on the sheet, so poll the property directly).
+curl -sf -X POST -d "$SID1 @set #0.rest_secs=2" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.resolve=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.yielded=1" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$P1SH.resolve_since=0" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #$SAFE" http://localhost:$PORT/cmd >/dev/null
+# the first read anchors the resolve clock; later reads pay out the recovery.
+# Poll until the full recovery lands (it clears yielded), not just the first
+# partial payout, so both the climb and the concession-lift are settled.
+RR=0 RY=1
+_i=0
+while [ $_i -lt 40 ]; do
+	curl -sf -X POST -d "$SID1 sheet" http://localhost:$PORT/cmd >/dev/null
+	RY=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=yielded&sid=$SID1")
+	[ "${RY:-1}" = "0" ] && break
+	sleep 0.3
+	_i=$((_i + 1))
+done
+RR=$(curl -sf "http://localhost:$PORT/prop?obj=$P1SH&prop=resolve&sid=$SID1")
+[ "${RR:-0}" -gt 0 ] \
+	&& pass "Resolve recovers over a short rest of calm" \
+	|| fail "Resolve recovers over a short rest of calm (resolve=$RR)"
+[ "${RY:-1}" = "0" ] \
+	&& pass "a full Resolve recovery lifts a past concession" \
+	|| fail "a full Resolve recovery lifts a past concession (yielded=$RY)"
+curl -sf -X POST -d "$SID1 @set #0.rest_secs=7200" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
+
 # --- M39b: treat a wound at a clinic (Section 8) ---
 # Wounds do not rest off; a living character mends at a clinic for a fee plus a
 # Medicine or Cybertech check. Build a ward with a clinic object, and drive the

@@ -201,6 +201,18 @@ span real sessions. Rest, Grit trickle, wound healing, and the 24-hour death
 timer all measure the in-game clock and accrue whether the player is active,
 idle, or logged off, since the world keeps time regardless.
 
+Resolve recovers on the same short rest as Body Points (rules Section 16). It
+is the social buffer, drained by a push and persisting between scenes, not
+snapped back to full at every argument. `cs_resolve_rest` climbs it toward max
+Resolve while the character sits in a `safe` room out of a scene, lazily and on
+the same `rest_secs` cadence as BP, with its own `resolve_since` clock so it
+keeps climbing after BP is full. A full recovery also clears a `yielded`
+concession, so a character broken in an argument composes themselves and can
+hold the line again rather than being conceded forever. It is banked at the
+same lazy points as BP: a move (`verb_go`), a sheet readout (`cs_moo_rest`),
+and the start of a new push (`verb_persuade`), the last so a recovered target
+is engaged afresh rather than refused as already conceded.
+
 ## 7. Grit on the fuel gauge
 
 Grit is mechanically the existing fuel gauge. The engine already provides a

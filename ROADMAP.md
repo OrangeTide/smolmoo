@@ -55,9 +55,12 @@ completing the crossing (`verb_go`), the twin of the in-fight Slowed rule where
 a band costs two Moves. An unencumbered mover and a cost-free exit cross in one
 step; overloaded movers are still locked in place.
 
-- **Social Resolve recovery.** A social scene drains Resolve and handles
-  yield only; there is no recovery path yet, the counterpart to short-rest
-  BP.
+Social Resolve recovery is implemented. Resolve now persists between scenes
+(verb_persuade seeds it once, not every scene) and recovers on the same short
+rest as Body Points (`cs_resolve_rest`): it climbs toward max Resolve in a safe
+room out of a scene, on the `rest_secs` cadence, and a full recovery clears a
+`yielded` concession so a character is not conceded forever. Banked at the same
+lazy points as BP: a move, a sheet readout, and the start of a new push.
 
 - **Multi-attacker resolution.** A character-to-session resolver so a foe
   can prompt a player who did not open the fight. It would make the elite

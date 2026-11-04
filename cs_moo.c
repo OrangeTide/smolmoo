@@ -99,13 +99,14 @@ cs_moo_maxgrit(const char *obj)
     return d.maxgrit;
 }
 
-/* Pay out any short-rest Body Points owed, before a readout shows them. This
- * writes the sheet, but a player owns their own sheet, so a non-setuid verb
- * may call it (as the C status verb does). */
+/* Pay out any short-rest recovery owed, both Body Points and Resolve, before a
+ * readout shows them. This writes the sheet, but a player owns their own sheet,
+ * so a non-setuid verb may call it (as the C status verb does). */
 void
 cs_moo_rest(const char *sheet, const char *room)
 {
     cs_rest((int)sheet, (int)room);
+    cs_resolve_rest((int)sheet, (int)room);
 }
 
 /* --- sheet readout --- */

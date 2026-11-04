@@ -488,6 +488,56 @@ cs_rest(int sheet, int room)
     cs_seti(sheet, "rest_since", since + consumed);
 }
 
+/* --- Resolve recovery, the social counterpart to the short rest (Section 16) ---
+ *
+ * Resolve recovers like Body Points, over a short rest of calm (rules Section
+ * 16): it climbs back toward max Resolve while a character sits in a `safe`
+ * room and out of a scene, lazily, on the same `rest_secs` cadence as BP. Its
+ * own `resolve_since`/`resolve_room` clock keeps it independent of the BP rest,
+ * so Resolve keeps climbing after BP is full. A full recovery also clears a
+ * `yielded` concession, so a character broken in an argument is not conceded
+ * forever: compose yourself and you can hold the line again. Resolve persists
+ * between scenes (verb_persuade seeds it once, not every scene), so this is the
+ * only path that refills it. */
+static void
+cs_resolve_rest(int sheet, int room)
+{
+    int now, since, res, maxr, period, elapsed, gained, consumed;
+
+    if (cs_geti(room, "safe", 0) != 1 || cs_geti(room, "cb_active", 0) == 1) {
+        cs_seti(sheet, "resolve_since", 0);   /* unsettled or in a scene: clock off */
+        return;
+    }
+    now = sys_now();
+    since = cs_geti(sheet, "resolve_since", 0);
+    if (since == 0 || cs_geti(sheet, "resolve_room", 0) != room) {
+        cs_seti(sheet, "resolve_since", now); /* a fresh calm stretch starts here */
+        cs_seti(sheet, "resolve_room", room);
+        return;
+    }
+    maxr = cs_max_resolve(sheet);
+    res = cs_geti(sheet, "resolve", maxr);
+    if (res >= maxr) {
+        sys_setprop(sheet, "yielded", "0");   /* composure already whole */
+        cs_seti(sheet, "resolve_since", now);
+        return;
+    }
+    period = cs_geti(0, "rest_secs", REST_SECS);
+    if (period < 1) period = 1;
+    elapsed = now - since;
+    if (elapsed <= 0) return;
+    gained = elapsed * maxr / period;
+    if (gained <= 0) return;               /* remainder kept: resolve_since unchanged */
+    res += gained;
+    if (res >= maxr) {              /* a full rest restores composure and the matter */
+        res = maxr;
+        sys_setprop(sheet, "yielded", "0");
+    }
+    cs_seti(sheet, "resolve", res);
+    consumed = gained * period / maxr;     /* advance only by what was paid out */
+    cs_seti(sheet, "resolve_since", since + consumed);
+}
+
 /* --- standing decay, a reputation fading toward Neutral (Section 14) ---
  *
  * Standing drifts one step toward Neutral for each idle DECAY_SECS (tunable via

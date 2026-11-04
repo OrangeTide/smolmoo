@@ -18,11 +18,16 @@ approach_skill(const char *verb)
     return verb;                 /* command, negotiate, con match directly */
 }
 
-/* start a combatant's social track: full Resolve, not yet yielded */
+/* Open a combatant's social track for a fresh matter: not yet yielded, and
+ * seeded to full Resolve only the first time (when it has no value). Resolve
+ * then persists between scenes and recovers over a short rest of calm
+ * (cs_resolve_rest), rather than snapping back to full at every scene, so a
+ * target can be worn down across exchanges (rules Section 16). */
 static void
 init_resolve(int sh)
 {
-    cs_seti(sh, "resolve", cs_max_resolve(sh));
+    if (cs_geti(sh, "resolve", -1) < 0)
+        cs_seti(sh, "resolve", cs_max_resolve(sh));
     sys_setprop(sh, "yielded", "0");
 }
 
@@ -61,6 +66,11 @@ main(void)
     if (tgt <= 0) { puts("You don't see that here."); _exit(0); }
     tsh = cs_sheet(tgt);
     if (tsh == src) { puts("You cannot argue yourself into anything."); _exit(0); }
+    /* bank any Resolve recovered since the last scene before reading it; a full
+     * recovery also lifts a past concession, so a composed target can be
+     * engaged again rather than staying conceded forever. */
+    cs_resolve_rest(src, room);
+    cs_resolve_rest(tsh, room);
     if (cs_geti(tsh, "yielded", 0)) { puts("They have already conceded."); _exit(0); }
 
     if (cs_geti(room, "cb_active", 0) != 1) {

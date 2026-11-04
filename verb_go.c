@@ -36,7 +36,8 @@ main(void)
 
     grant_accept();   /* clears combat state on the room when fleeing */
 
-    cs_rest(sh, room);   /* bank any short-rest BP before leaving the room */
+    cs_rest(sh, room);          /* bank any short-rest BP before leaving the room */
+    cs_resolve_rest(sh, room);  /* and any Resolve recovered over the same calm */
 
     if (exit <= 0) { puts("Go where?"); _exit(0); }
     cs_getstr(exit, "dest", dbuf, sizeof(dbuf));
