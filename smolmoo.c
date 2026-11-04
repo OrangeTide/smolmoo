@@ -7663,6 +7663,83 @@ cmd_migrate(void)
     return 0;
 }
 
+/* Namespace isolation smoke test (builder world-branching). Loads two worlds
+ * into the one object table at the same native ids and drives the real object
+ * layer directly, no depot or network, to prove the active namespace isolates
+ * resolution and the containment-graph scans. Prints TAP to stdout and returns
+ * 0 only if every check passes. Later phases flip active_ns in production; this
+ * is the first thing that exercises it with more than one world loaded. */
+static int
+cmd_nstest(void)
+{
+    const char *a_loc = make_atom("location");
+    const char *a_tag = make_atom("tag");
+    const char *a_cnt = make_atom("");   /* interned item-count field for rollup */
+    int ok = 1, n = 0;
+    const char *t;
+    struct obj *o;
+
+    obj_init();
+
+    /* Two worlds share native ids #100 (a room) and #200 (its one content).
+     * The branch world adds a second content, #201, that the live world lacks. */
+    active_ns = 0;
+    obj_create(100, OBJ_NONE);
+    prop_set(obj_find(100), a_tag, val_str("live"));
+    o = obj_create(200, 100);
+    prop_set(o, a_loc, val_obj(100));
+
+    active_ns = 1;
+    obj_create(100, OBJ_NONE);
+    prop_set(obj_find(100), a_tag, val_str("branch"));
+    o = obj_create(200, 100);
+    prop_set(o, a_loc, val_obj(100));
+    o = obj_create(201, 100);
+    prop_set(o, a_loc, val_obj(100));
+
+#define CHK(cond, label) do {                                   \
+        n++;                                                    \
+        if (cond) printf("ok %d - %s\n", n, label);             \
+        else { printf("not ok %d - %s\n", n, label); ok = 0; }  \
+    } while (0)
+
+    /* obj_find: one native id, a different object in each namespace. */
+    active_ns = 0;
+    o = obj_find(100);
+    t = o ? prop_str(o, a_tag) : NULL;
+    CHK(t && strcmp(t, "live") == 0, "ns0 #100 resolves to the live object");
+    active_ns = 1;
+    o = obj_find(100);
+    t = o ? prop_str(o, a_tag) : NULL;
+    CHK(t && strcmp(t, "branch") == 0, "ns1 #100 resolves to the branch object");
+
+    /* A native id that exists only in the branch is invisible to the live
+     * world and present in the branch. */
+    active_ns = 0;
+    CHK(obj_find(201) == NULL, "ns0 does not see the branch-only #201");
+    active_ns = 1;
+    CHK(obj_find(201) != NULL, "ns1 sees its own #201");
+
+    /* rollup_compute counts only the active namespace's contents of #100. */
+    active_ns = 0;
+    CHK(rollup_of(100, a_cnt) == 1, "ns0 #100 holds one item");
+    active_ns = 1;
+    CHK(rollup_of(100, a_cnt) == 2, "ns1 #100 holds two items");
+
+    /* obj_has_dependents scans the active namespace only: #100 is occupied in
+     * both, while the branch-only #201 strands nothing in the live world. */
+    active_ns = 0;
+    CHK(obj_has_dependents(100), "ns0 #100 has a dependent");
+    active_ns = 1;
+    CHK(obj_has_dependents(100), "ns1 #100 has a dependent");
+
+#undef CHK
+    active_ns = 0;
+    printf("1..%d\n", n);
+    fprintf(stderr, "nstest: %s (%d checks)\n", ok ? "PASS" : "FAIL", n);
+    return ok ? 0 : 1;
+}
+
 /* Newest mtime among a verb's source and the local headers it #includes, walked
  * transitively. The .elf-vs-source check alone misses header edits: a change to
  * chromesix_verb.h (or any shared header) touches no verb's own .c mtime, so a
@@ -7944,6 +8021,8 @@ main(int argc, char *argv[])
     }
     if (strcmp(argv[1], "migrate") == 0)
         return cmd_migrate();
+    if (strcmp(argv[1], "nstest") == 0)
+        return cmd_nstest();
     if (strcmp(argv[1], "install") == 0) {
         const char *sdk_dir = NULL, *conf = NULL;
         char sdk_buf[4096];

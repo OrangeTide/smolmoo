@@ -165,6 +165,17 @@ drain() {
 	poll /tmp/smolmoo_p1.log "$_dmark" $OUTCOME_TRIES
 }
 
+# Namespace isolation smoke test (builder world-branching). The server's
+# in-process self-test loads two worlds at the same native ids and asserts the
+# active namespace isolates obj_find, the containment rollup, and the
+# dependency scan. Standalone (no port or depot), so it runs before boot.
+if _build/smolmoo nstest >/tmp/smolmoo_ns.log 2>&1; then
+	pass "namespace isolation smoke test"
+else
+	fail "namespace isolation smoke test (see /tmp/smolmoo_ns.log)"
+	cat /tmp/smolmoo_ns.log
+fi
+
 DEPOT=$(mktemp -d)
 cp -a depot/* "$DEPOT/" 2>/dev/null || true
 
@@ -175,7 +186,7 @@ cleanup() {
 	wait 2>/dev/null
 	rm -rf /tmp/smolmoo_p1.log /tmp/smolmoo_p2.log /tmp/smolmoo_p3.log \
 		/tmp/smolmoo_err.log /tmp/smolmoo_exp.txt /tmp/smolmoo_m2.txt \
-		/tmp/smolmoo_mrg.txt "$DEPOT" "$CDEP"
+		/tmp/smolmoo_mrg.txt /tmp/smolmoo_ns.log "$DEPOT" "$CDEP"
 }
 trap cleanup EXIT
 
@@ -2247,11 +2258,21 @@ check_log /tmp/smolmoo_p3.log 'Unknown command' \
 # resolver (sys_tell) lets the turn task prompt a combatant who is not the
 # opener, so more than one player can fight in a single scene. TestPlayer1
 # walks in and joins TestPlayer3's fight, then is prompted on their own turn in
-# their own session (p1.log). TestPlayer3 is tanked so the fight cannot collapse
-# before the join lands; the goon always targets the first player on the roster
-# (TestPlayer3), leaving the joiner free to observe its own prompt. Counts are
-# taken as deltas because p1.log already holds these lines from earlier fights.
+# their own session (p1.log). TestPlayer3 and the goon are both tanked so the
+# fight cannot collapse before the joiner is reached: the joiner enters the
+# order last and is only prompted on the following round, so a goon that dies
+# first would leave the join unobserved. The goon always targets the first
+# player on the roster (TestPlayer3), leaving the joiner free to see its own
+# prompt. Counts are deltas because p1.log already holds these lines from
+# earlier fights.
 curl -sf -X POST -d "$SID1 @set #$P3SH.bp=999" http://localhost:$PORT/cmd >/dev/null
+# A mook is cut down by any hit regardless of BP (cs_attack_resolve), so a mook
+# goon would drop on the opener's first strike and end the fight in round 1,
+# before the joiner (who enters the order next round) is ever reached. Give it
+# a non-mook grade so the down is BP-based, then tank its BP: now it survives
+# until the joiner is prompted.
+curl -sf -X POST -d "$SID1 @set #$GOON.grade=tough" http://localhost:$PORT/cmd >/dev/null
+curl -sf -X POST -d "$SID1 @set #$GOON.bp=999" http://localhost:$PORT/cmd >/dev/null
 curl -sf -X POST -d "$SID1 @go #101" http://localhost:$PORT/cmd >/dev/null
 WADE1=$(grep -c 'wade into the fight' /tmp/smolmoo_p1.log 2>/dev/null || true)
 YT1=$(grep -c 'your turn' /tmp/smolmoo_p1.log 2>/dev/null || true)
@@ -2273,16 +2294,17 @@ if [ "${_w:-0}" -gt "${WADE1:-0}" ]; then
 else
 	fail "a second player joins an active fight"
 fi
-# Drive both players' turns to a finish. Each attack lands only on its sender's
-# own turn (the other is told 'not your turn'); the task prompts whichever
-# player's turn it is in that player's session, so TestPlayer1 -- who did not
-# open this fight -- is prompted afresh, and the two down the goon together.
+# Phase A: drive both players' turns until the joiner is prompted. Each attack
+# lands only on its sender's own turn (the other is told 'not your turn'); the
+# task prompts whichever player's turn it is in that player's session. With the
+# goon tanked the fight cannot end first, so TestPlayer1 -- who did not open
+# this fight -- is reliably reached on the next round and prompted afresh.
 _k=0
 while [ $_k -lt 60 ]; do
 	curl -sf -X POST -d "$SID3 attack goon" http://localhost:$PORT/cmd >/dev/null
 	curl -sf -X POST -d "$SID1 attack goon" http://localhost:$PORT/cmd >/dev/null
-	_f=$(grep -c 'fight is over' /tmp/smolmoo_p1.log 2>/dev/null || true)
-	[ "${_f:-0}" -gt "${FO1:-0}" ] && break
+	_yt=$(grep -c 'your turn' /tmp/smolmoo_p1.log 2>/dev/null || true)
+	[ "${_yt:-0}" -gt "${YT1:-0}" ] && break
 	sleep 0.2
 	_k=$((_k + 1))
 done
@@ -2292,6 +2314,20 @@ if [ "${_yt:-0}" -gt "${YT1:-0}" ]; then
 else
 	fail "the turn task prompts a non-opener player on their own turn"
 fi
+# Phase B: down the goon and let a turn end detect the win, so the fight
+# resolves deterministically with both players on the roster. A hold passes the
+# turn, so whichever player's turn it is ends it and the end-of-turn sees the
+# foe side empty.
+curl -sf -X POST -d "$SID1 @set #$GOON.downed=1" http://localhost:$PORT/cmd >/dev/null
+_k=0
+while [ $_k -lt 40 ]; do
+	curl -sf -X POST -d "$SID3 hold" http://localhost:$PORT/cmd >/dev/null
+	curl -sf -X POST -d "$SID1 hold" http://localhost:$PORT/cmd >/dev/null
+	_f=$(grep -c 'fight is over' /tmp/smolmoo_p1.log 2>/dev/null || true)
+	[ "${_f:-0}" -gt "${FO1:-0}" ] && break
+	sleep 0.2
+	_k=$((_k + 1))
+done
 _f=$(grep -c 'fight is over' /tmp/smolmoo_p1.log 2>/dev/null || true)
 if [ "${_f:-0}" -gt "${FO1:-0}" ]; then
 	pass "a multi-attacker fight resolves for both players"
