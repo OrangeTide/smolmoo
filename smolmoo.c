@@ -7710,6 +7710,66 @@ cmd_migrate(void)
     return 0;
 }
 
+/* Fork the live world into a named branch (builder world-branching, phase 3).
+ * The branch starts as a reference to the current live root: the depot is
+ * content-addressed and shared across worlds, so a fork copies no objects, only
+ * a pointer. The same live root is recorded as the branch's immutable fork
+ * point, the common ancestor a later merge diffs against. The branch's own root
+ * advances as it is edited while the fork point stays put, and a fresh signed
+ * history chain starts on the branch's first save. The name becomes a depot
+ * subdirectory, so it is held to a safe character set and length. */
+static int
+cmd_branch(const char *name)
+{
+    char live_root[CAS_HASH_HEX + 1];
+    char dir[200], rootf[208], forkf[208];
+    int rc = 1;
+
+    if (!name || !*name || strlen(name) > 48) {
+        fprintf(stderr, "branch: name must be 1 to 48 characters\n");
+        return 1;
+    }
+    for (const char *p = name; *p; p++) {
+        if (!isalnum((unsigned char)*p) && *p != '-' && *p != '_') {
+            fprintf(stderr,
+                    "branch: name may use only letters, digits, '-', '_'\n");
+            return 1;
+        }
+    }
+
+    cas_store = cas_new(depot_dir);
+    if (!cas_store) return 1;
+
+    if (root_read(0, live_root) != OK) {
+        fprintf(stderr,
+                "branch: no live world to fork (run the server once first)\n");
+        goto out;
+    }
+
+    snprintf(dir, sizeof(dir), "%s/branches", depot_dir);
+    mkdir(dir, 0755);
+    snprintf(dir, sizeof(dir), "%s/branches/%s", depot_dir, name);
+    if (mkdir(dir, 0755) != 0) {
+        if (errno == EEXIST)
+            fprintf(stderr, "branch: '%s' already exists\n", name);
+        else
+            perror("branch: mkdir");
+        goto out;
+    }
+
+    snprintf(rootf, sizeof(rootf), "%s/root", dir);
+    snprintf(forkf, sizeof(forkf), "%s/fork", dir);
+    if (ptr_write(rootf, live_root) != OK || ptr_write(forkf, live_root) != OK) {
+        fprintf(stderr, "branch: failed to write branch pointers\n");
+        goto out;
+    }
+    fprintf(stderr, "branch '%s' forked at live root %s\n", name, live_root);
+    rc = 0;
+out:
+    cas_free(cas_store);
+    return rc;
+}
+
 /* Namespace isolation smoke test (builder world-branching). Loads two worlds
  * into the one object table at the same native ids and drives the real object
  * layer directly, no depot or network, to prove the active namespace isolates
@@ -8038,6 +8098,7 @@ main(int argc, char *argv[])
             "  export [N|N-M ...]   write world objects to stdout\n"
             "  merge <file>         import objects, renumbered\n"
             "  migrate              migrate world.data to omap\n"
+            "  branch <name>        fork the live world into a branch\n"
             "\n"
             "environment:\n"
             "  SMOLMOO_PORT   listen port (default 7777)\n"
@@ -8067,6 +8128,13 @@ main(int argc, char *argv[])
     }
     if (strcmp(argv[1], "migrate") == 0)
         return cmd_migrate();
+    if (strcmp(argv[1], "branch") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "usage: smolmoo branch <name>\n");
+            return 1;
+        }
+        return cmd_branch(argv[2]);
+    }
     if (strcmp(argv[1], "nstest") == 0)
         return cmd_nstest();
     if (strcmp(argv[1], "install") == 0) {

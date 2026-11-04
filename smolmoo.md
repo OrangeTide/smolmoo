@@ -90,10 +90,18 @@ map, and stores a fresh root and history record for every namespace that
 changed. The live world is `depot/root`/`depot/head`; a branch lives under
 `depot/branches/<name>/`.
 
-Today only the live world is loaded, so `active_ns` is always 0 and resolution
-behaves as if namespaces did not exist. The remaining seams the later
-world-branching phases build on are forking and loading a branch into a free
-namespace, routing a builder session into it, and a merge back to the live
+A branch is forked offline with `smolmoo branch <name>`. The command points the
+branch's root at the current live root and records the same root as an immutable
+fork point in `depot/branches/<name>/fork`, the common ancestor a later merge
+diffs against. Because the depot is content-addressed and shared, the fork
+copies no objects, only those pointers. The branch's own root then advances as
+it is edited while the fork point stays put, and its signed history chain starts
+fresh on its first save.
+
+Today only the live world is loaded at serve time, so `active_ns` is always 0
+and resolution behaves as if namespaces did not exist. The remaining seams the
+later world-branching phases build on are loading a branch into a free namespace
+at serve time, routing a builder session into it, and a merge back to the live
 world. The account, invite, reset, and group scans are deliberately not
 namespaced yet; those subsystems are live-world concerns whose global-or-per-
 world handling is settled in a later phase.

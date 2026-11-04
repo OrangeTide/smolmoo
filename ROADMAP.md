@@ -121,20 +121,30 @@ list-valued properties first become a persisted, first-class type.
   that active namespace rather than carrying it on every call. The live world
   is namespace 0 and its on-disk layout is unchanged.
 
-  Phases: (1) namespace the object layer: an `ns` field per object, the
-  active-namespace context, and namespace-scoped `obj_find`, objref
-  resolution, and ephemeral handling, with the live world as namespace 0 and
-  no behavior change. (2) per-namespace persistence: group dirty objects by
-  namespace, each with its own omap, root, and signed history head, the live
+  Phases 1 and 2 are implemented. The object layer carries an `ns` field per
+  object with an active-namespace context, so `obj_find`, objref resolution,
+  the containment-graph scans, and ephemeral handling all read the active
+  namespace, with the live world as namespace 0 and no behavior change.
+  Persistence is per namespace: a save groups dirty objects by namespace, each
+  with its own object map, durable root, and signed history head, the live
   world keeping `depot/root` and `depot/head` while a branch uses
-  `depot/branches/<name>/`. (3) fork and load a branch into a free namespace
-  (`smolmoo branch <name>` forks a ref at the live root, recording the fork
-  point) and route a builder's session to it. (4) a 3-way merge keyed on the
-  shared native ids: apply changes a branch made and the live world did not,
-  keep the live version where both changed and log the clash to a conflict
-  report, and renumber only an object newly created on the branch whose id was
-  also freshly taken on the live side. The one standing cost is the shared
-  `MAX_OBJ` slot pool, which a branch roughly doubles the draw on.
+  `depot/branches/<name>/`. The depot and the signing key are shared.
+
+  Phase 3 (fork and route) is partly done. `smolmoo branch <name>` forks the
+  live world: it points a new `depot/branches/<name>/root` at the current live
+  root and records the same root as an immutable fork point
+  (`depot/branches/<name>/fork`), the common ancestor a merge diffs against.
+  The depot is content-addressed and shared, so the fork copies no objects,
+  only pointers. Still to do in phase 3: load a branch into a free namespace at
+  serve time and route a builder's session to it (per-session namespace, active
+  namespace fixed at command dispatch and in any task the session spawns).
+
+  Phase 4 is a 3-way merge keyed on the shared native ids: apply changes a
+  branch made and the live world did not, keep the live version where both
+  changed and log the clash to a conflict report, and renumber only an object
+  newly created on the branch whose id was also freshly taken on the live side.
+  The one standing cost is the shared `MAX_OBJ` slot pool, which a branch
+  roughly doubles the draw on.
 
 ## Federation and storage
 

@@ -4182,6 +4182,28 @@ grep -q "^#$B2 #$B" /tmp/smolmoo_m2.txt \
 grep -q "dest=#0" /tmp/smolmoo_m2.txt \
 	&& pass "merge external ref" || fail "merge external ref"
 
+# --- M97: branch fork CLI (builder world-branching phase 3) ---
+# fork the live world into a named branch. the depot is shared and
+# content-addressed, so the fork copies no objects, only pointers: the
+# branch root and its immutable fork point both name the live root.
+LIVEROOT=$(cat "$CDEP/root")
+SMOLMOO_DEPOT="$CDEP" _build/smolmoo branch testbranch >/dev/null 2>&1 \
+	&& pass "branch fork run" || fail "branch fork run"
+[ "$(cat "$CDEP/branches/testbranch/root" 2>/dev/null)" = "$LIVEROOT" ] \
+	&& pass "branch root points at the live root" \
+	|| fail "branch root points at the live root"
+[ "$(cat "$CDEP/branches/testbranch/fork" 2>/dev/null)" = "$LIVEROOT" ] \
+	&& pass "branch records the fork point" \
+	|| fail "branch records the fork point"
+# a second fork of the same name refuses rather than clobbering
+SMOLMOO_DEPOT="$CDEP" _build/smolmoo branch testbranch >/dev/null 2>&1 \
+	&& fail "branch refuses to clobber an existing branch" \
+	|| pass "branch refuses to clobber an existing branch"
+# an unsafe name that could escape the depot is rejected
+SMOLMOO_DEPOT="$CDEP" _build/smolmoo branch ../escape >/dev/null 2>&1 \
+	&& fail "branch rejects an unsafe name" \
+	|| pass "branch rejects an unsafe name"
+
 # --- The Underdeck sub-area (M60) : rooms, a vendor, a contract, and a reset
 # encounter, all authored in-game through the OLC builder and captured into the
 # world.data seed (build_underdeck.sh). Walk it end to end from the wizard
